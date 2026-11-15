@@ -17,7 +17,7 @@ const CTX = [["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true
 const SUMMARY = "2 tanks, 4 healers, 14 damage; 3 on the bench";
 
 async function flagged(ctx, on) {
-  await ctx.route("**/data/client.json*", async (route) => {
+  await ctx.route("**/data/client*", async (route) => {
     const res = await route.fetch();
     const j = await res.json();
     j.flags = { ...(j.flags || {}), "roster.v1": on };

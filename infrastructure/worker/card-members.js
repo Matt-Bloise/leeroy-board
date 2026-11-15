@@ -1,5 +1,5 @@
 // Member data for the Discord cards, shaped from the same public party document /api/state serves (kv_state `party`).
-// Hidden sheet fields are absent from that document (index.js publicParty path), so a hidden class or race never reaches a card.
+// The caller projects the stored document first (cards.js loadCardState -> public-party.js projectForAnonymous), so a hidden class or race never reaches a card.
 // Pure: no I/O. The one D1 read lives in cards.js (loadCardState), outside the interaction hot path (cards redraw after the reply).
 import { slugify, CLASSES } from "./member-model.js";
 
@@ -9,7 +9,9 @@ const clean = (v, max = 24) => String(v === undefined || v === null ? "" : v).no
 export const EMOJI_RE = /^<a?:[A-Za-z0-9_]{2,32}:[0-9]{15,25}>$/;
 
 // Party document -> [{ slug, name, classKey, classLabel, race, role }]. Members without a usable name are skipped.
+// A projected document that carries `withheld` (some member keeps part of their build private) gives no member's class, class icon or race: only name and role.
 export function cardMembers(partyDoc) {
+  const bare = !!(partyDoc && partyDoc.withheld);
   const list = partyDoc && Array.isArray(partyDoc.members) ? partyDoc.members : [];
   const out = [];
   const seen = new Set();
@@ -18,8 +20,9 @@ export function cardMembers(partyDoc) {
     const slug = slugify(m.name);
     if (!slug || seen.has(slug)) continue;
     seen.add(slug);
-    const key = typeof m.class_key === "string" && CLASSES[m.class_key] ? m.class_key : "";
-    out.push({ slug, name: clean(m.name) || "Someone", classKey: key, classLabel: key ? CLASSES[key].label : clean(m.class, 16), race: clean(m.race, 16), role: clean(m.role, 12) });
+    const key = typeof m.class_key === "string" && Object.hasOwn(CLASSES, m.class_key) ? m.class_key : "";
+    out.push(bare ? { slug, name: clean(m.name) || "Someone", classKey: "", classLabel: "", race: "", role: clean(m.role, 12) }
+      : { slug, name: clean(m.name) || "Someone", classKey: key, classLabel: key ? CLASSES[key].label : clean(m.class, 16), race: clean(m.race, 16), role: clean(m.role, 12) });
   }
   return out;
 }
@@ -55,4 +58,4 @@ export function claimEntries(members, entries) {
   }
   return { byEntry, byMember };
 }
-export const iconFor = (member, emoji) => (member && member.classKey && emoji && emoji[member.classKey] ? `${emoji[member.classKey]} ` : "");
+export const iconFor = (member, emoji) => (member && typeof member.classKey === "string" && emoji && typeof emoji === "object" && Object.hasOwn(emoji, member.classKey) && emoji[member.classKey] ? `${emoji[member.classKey]} ` : "");

@@ -20,9 +20,10 @@ const PREFIX = "From the board: ";
 // Name-level rsvp differences between two sign-up documents. A removed entry or an unknown state reports nothing.
 export function diffRsvp(before, after) {
   const prev = new Map();
-  for (const e of Array.isArray(before && before.entries) ? before.entries : []) prev.set(String(e.name || "").toLowerCase(), RSVP_STATES.includes(e.rsvp) ? e.rsvp : null);
+  const rows = (doc) => (Array.isArray(doc && doc.entries) ? doc.entries : []).filter((e) => e && typeof e === "object" && !Array.isArray(e));
+  for (const e of rows(before)) prev.set(String(e.name || "").toLowerCase(), RSVP_STATES.includes(e.rsvp) ? e.rsvp : null);
   const out = [];
-  for (const e of Array.isArray(after && after.entries) ? after.entries : []) {
+  for (const e of rows(after)) {
     if (!RSVP_STATES.includes(e.rsvp)) continue;
     const from = prev.has(String(e.name || "").toLowerCase()) ? prev.get(String(e.name || "").toLowerCase()) : null;
     if (from !== e.rsvp) out.push({ name: cleanName(e.name), key: String(e.name || "").toLowerCase(), from, to: e.rsvp });
@@ -33,10 +34,10 @@ export function diffRsvp(before, after) {
 // Fold changes into the pending record. The first `from` per person is kept, the latest `to` wins, and a person who ends where they began
 // drops out. Returns null when nothing is left to say. pending = { lastChangeAt, notBefore?, changes: { key: { name, from, to } } }.
 export function recordChanges(pending, changes, now) {
-  const next = { lastChangeAt: now, changes: { ...(pending && pending.changes) } };
+  const next = { lastChangeAt: now, changes: Object.assign(Object.create(null), pending && pending.changes) };
   if (pending && pending.notBefore) next.notBefore = pending.notBefore;
   for (const c of changes) {
-    const cur = next.changes[c.key];
+    const cur = next.changes[c.key]; // null-prototype: a key such as "constructor" or "__proto__" is plain data
     const from = cur ? cur.from : c.from;
     if (from === c.to) delete next.changes[c.key];
     else next.changes[c.key] = { name: c.name, from, to: c.to };
@@ -54,7 +55,7 @@ const joinList = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join
 
 // One line, at most 120 characters. When the names do not fit, the tail becomes "and N more".
 export function composeLine(changes) {
-  const items = Object.values(changes || {}).filter((c) => c && RSVP_PHRASE[c.to]).map((c) => `${cleanName(c.name)} ${RSVP_PHRASE[c.to]}`);
+  const items = Object.values(changes || {}).filter((c) => c && typeof c.to === "string" && Object.hasOwn(RSVP_PHRASE, c.to)).map((c) => `${cleanName(c.name)} ${RSVP_PHRASE[c.to]}`);
   if (!items.length) return "";
   for (let k = items.length; k >= 1; k--) {
     const shown = items.slice(0, k);

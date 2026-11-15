@@ -25,6 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
+import { loadPublicInputs, projectForAnonymous, projectLaunch } from "./public-party.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
@@ -40,7 +41,7 @@ import { JOIN_COMMAND_NAME, JOIN_BUTTON_ID, shouldHint, joinHintBody } from "./j
 import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-command.js";
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordBallot, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
-import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
+import { loadConfigKey, loadConfigKeyStrict, libraryShelfLine, buildThreadMention } from "./config.js";
 import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
 import { updateKvJson, KvConflictError } from "./kv-cas.js";
@@ -48,9 +49,11 @@ import { flushBoardLines } from "./board-lines.js";
 import {
   broadcastToRoom,
   purgeWorkerCache,
+  PARTY_CACHE_PATHS,
   buildPartySheetsFromD1,
   recordSheetEventInD1,
   insertIntent,
+  SHEET_FIELDS,
 } from "./index.js";
 import {
   DATES_DATA,
@@ -59,11 +62,33 @@ import {
   QUIZ_DATA,
 } from "./bot-data.js";
 import { loadRoster } from "./party-source.js";
-import { tonightLines } from "./tonight-copy.js";
+import { tonightLines, LAUNCH_EPOCH } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
-import { partyForMember } from "./sheet-privacy.js";
+import { partyForMember, redactIntentBody, sheetIntentBody } from "./sheet-privacy.js";
+import { sheetValueProblem } from "./sheet-values.js";
+import { VOCAB_LIST, canonicalVocab } from "./sheet-vocab.js";
 import { canManageGuild } from "./setup-command.js";
+
+// Staff check for the mailbox commands (/intents, /ack, /answer). Two conditions:
+//  1. The signed Manage Server / Administrator bit in interaction.member.permissions (nothing a user types is read).
+//  2. The interaction comes from the guild in discord_roster.
+// The server gate is OFF (ok with gateOff: true) only when the discord_roster row is cleanly absent or is an object with no guildId key:
+// the permission check still applies and the reply says so (GATE_OFF_NOTE). Anything else fails closed (ok: false): a failed D1 read,
+// a corrupt or non-object row, or a guildId that is present but not a string of 5 to 25 digits. A failed read is never cached as absent.
+async function rosterAdminCheck(env, interaction) {
+  if (!canManageGuild(interaction.member && interaction.member.permissions)) return { ok: false, gateOff: false };
+  const read = await loadConfigKeyStrict(env, "discord_roster");
+  if (read.status === "absent") return { ok: true, gateOff: true };
+  const roster = read.value;
+  if (read.status !== "ok" || !roster || typeof roster !== "object" || Array.isArray(roster)) return { ok: false, gateOff: false };
+  if (!Object.prototype.hasOwnProperty.call(roster, "guildId")) return { ok: true, gateOff: true };
+  if (typeof roster.guildId !== "string" || !/^[0-9]{5,25}$/.test(roster.guildId)) return { ok: false, gateOff: false };
+  return { ok: String(interaction.guild_id || "") === roster.guildId, gateOff: false };
+}
+export const GATE_OFF_NOTE = "Server check is off: no roster server is set, so any server admin can use this.";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
+import { dataCachePath } from "./public-docs.js";
+import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
 
 export const GOLD = 0xffd100; // WoW UI Gold
 export const LAUNCH_UTC = Date.UTC(2026, 10, 4, 23, 0, 0); // Wed Nov 4 2026, 6:00 PM EST
@@ -311,6 +336,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
   {
     name: "intents",
     description: "View pending intents in the mailbox waiting for the bot or consumers",
+    default_member_permissions: "32", // Manage Server, as /setup: hides it from everyone else in Discord. The handler enforces the same rule, so this is cosmetic until commands are re-registered.
     options: [
       { name: "after", description: "Sequence number to start after", type: 4, required: false },
       { name: "limit", description: "Maximum intents to return (default 10)", type: 4, required: false },
@@ -399,6 +425,9 @@ const signupRejection = (what) =>
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
 
+// Own keys only: a value like "constructor" or "__proto__" must not reach Object.prototype.
+const hasTally = (bucket, key) => typeof key === "string" && key !== "" && Object.hasOwn(bucket, key);
+
 export async function recomputeSignupTallies(signupsDoc) {
   const entries = Array.isArray(signupsDoc.entries) ? signupsDoc.entries : [];
   const meetOpts = (signupsDoc.options && signupsDoc.options.meet) || ["Valley of Strength", "The Crossroads"];
@@ -422,15 +451,16 @@ export async function recomputeSignupTallies(signupsDoc) {
   };
 
   for (const e of entries) {
+    if (!e || typeof e !== "object" || Array.isArray(e)) continue; // a null or non-object row is kept in the doc but never tallied
     const name = e.name || "Someone";
-    if (e.pack && tallies.pack[e.pack]) {
+    if (hasTally(tallies.pack, e.pack)) {
       tallies.pack[e.pack].count++;
       tallies.pack[e.pack].names.push(name);
     }
     if (e.meet) {
       const meetLabel =
         e.meet === "vos" ? "Valley of Strength" : e.meet === "xroads" ? "The Crossroads" : e.meet;
-      if (tallies.meet[meetLabel] && meetLabel !== "other") {
+      if (hasTally(tallies.meet, meetLabel) && meetLabel !== "other") {
         tallies.meet[meetLabel].count++;
         tallies.meet[meetLabel].names.push(name);
       } else {
@@ -441,11 +471,11 @@ export async function recomputeSignupTallies(signupsDoc) {
         }
       }
     }
-    if (e.rsvp && tallies.rsvp[e.rsvp]) {
+    if (hasTally(tallies.rsvp, e.rsvp)) {
       tallies.rsvp[e.rsvp].count++;
       tallies.rsvp[e.rsvp].names.push(name);
     }
-    if (e.when && tallies.when[e.when]) {
+    if (hasTally(tallies.when, e.when)) {
       tallies.when[e.when].count++;
       tallies.when[e.when].names.push(name);
     }
@@ -632,7 +662,21 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
 
 // Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
-  const res = await handleDiscordInteractionInner(req, env, ctx, origin);
+  const state = { verified: false, type: null };
+  let res;
+  try {
+    res = await handleDiscordInteractionInner(req, env, ctx, origin, state);
+  } catch (err) {
+    // Before the signature is verified, or for a PING, keep the old behaviour (the caller's 500). Afterwards Discord must get an answer.
+    if (!state.verified || state.type === 1) throw err;
+    // Name and a fixed tag only: err.message can carry a slice of user input.
+    console.error("Discord interaction failed:", String((err && err.name) || "Error"), "[interaction_catch]");
+    const body = state.type === 4
+      ? { type: 8, data: { choices: [] } }
+      : { type: 4, data: { content: SLASH_COPY.interactionFailed(), flags: 64 } };
+    // Falls through to hardenInteractionBody below, so the catch reply carries allowed_mentions too.
+    res = new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
   if (res.status !== 200 || !(res.headers.get("Content-Type") || "").includes("application/json")) return res;
   try {
     const body = JSON.parse(await res.clone().text());
@@ -649,7 +693,7 @@ export function likePattern(term) {
   return `%${String(term ?? "").replace(/[\\%_]/g, "\\$&")}%`;
 }
 
-async function handleDiscordInteractionInner(req, env, ctx, origin) {
+async function handleDiscordInteractionInner(req, env, ctx, origin, state = { verified: false, type: null }) {
   const rawBody = await req.text();
   if (!env.DISCORD_PUBLIC_KEY) {
     return new Response(JSON.stringify({ error: "DISCORD_PUBLIC_KEY not configured" }), { status: 500 });
@@ -666,7 +710,9 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     return new Response("Invalid request signature", { status: 401 });
   }
 
+  state.verified = true;
   const interaction = JSON.parse(rawBody);
+  state.type = interaction.type;
 
   // Replay: a signed interaction id is accepted once. PING carries no id and is exempt. Rows older than 10 minutes are purged.
   if (interaction.type !== 1) {
@@ -705,6 +751,70 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     const person = (await loadRoster(env)).find((r) => r.display.toLowerCase().replace(/ /g, "-") === t.slug) || { display: t.name };
     const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
     return SLASH_COPY.build(t.name, mention || "(thread link not configured)", `${boardUrl}/#five`);
+  };
+
+  // `/ask` and the INTEREST_NUDGES ask form share one path: length check, budget, the stored turn, the intent, then the answer.
+  const startAsk = async ({ question, provider, isPrivate }) => {
+    if (Array.from(question).length > MAX_QUESTION_CHARS) {
+      return new Response(JSON.stringify({ type: 4, data: { content: `That question is too long. Keep it under ${MAX_QUESTION_CHARS} characters.`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
+    // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
+    if (askBudget) {
+      const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env), new Date(), { skipGlobal: provider !== "workers-ai" });
+      if (verdict && verdict.code !== "budget_global") {
+        return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+    const intentId = crypto.randomUUID(); // unguessable: GET /api/ask?id= answers whoever holds the id
+    const now = new Date().toISOString();
+
+    try {
+      await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+    } catch (e) {
+      if (!(e instanceof SaltMissingError)) throw e;
+      return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    await insertIntent(env, {
+      slug: intentSlug,
+      kind: "ask",
+      body: { id: intentId, question, by: byName, provider, private: isPrivate },
+      ver: 1,
+      at: now,
+    });
+
+    const persona = await loadPersona(env);
+    ctx.waitUntil(
+      answerAndDeliver({
+        env,
+        interaction,
+        intentId,
+        persona,
+        isPrivate,
+        askerId: String(user.id || ""),
+        wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
+        answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
+      })
+    );
+
+    // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
+    if (persona) {
+      return new Response(
+        JSON.stringify({ type: 4, data: { content: pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    return new Response(
+      JSON.stringify({ type: 5, data: isPrivate ? { flags: 64 } : {} }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
   };
 
   // 4. Autocomplete (Type 4) -> Application Command Autocomplete Result (Type 8)
@@ -879,66 +989,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const question = getOpt("question") || getOpt("q") || String((opts[0] && opts[0].value) || "").trim();
       const provider = resolveAiProvider(env, getOpt("model") || getOpt("provider"));
       const isPrivate = Boolean(getOpt("private"));
-      if (Array.from(question).length > MAX_QUESTION_CHARS) {
-        return new Response(JSON.stringify({ type: 4, data: { content: `That question is too long. Keep it under ${MAX_QUESTION_CHARS} characters.`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
-      // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
-      if (askBudget) {
-        const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env), new Date(), { skipGlobal: provider !== "workers-ai" });
-        if (verdict && verdict.code !== "budget_global") {
-          return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-      }
-      const intentId = crypto.randomUUID(); // unguessable: GET /api/ask?id= answers whoever holds the id
-      const now = new Date().toISOString();
-
-      try {
-        await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
-      } catch (e) {
-        if (!(e instanceof SaltMissingError)) throw e;
-        return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-
-      await insertIntent(env, {
-        slug: intentSlug,
-        kind: "ask",
-        body: { id: intentId, question, by: byName, provider, private: isPrivate },
-        ver: 1,
-        at: now,
-      });
-
-      const persona = await loadPersona(env);
-      ctx.waitUntil(
-        answerAndDeliver({
-          env,
-          interaction,
-          intentId,
-          persona,
-          isPrivate,
-          askerId: String(user.id || ""),
-          wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
-          answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
-        })
-      );
-
-      // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
-      if (persona) {
-        return new Response(
-          JSON.stringify({ type: 4, data: { content: pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      return new Response(
-        JSON.stringify({ type: 5, data: isPrivate ? { flags: 64 } : {} }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
+      return startAsk({ question, provider, isPrivate });
     }
 
     // 2b. `/tonight`
@@ -948,22 +999,32 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first(),
       ]);
       const signups = signupsRow ? JSON.parse(signupsRow.json) : { entries: [] };
-      const party = partyRow ? JSON.parse(partyRow.json) : { members: [] };
+      const stored = partyRow ? JSON.parse(partyRow.json) : { members: [] };
+      const party = projectForAnonymous(stored, (await loadPublicInputs(env, { partyDoc: stored })).sheets);
       const lines = tonightLines({ now: Math.floor(Date.now() / 1000), byName, party, signups, boardUrl });
+      const tonightRows = [
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 5, label: "Open Tonight on Board", url: `${boardUrl}/#tonight` },
+          ],
+        },
+      ];
+      // INTEREST_NUDGES: one-tap answers. "I'm in" (the existing sign-up button) only before launch and while this member's RSVP is empty:
+      // after launch the sign-up record is history, and a click would write rsvp:in into it.
+      if (await interestOn(env)) {
+        const mine = (signups.entries || []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
+        const beforeLaunch = Math.floor(Date.now() / 1000) < LAUNCH_EPOCH;
+        const nudges = [...(member && beforeLaunch && !mine.rsvp ? [{ type: 2, style: 3, label: "I'm in tonight", custom_id: "signup:rsvp:in" }] : []), askLevelButton(), countsButton()];
+        tonightRows.push({ type: 1, components: nudges });
+      }
       return new Response(
         JSON.stringify({
           type: 4,
           data: {
             content: lines.join("\n"),
             flags: 64,
-            components: [
-              {
-                type: 1,
-                components: [
-                  { type: 2, style: 5, label: "Open Tonight on Board", url: `${boardUrl}/#tonight` },
-                ],
-              },
-            ],
+            components: tonightRows,
           },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
@@ -982,20 +1043,35 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         );
       }
       if (field && value) {
+        // Same field allow-list as POST /sheet: Array.includes is exact, so constructor, toString, __proto__ and unknown names are refused and nothing is written.
+        if (!SHEET_FIELDS.includes(field)) {
+          return new Response(
+            JSON.stringify({ type: 4, data: { content: `That is not a sheet field. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        // Same server rule as POST /sheet. A slash option is always a string, so level ("34") is refused here: it is set on the board.
+        // The registered command does not offer level; this holds even for an interaction built by hand.
+        if (sheetValueProblem(field, value, undefined, { loose: true })) {
+          const listed = VOCAB_LIST[field]; // race, class, spec, professions, plan zone: refused unless the value is on the board's list (sheet-vocab.js); nothing is written
+          return new Response(
+            JSON.stringify({ type: 4, data: { content: listed ? `That is not on the board's list for ${field.replace(/_/g, " ")}. Pick it on your sheet: ${boardUrl}/#five` : `${field === "level" ? "Level" : "That field"} is set on the board, not here. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
         const now = new Date().toISOString();
-        await recordSheetEventInD1(env, origin, {
+        const saved = await recordSheetEventInD1(env, origin, {
           slug: target.slug,
           name: target.name,
           field,
-          value,
-          visible: true,
+          value: canonicalVocab(field, value, { loose: true }), // the stored form (a slug, or a list of slugs for professions); value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
           source: "discord",
           at: now,
         });
         await insertIntent(env, {
           slug: target.slug,
           kind: "sheet",
-          body: { field, value, source: "discord" },
+          body: sheetIntentBody(field, value, saved.visible, "discord"), // a field that is hidden stays hidden: its intent carries no value
           ver: 1,
           at: now,
         });
@@ -1042,6 +1118,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     // 2d. `/launch`
     if (cmd === "launch") {
       if (!member) return unknownMemberResponse();
+      // After launch there is nothing to track or count down: one line that points to /ask and the board.
+      if (Date.now() >= LAUNCH_UTC) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: SLASH_COPY.launchOver(boardUrl), flags: 64 } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       const state = getOpt("state");
       const now = new Date().toISOString();
       const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'launch'").first();
@@ -1057,30 +1140,32 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         const entry = { slug: member.slug, name: byName, state, at: now };
         if (idx >= 0) rows[idx] = entry;
         else rows.push(entry);
-        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
-          .bind(JSON.stringify(rows), now)
-          .run();
-        await recordSheetEventInD1(env, origin, {
+        const savedLaunch = await recordSheetEventInD1(env, origin, {
           slug: member.slug,
           name: byName,
           field: "launch_state",
-          value: state,
-          visible: true,
+          value: state, // value-only: launch_state keeps its visibility
           source: "discord",
           at: now,
         });
+        // the sheet event first: an unreadable events log must leave no launch row behind
+        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
+          .bind(JSON.stringify(rows), now)
+          .run();
         await insertIntent(env, {
           slug: member.slug,
           kind: "launch",
-          body: { state },
+          body: savedLaunch.visible === false ? { field: "launch_state", visible: false } : { state }, // hidden launch_state: no value in the mailbox
           ver: 1,
           at: now,
         });
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/launch.json"]);
+        await purgeWorkerCache(origin, PARTY_CACHE_PATHS); // /state and /data/launch carry the launch list, both spellings
         await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
       }
-      const summary = rows.length
-        ? rows.map((r) => `• **${r.name}:** \`${r.state}\``).join("\n")
+      // The stored rows stay whole (they were written above); the reply is the public form: a member who hid launch_state shows no state to anyone else.
+      const shownRows = rows.length ? projectLaunch(rows, (await loadPublicInputs(env)).sheets, member.slug).filter((r) => r && r.state) : [];
+      const summary = shownRows.length
+        ? shownRows.map((r) => `• **${r.name}:** \`${r.state}\``).join("\n")
         : "No launch states set yet.";
       return new Response(
         JSON.stringify({
@@ -1096,8 +1181,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
     // 2e. `/map`
     if (cmd === "map") {
-      const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-      const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+      const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
+      const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
       const hash = plan ? `#atlas.plan.${plan}` : place ? `#atlas.${place}` : "#atlas";
       const label = plan ? `Meeting Route Plan (${plan})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
       return new Response(
@@ -1112,7 +1197,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
                   {
                     type: 2,
                     style: 5,
-                    label: `${label} on the Atlas`,
+                    label: `${label} on the Atlas`.slice(0, 80),
                     url: `${boardUrl}/${hash}`,
                   },
                 ],
@@ -1190,7 +1275,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           at: entry.updated,
         });
 
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+        await purgeWorkerCache(origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
         await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
         if (cardsBefore) await afterSignupChange(env, ctx, cardsBefore, doc);
 
@@ -1224,24 +1309,29 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         `• **Pre-order Pack:** \`${myEntry.pack || "not answered"}\``,
         `• **Arrival Time:** \`${myEntry.when || "not answered"}\``,
       ].join("\n");
+      const signupRows = [
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 3, label: "I'm In!", custom_id: "signup:rsvp:in" },
+            { type: 2, style: 2, label: "Maybe", custom_id: "signup:rsvp:maybe" },
+            { type: 2, style: 4, label: "Can't Make It", custom_id: "signup:rsvp:out" },
+            { type: 2, style: 5, label: "Open Sign-ups", url: `${boardUrl}/#signups` },
+          ],
+        },
+      ];
+      const nudge = await interestOn(env);
+      // INTEREST_NUDGES: a clearer first line while the RSVP is empty, and the ask and counts buttons on a second row.
+      if (nudge) signupRows.push({ type: 1, components: [askLevelButton(), countsButton()] });
+      const signupContent = nudge && !myEntry.rsvp ? `${SLASH_COPY.signupNudge()}\n${statusText}` : statusText;
 
       return new Response(
         JSON.stringify({
           type: 4,
           data: {
-            content: statusText,
+            content: signupContent,
             flags: 64,
-            components: [
-              {
-                type: 1,
-                components: [
-                  { type: 2, style: 3, label: "I'm In!", custom_id: "signup:rsvp:in" },
-                  { type: 2, style: 2, label: "Maybe", custom_id: "signup:rsvp:maybe" },
-                  { type: 2, style: 4, label: "Can't Make It", custom_id: "signup:rsvp:out" },
-                  { type: 5, style: 5, label: "Open Sign-ups", url: `${boardUrl}/#signups` },
-                ],
-              },
-            ],
+            components: signupRows,
           },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
@@ -1573,6 +1663,14 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
     // 2r. `/intents`
     if (cmd === "intents") {
+      // Staff only, like GET /intents: the mailbox holds every member's changes. Same rule as /ack's whole-mailbox clear and /setup.
+      const gate = await rosterAdminCheck(env, interaction);
+      if (!gate.ok) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: "That command is for server admins.", flags: 64 } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       if (!member) return unknownMemberResponse();
       const after = parseInt(getOpt("after") || "0", 10) || 0;
       const limit = Math.min(parseInt(getOpt("limit") || "10", 10) || 10, 50);
@@ -1592,7 +1690,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `📬 **Intents Mailbox:** No pending intents (total pending: ${countRow ? countRow.count : 0}).`,
+              content: `📬 **Intents Mailbox:** No pending intents (total pending: ${countRow ? countRow.count : 0}).${gate.gateOff ? `\n${GATE_OFF_NOTE}` : ""}`,
               flags: 64,
             },
           }),
@@ -1602,7 +1700,9 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
       const list = intents
         .map((i) => {
-          const bodyPreview = (i.body || "").slice(0, 60);
+          // A hidden field's value never prints, including in rows stored before hide intents dropped it.
+          const shown = redactIntentBody(i.body || "");
+          const bodyPreview = (shown === null ? "(unreadable)" : typeof shown === "string" ? shown : JSON.stringify(shown)).slice(0, 60);
           return `• **#${i.seq}** [\`${i.kind}\`] by **${i.slug}** at <t:${Math.floor(Date.parse(i.at) / 1000)}:R>: \`${bodyPreview}\``;
         })
         .join("\n");
@@ -1611,7 +1711,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `📬 **Intents Mailbox** (${intents.length} shown, ${countRow ? countRow.count : 0} total pending):\n${list}`,
+            content: `📬 **Intents Mailbox** (${intents.length} shown, ${countRow ? countRow.count : 0} total pending):\n${list}${gate.gateOff ? `\n${GATE_OFF_NOTE}` : ""}`,
             flags: 64,
           },
         }),
@@ -1634,7 +1734,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
 
       // Only a server admin clears the whole mailbox; any other roster member clears their own intents.
-      const adminCaller = canManageGuild(interaction.member && interaction.member.permissions);
+      const ackGate = await rosterAdminCheck(env, interaction);
+      const adminCaller = ackGate.ok;
       const res = adminCaller
         ? await env.DB.prepare("DELETE FROM intents WHERE seq <= ?").bind(upTo).run()
         : await env.DB.prepare("DELETE FROM intents WHERE seq <= ? AND slug = ?").bind(upTo, member.slug).run();
@@ -1645,7 +1746,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `✅ Acknowledged and cleared intents up to seq **${upTo}**. Deleted **${deleted}** intent(s) (${countRow ? countRow.count : 0} still pending).`,
+            content: `✅ Acknowledged and cleared intents up to seq **${upTo}**. Deleted **${deleted}** intent(s) (${countRow ? countRow.count : 0} still pending).${adminCaller && ackGate.gateOff ? `
+${GATE_OFF_NOTE}` : ""}`,
             flags: 64,
           },
         }),
@@ -1672,13 +1774,14 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         );
       }
 
+      const answerGate = await rosterAdminCheck(env, interaction);
       const applied = await applyManualAnswer(env, {
         id,
         answer,
         sources,
         failed,
         byName,
-        isAdmin: canManageGuild(interaction.member && interaction.member.permissions),
+        isAdmin: answerGate.ok,
         now,
       });
       if (!applied.ok) {
@@ -1700,7 +1803,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `✅ Answer recorded for question **#${id}**${applied.share ? " and sent to the Living Board" : " (private, not broadcast)"}.`,
+            content: `✅ Answer recorded for question **#${id}**${applied.share ? " and sent to the Living Board" : " (private, not broadcast)"}.${answerGate.ok && answerGate.gateOff ? `\n${GATE_OFF_NOTE}` : ""}`,
             flags: 64,
           },
         }),
@@ -1823,7 +1926,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
             handle: parsed.handle,
             build: parsed.build,
             after: async ({ partyDoc }) => {
-              await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json"]);
+              await purgeWorkerCache(origin, PARTY_CACHE_PATHS);
+              // Discord may call the workers.dev host while the site reads api.leeroy.party: the cache is keyed by host, so purge both.
+              const apiOrigin = env.API_ORIGIN ? String(env.API_ORIGIN).replace(/\/+$/, "") : "";
+              if (apiOrigin && apiOrigin !== origin) await purgeWorkerCache(apiOrigin, PARTY_CACHE_PATHS);
               await broadcastToRoom(env, { type: "data", key: "party", data: partyDoc });
             },
           });
@@ -1852,6 +1958,20 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       return new Response(JSON.stringify({ type: 4, data: { content: "Use /join inside the server.", flags: 64 } }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     return new Response(JSON.stringify(buildModalResponse()), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+
+  // 3-nudge. INTEREST_NUDGES buttons and the ask form (`nudge:*`). Read-only except the ask form, which takes the /ask path.
+  // Flag off: these ids fall through to the generic reply at the end, as any unknown button does.
+  if ((interaction.type === 3 || interaction.type === 5) && interaction.data && String(interaction.data.custom_id || "").startsWith("nudge:") && (await interestOn(env))) {
+    const id = String(interaction.data.custom_id);
+    const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (interaction.type === 3 && id === ASK_LEVEL_BUTTON_ID) return json(askLevelModal());
+    if (interaction.type === 3 && id === COUNTS_BUTTON_ID) return json({ type: 4, data: { content: await loadCountsReply(env), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } });
+    if (interaction.type === 5 && id === ASK_LEVEL_MODAL_ID) {
+      const question = questionFromModal(interaction.data.components);
+      if (!question) return json({ type: 4, data: { content: "Type a question and Leeroy will answer it.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } });
+      return startAsk({ question, provider: resolveAiProvider(env), isPrivate: true });
+    }
   }
 
   // 3a. Vote buttons (`vote:<id>:<index>` and `vote:<id>:results`). Handled before the generic sign-up buttons below.
@@ -1963,7 +2083,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         at: entry.updated,
       });
 
-      await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+      await purgeWorkerCache(origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
       await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
       return new Response(
         JSON.stringify({
