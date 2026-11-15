@@ -1,4 +1,4 @@
-// /ask research mode (ASK_RESEARCH on): the Claude hop. Provider order is Claude -> Workers AI -> library facts; no other provider ever sees friend text.
+// /ask research mode (ASK_RESEARCH on): the Claude hop. Provider order is Claude (compose on the deep model, one Haiku-class retry on 529/5xx/timeout, max 2 sends) -> Workers AI -> library facts; no other provider ever sees friend text.
 //
 // Every outside call happens only after (1) the whole prompt is tokenised (privacy/tokenise.js: names become per-request tokens; the name list is the roster PLUS
 // every name on the party sheets, so a sixth member or a character name is a key too), (2) the strict guard passes over EVERY friend-writable segment (question,
@@ -12,8 +12,8 @@
 // month is written (alert:claude-cap:YYYYMM, no names, no text). A counter write that fails pauses Claude for 10 minutes (module memory). Prices are NOT modelled
 // in code: the token cap is the bound (docs/runbooks/flags.md has the worst-case arithmetic).
 import { anthropicAvailable } from "../ai-keys.js";
-import { stripFence } from "../prompt-fence.js";
-import { buildNameMap, tokenise, detokenise } from "../privacy/tokenise.js";
+import { stripFence, fence } from "../prompt-fence.js";
+import { buildNameMap, tokenise, detokenise, stripRestorableTokens, makeNonce } from "../privacy/tokenise.js";
 import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
 import { researchMembers, researchMembersFor, genericAliases } from "../privacy/roster-config.js";
@@ -21,9 +21,10 @@ import { RESEARCH_MAX_TOKENS } from "./rules.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 2000000;
 export const CLAUDE_TIMEOUT_MS = 9000; // one budget for the first call and the model-id retry together; Workers AI keeps its own 12s after it, inside the 24s ask deadline
+export const CLAUDE_COMPOSE_MS = 6000; // the compose send's own deadline inside CLAUDE_TIMEOUT_MS; a timeout there still leaves >= RETRY_MIN_MS for the Haiku-class retry
 export const PAUSE_MS = 10 * 60 * 1000;
 export const USAGE_CLAMP = 200000; // per usage field, per call
-const RETRY_MIN_MS = 2500;
+export const RETRY_MIN_MS = 2500;
 const MAX_PROMPT_CHARS = 60000; // CPU proxy that does not depend on a clock (Workers freezes timers during pure compute)
 // Wall-clock budget for tokenise + guards per ask (measured with performance.now; in a Worker the clock may not advance during compute, so MAX_PROMPT_CHARS is the backstop).
 export const privacyBudget = { ms: 8 };
@@ -60,7 +61,8 @@ export const alertKey = (now) => `alert:claude-cap:${monthTag(now)}`;
 
 // ---- spend guard ------------------------------------------------------------------------------------------------------------------------------------
 let pausedUntil = 0;
-const pauseClaude = () => { pausedUntil = Date.now() + PAUSE_MS; };
+export const claudePaused = () => Date.now() < pausedUntil;
+export const pauseClaude = () => { pausedUntil = Date.now() + PAUSE_MS; };
 export function resetResearchClaudeForTests() { pausedUntil = 0; ctxCache.clear(); }
 
 // Counts all four usage fields (cache writes and reads are billed), each clamped to [0, USAGE_CLAMP]. A missing block, NaN, a non-number or a negative means the
@@ -81,11 +83,29 @@ export function usageTokens(usage, estimate) {
   return sum > 0 ? Math.ceil(sum) : estimate; // a real response always used some input; 0 total is not believable
 }
 
-// Conservative upper bound on what a prompt costs: ASCII at 3 characters per token, every other UTF-16 unit (CJK, emoji, accents) at 1.5 tokens, plus the full answer allowance.
-export function estimateTokens(systemText, userText) {
-  const text = `${systemText ?? ""}${userText ?? ""}`;
-  const nonAscii = (text.match(/[^\u0000-\u007f]/g) || []).length;
-  return Math.ceil((text.length - nonAscii) / 3 + nonAscii * 1.5) + RESEARCH_MAX_TOKENS;
+// Safe upper bound on what one send costs, from the bytes actually sent (the JSON-escaped system and user strings, so quotes, newlines and control characters count as the
+// extra bytes they are). A token is never shorter than one byte, so UTF-8 bytes are a hard ceiling: every non-ASCII byte (CJK, emoji, accents, combining marks) counts as a whole
+// token, which is above any real tokenizer; ASCII counts at one token per byte too (the same hard ceiling: dense code, digits and base64 cannot beat it). Then a 10% margin, a fixed framing
+// allowance, and the FULL max_tokens answer allowance, because a response is billed up to max_tokens. Never NaN or Infinity: a bad max_tokens means the answer allowance, a non-finite total the cap value.
+export const INPUT_ASCII_RATIO = 1;
+export const INPUT_MARGIN = 1.1;
+export const INPUT_FRAMING_TOKENS = 128;
+export const MAX_ESTIMATE = 1000000;
+export function estimateTokens(systemText, userText, maxTokens = RESEARCH_MAX_TOKENS) {
+  let ascii = 0;
+  let wide = 0; // UTF-8 bytes of everything above U+007F
+  for (const part of [JSON.stringify(String(systemText ?? "")), JSON.stringify(String(userText ?? ""))]) {
+    for (let i = 0; i < part.length; i++) {
+      const c = part.charCodeAt(i);
+      if (c < 0x80) ascii++;
+      else if (c < 0x800) wide += 2;
+      else if (c >= 0xd800 && c <= 0xdbff) { wide += 4; i++; } // a surrogate pair is one 4-byte character
+      else wide += 3;
+    }
+  }
+  const out = typeof maxTokens === "number" && Number.isFinite(maxTokens) ? Math.max(0, Math.floor(maxTokens)) : RESEARCH_MAX_TOKENS;
+  const total = Math.ceil((ascii * INPUT_ASCII_RATIO + wide) * INPUT_MARGIN) + INPUT_FRAMING_TOKENS + out;
+  return Number.isFinite(total) ? total : MAX_ESTIMATE;
 }
 
 // One atomic statement: add the estimate only if the WHOLE reservation fits under the cap (both branches) (and the stored value is a plain integer). Rows come back only on success.
@@ -98,11 +118,11 @@ export async function reserveTokens(env, estimate, cap, now = new Date()) {
   const res = await env.DB.prepare(RESERVE_SQL).bind(counterKey(now), Math.max(1, Math.floor(estimate)), now.toISOString(), cap).all();
   return Boolean(res && Array.isArray(res.results) && res.results.length === 1);
 }
-async function adjustTokens(env, delta, now = new Date()) {
+export async function adjustTokens(env, delta, now = new Date()) {
   if (!delta) return;
   await env.DB.prepare(ADJUST_SQL).bind(counterKey(now), Math.trunc(delta), now.toISOString()).run();
 }
-async function alertOnce(env, cap, now = new Date()) {
+export async function alertOnce(env, cap, now = new Date()) {
   try {
     await env.DB.prepare("INSERT OR IGNORE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
       .bind(alertKey(now), JSON.stringify({ kind: "claude-monthly-token-cap", month: monthTag(now), cap }), now.toISOString()).run();
@@ -123,11 +143,6 @@ function contextFor(members) {
   }
   return c;
 }
-function makeNonce() {
-  const bytes = new Uint8Array(3);
-  globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 4);
-}
 function cloneMap(t, nonce) {
   const re = (s) => (typeof s === "string" ? s.split(".tmpl}").join(`.${nonce}}`) : s);
   const esc = nonce.replace(/[^a-z0-9]/gi, "");
@@ -137,6 +152,7 @@ function cloneMap(t, nonce) {
     byToken: new Map([...t.byToken].map(([k, v]) => [re(k), { ...v }])),
     ids: new Map([...t.ids].map(([k, v]) => [k, re(v)])),
     nonce,
+    typedNonces: new Set(),
     special: Object.fromEntries(Object.entries(t.special).map(([k, v]) => [k, re(v)])),
     tokenFor: (i) => `{P${i + 1}.${nonce}}`,
     askerToken: null,
@@ -224,6 +240,7 @@ export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, pre
       system,
       user,
       userSegments,
+      previousSegment: previousQuestion ? userSegments[1] : null, // the tokenised previous turn, for the understand step (research/understand.js)
       partySegments,
       ms: performance.now() - t0,
       // Raw model reply -> display-name text, or null when it must be discarded (a name we never send, or a token that is not ours).
@@ -233,8 +250,7 @@ export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, pre
         try {
           if (replyLeaksIdentity(text, ctx.roster)) return null;
         } catch { return null; }
-        map.tokRe.lastIndex = 0;
-        if (LEFTOVER_TOKEN.test(text.replace(map.tokRe, ""))) return null;
+        if (LEFTOVER_TOKEN.test(stripRestorableTokens(text, map))) return null;
         return detokenise(text, map);
       },
     };
@@ -255,12 +271,17 @@ const failReason = (e) => {
   const m = /HTTP (\d{3})/.exec(String((e && e.message) || ""));
   return m ? `claude:http-${m[1]}` : "claude:error";
 };
+// Overload-class failures that justify the one Haiku-class retry: Anthropic 529, any 5xx, or a timeout. Never 401/403/400/429/other 4xx.
+const overloaded = (e) => Boolean(e) && (e.code === "ai_timeout" || e.name === "AiTimeoutError" || e.name === "TimeoutError" || Number(e.status) === 529 || (Number(e.status) >= 500 && Number(e.status) < 600));
 // Billed or possibly billed: keep the reservation. Known not billed (a guard stop, a 4xx that is not a rate limit): give it back.
 const notBilled = (e) => Boolean(e) && (e.code === "OUTBOUND_IDENTIFIER_LEAK" || e.code === "OUTBOUND_GUARD_CONFIG" || (Number(e.status) >= 400 && Number(e.status) < 500 && Number(e.status) !== 429 && Number(e.status) !== 408));
 
 // Returns { answer, model, provider: "claude" } or { reason } (reason may be null: silent skip, e.g. no key configured).
 // call: callAnthropicClaude from ai-models.js (injected: this file must not import it back).
-export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date() }) {
+// hardEndAt: absolute epoch ms the whole Claude hop must end by (the ask's start + its deadline - margin, from ai-models.js); the reservation writes count inside it.
+// The checks that decide, before anything is reserved or sent, that a compose call cannot happen. Returns null when compose may proceed, else { reason } (reason may be null: silent skip).
+// Shared by tryResearchClaude and the understand step, so understand never spends a send on an ask whose compose is sure to be skipped.
+export function composePrecheck(env, priv) {
   if (!anthropicAvailable(env)) return { reason: null };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
   if (!priv || !priv.ok) return { reason: (priv && priv.reason) || "tokenise:error" };
@@ -270,10 +291,24 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
     for (const seg of priv.partySegments) guardUserText([seg], priv.roster);
   } catch (e) { return { reason: guardReason(e) }; }
   if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
+  return null;
+}
 
+// restated: the understand step's validated rewrite. It goes into the USER prompt as a fenced data block, never the system prompt (modeRule only says how to treat that block).
+export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date(), hardEndAt = null, modeRule = "", restated = "" }) {
+  const pre = composePrecheck(env, priv);
+  if (pre) return pre;
+
+  const budgetStart = Date.now(); // the 9 s / 6 s budgets start here, so the reservation write is inside them
+  const hardEnd = Number(hardEndAt) > 0 ? Number(hardEndAt) : Infinity;
+  if (hardEnd - budgetStart < RETRY_MIN_MS) return { reason: "claude:no-time" };
   const at = now();
   const cap = monthlyTokenCap(env);
-  const estimate = estimateTokens(priv.system, priv.user);
+  const system = modeRule ? `${priv.system}\n\n${modeRule}` : priv.system; // the understand step's static mode line (research/index.js), nothing else
+  const user = restated ? `${priv.user}
+
+${fence("RESTATED_QUESTION", restated)}` : priv.user; // what is actually sent: the estimate below covers all of it
+  const estimate = estimateTokens(system, user);
   try {
     if (!(await reserveTokens(env, estimate, cap, at))) {
       await alertOnce(env, cap, at);
@@ -285,17 +320,43 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   }
   const settle = async (delta) => { try { await adjustTokens(env, delta, at); } catch { pauseClaude(); } };
 
-  const { primary, fallback } = researchClaudeModels(env, deep);
-  const deadlineAt = Date.now() + CLAUDE_TIMEOUT_MS;
+  // Compose always runs on the deep (Sonnet-class) model; the ask's `deep` flag no longer picks the model here. The fast (Haiku-class) model is only the overload fallback.
+  // At most 2 Anthropic sends per ask: compose, then ONE of (a) the 4.5 id of the same family on a model-not-found, or (b) the Haiku-class model on 529/5xx/timeout.
+  const { primary, fallback } = researchClaudeModels(env, true);
+  const { primary: fastModel } = researchClaudeModels(env, false);
+  const deadlineAt = Math.min(budgetStart + CLAUDE_TIMEOUT_MS, hardEnd);
+  const composeDeadlineAt = Math.min(budgetStart + CLAUDE_COMPOSE_MS, hardEnd); // leaves the Haiku-class retry its share of the budget after a compose timeout
+  if (composeDeadlineAt - Date.now() < RETRY_MIN_MS) {
+    await settle(-estimate); // the reservation write ate the budget: no send is started that cannot finish; the unused reservation goes back
+    return { reason: "claude:no-time" };
+  }
   const beforeSend = (body) => guardBody(body, priv.roster);
-  const attempt = (modelOverride) => call({ env, systemPrompt: priv.system, userPrompt: priv.user, deep, skipCache: true, metadata: null, deadlineAt, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
+  const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: system, userPrompt: user, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
   let res;
   try {
     try {
-      res = await attempt(primary);
+      res = await attempt(primary, composeDeadlineAt);
     } catch (e) {
-      if (!(e && e.modelMissing === true && fallback && fallback !== primary && deadlineAt - Date.now() >= RETRY_MIN_MS)) throw e;
-      res = await attempt(fallback); // one retry, and only for a model-not-found answer (never credit, auth or rate errors)
+      if (e && e.modelMissing === true && fallback && fallback !== primary && deadlineAt - Date.now() >= RETRY_MIN_MS) {
+        res = await attempt(fallback); // same reservation: a model-not-found answer is not billed
+      } else if (overloaded(e) && fastModel && fastModel !== primary && deadlineAt - Date.now() >= RETRY_MIN_MS) {
+        // The failed compose send keeps its reservation (possibly billed). The retry reserves and settles its own estimate under the same cap and pause rules.
+        try {
+          if (!(await reserveTokens(env, estimate, cap, at))) {
+            await alertOnce(env, cap, at);
+            return { reason: "claude:cap" };
+          }
+        } catch {
+          pauseClaude();
+          return { reason: "claude:counter-error" };
+        }
+        if (deadlineAt - Date.now() < RETRY_MIN_MS) {
+          // The reservation write itself ate the budget: do not start a send that cannot finish. Give the unused reservation back.
+          await settle(-estimate);
+          return { reason: failReason(e) };
+        }
+        res = await attempt(fastModel);
+      } else throw e;
     }
   } catch (e) {
     if (notBilled(e)) await settle(-estimate);

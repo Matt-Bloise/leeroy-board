@@ -27,7 +27,7 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
-import { researchEnabled, researchAnswer } from "./research/index.js";
+import { researchEnabled, researchAnswer, researchPlan } from "./research/index.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
@@ -422,7 +422,8 @@ export async function fetchWithGatewayFallback({
           ...(allowDirectFallback ? {} : { redirect: "manual" }), // BYOK: never follow a redirect with the gateway token attached
         },
         "AI provider request",
-        deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS
+        // The 0.6 share leaves time for the direct hop that follows a gateway failure; a single-hop send has no second hop, so it gets the whole remaining budget.
+        deadlineAt ? (singleHop ? msLeft(deadlineAt) : Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6))) : AI_TIMEOUT_MS
       );
       // If gateway returns success (2xx), return immediately
       if (resp.ok) return resp;
@@ -1299,6 +1300,7 @@ export async function answerWithAi({
     const sendSystem = priv && priv.ok ? priv.system : systemPrompt;
     const sendUser = priv && priv.ok ? priv.user : userPrompt;
     let researchNote = "";
+    let understandNote = ""; // ASK_UNDERSTAND only: how the understand step ended, so its latency and fallbacks can be measured from ask_turns.model
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
@@ -1373,9 +1375,15 @@ export async function answerWithAi({
       if (research && memberNoWall) { // Claude is for members only: a guest never spends the Claude token cap
         // The Claude hop ends no later than the hard end (research/claude.js hands its own 9 s deadline to the call; this clamps it), and is skipped with under 2.5 s left.
         const hardEnd = t0 + hardEndMs(askDeadlineMs(env));
-        const viaClaude = hardEnd - Date.now() < 2500
-          ? { reason: "claude:no-time" }
-          : await tryResearchClaude({ env, priv, deep, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
+        const clampedCall = (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) });
+        let viaClaude;
+        if (hardEnd - Date.now() < 2500) viaClaude = { reason: "claude:no-time" };
+        else {
+          // understand step (ASK_UNDERSTAND, research/understand.js): picks answer mode and depth and may restate the question; never blocks. It checks the hard end itself and runs before compose.
+          const plan = await researchPlan({ env, priv, call: clampedCall, hardEndAt: hardEnd });
+          viaClaude = await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, call: clampedCall, modeRule: plan.rule, restated: plan.restated });
+          understandNote = plan.note;
+        }
         if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
@@ -1428,7 +1436,7 @@ export async function answerWithAi({
         } catch {}
       }
       // Skip the last-resort Workers AI hop when the chain has already used most of the Discord deadline.
-      if (!rawAnswer && chosenProvider !== "workers-ai" && isProviderConfigured(env, "workers-ai") && Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
+      if (!rawAnswer && chosenProvider !== "workers-ai" && isProviderConfigured(env, "workers-ai") && Date.now() - t0 < askDeadlineMs(env) - ASK_FALLBACK_TIMEOUT_MS) {
         try {
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: "workers-ai",
@@ -1505,7 +1513,7 @@ export async function answerWithAi({
       "UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
     )
       // A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
-      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
+      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${understandNote}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
       .run();
 
     const statsRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();
