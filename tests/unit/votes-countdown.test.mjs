@@ -34,3 +34,13 @@ test("missing or invalid closes_at never prints NaN or undefined", () => {
   }
 });
 test("a huge future value stays a clean day count", () => assert.match(at(1e12), /^Closes in \d+ days$/));
+
+// Pins found by an independent review: the day rounding and the 60 s "Closing now" window.
+test("60 hours rounds to 3 days and 59 h 59 m to 2 days", () => {
+  assert.equal(at(60 * H), "Closes in 3 days");
+  assert.equal(at(60 * H - M), "Closes in 2 days");
+});
+test("59 s past close reads Closing now; 60 s past reads Closed", () => {
+  assert.equal(at(-59 * 1000), "Closing now");
+  assert.equal(at(-60 * 1000), "Closed");
+});
