@@ -59,7 +59,7 @@ import {
   QUIZ_DATA,
 } from "./bot-data.js";
 import { loadRoster } from "./party-source.js";
-import { tonightLines } from "./tonight-copy.js";
+import { tonightLines, LAUNCH_EPOCH } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { partyForMember } from "./sheet-privacy.js";
 import { sheetValueProblem } from "./sheet-values.js";
@@ -965,10 +965,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           ],
         },
       ];
-      // INTEREST_NUDGES: one-tap answers. "I'm in" (the existing sign-up button) only while this member's RSVP is empty.
+      // INTEREST_NUDGES: one-tap answers. "I'm in" (the existing sign-up button) only before launch and while this member's RSVP is empty:
+      // after launch the sign-up record is history, and a click would write rsvp:in into it.
       if (await interestOn(env)) {
-        const mine = (signups.entries || []).find((e) => (e.name || "").toLowerCase() === byName.toLowerCase()) || {};
-        const nudges = [...(member && !mine.rsvp ? [{ type: 2, style: 3, label: "I'm in tonight", custom_id: "signup:rsvp:in" }] : []), askLevelButton(), countsButton()];
+        const mine = (signups.entries || []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
+        const beforeLaunch = Math.floor(Date.now() / 1000) < LAUNCH_EPOCH;
+        const nudges = [...(member && beforeLaunch && !mine.rsvp ? [{ type: 2, style: 3, label: "I'm in tonight", custom_id: "signup:rsvp:in" }] : []), askLevelButton(), countsButton()];
         tonightRows.push({ type: 1, components: nudges });
       }
       return new Response(

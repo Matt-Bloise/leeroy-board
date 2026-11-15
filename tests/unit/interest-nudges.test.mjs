@@ -6,10 +6,11 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
+import { LAUNCH_EPOCH } from "../../infrastructure/worker/tonight-copy.js";
 import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js";
 import { isPrivateKvKey, isDeniedKvKey } from "../../infrastructure/worker/config.js";
 import {
-  collectInterest, reactionCounts, eventCounts, ownPosts, countsReply, askLevelModal, questionFromModal,
+  collectInterest, reactionCounts, eventCounts, ownPosts, countsReply, askLevelModal, questionFromModal, MAX_EMOJI,
   INTEREST_COUNTS_KEY, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID, ASK_LEVEL_PREFILL, MAX_POSTS, RECENT_MS,
 } from "../../infrastructure/worker/interest.js";
 
@@ -234,6 +235,13 @@ async function send(i, env) {
   await Promise.allSettled(pending);
   return res.json();
 }
+// Runs fn with Date.now() fixed, so the tests do not depend on today being before or after launch night.
+async function atTime(epochSec, fn) {
+  const real = Date.now;
+  Date.now = () => epochSec * 1000;
+  try { return await fn(); } finally { Date.now = real; }
+}
+const BEFORE_LAUNCH = LAUNCH_EPOCH - 3 * 86400, AFTER_LAUNCH = LAUNCH_EPOCH + 3 * 86400;
 const ids = (body) => (body.data.components || []).flatMap((r) => r.components || []).map((c) => c.custom_id || c.url);
 
 test("flag off: /tonight and /signup keep exactly the old buttons and words", async () => {
@@ -247,14 +255,14 @@ test("flag off: /tonight and /signup keep exactly the old buttons and words", as
 test("flag on: /tonight offers I'm in (RSVP empty), the ask button and the counts button; /signup gets the ask and counts row", async () => {
   const db = seeded();
   seed(db, { signups: { entries: [] } });
-  const t = await send(interaction(2, { id: "c1", name: "tonight", type: 1 }), chatEnv("on", db));
+  const t = await atTime(BEFORE_LAUNCH, () => send(interaction(2, { id: "c1", name: "tonight", type: 1 }), chatEnv("on", db)));
   assert.deepEqual(ids(t), ["https://board.test/#tonight", "signup:rsvp:in", ASK_LEVEL_BUTTON_ID, COUNTS_BUTTON_ID]);
   const s = await send(interaction(2, { id: "c2", name: "signup", type: 1 }), chatEnv("on", db));
   assert.deepEqual(ids(s), ["signup:rsvp:in", "signup:rsvp:maybe", "signup:rsvp:out", "https://board.test/#signups", ASK_LEVEL_BUTTON_ID, COUNTS_BUTTON_ID]);
   assert.match(s.data.content, /^One tap answers it/);
   for (const b of [t, s]) assert.ok(b.data.components.every((r) => r.components.length <= 5), "at most five buttons per row");
   // RSVP already given: no I'm in button on /tonight, no nudge line on /signup
-  const t2 = await send(interaction(2, { id: "c3", name: "tonight", type: 1 }), chatEnv("on"));
+  const t2 = await atTime(BEFORE_LAUNCH, () => send(interaction(2, { id: "c3", name: "tonight", type: 1 }), chatEnv("on")));
   assert.ok(!ids(t2).includes("signup:rsvp:in"));
   const s2 = await send(interaction(2, { id: "c4", name: "signup", type: 1 }), chatEnv("on"));
   assert.doesNotMatch(s2.data.content, /One tap/);
@@ -293,4 +301,153 @@ test("flag on: the counts button shows the stored counts and writes nothing; fla
   assert.equal(outbound.length, 0, "no Discord call to show counts");
   const off = await send(interaction(3, { custom_id: COUNTS_BUTTON_ID, component_type: 2 }), chatEnv("off"));
   assert.equal(off.data.content, "Command received by Leeroy.");
+});
+
+// ---- review fixes (PR 326 review) -----------------------------------------------------------------------------------------------
+test("flag on, after launch night: /tonight has no I'm in button (it would write rsvp:in into a record the copy calls history), only the ask and counts buttons", async () => {
+  const db = seeded();
+  seed(db, { signups: { entries: [] } });
+  const t = await atTime(AFTER_LAUNCH, () => send(interaction(2, { id: "c1", name: "tonight", type: 1 }), chatEnv("on", db)));
+  assert.deepEqual(ids(t), ["https://board.test/#tonight", ASK_LEVEL_BUTTON_ID, COUNTS_BUTTON_ID]);
+});
+
+test("flag on: a sign-up row whose name is not a string does not break /tonight", async () => {
+  const db = seeded();
+  seed(db, { signups: { entries: [{ name: 5, rsvp: "in" }, { name: { a: 1 } }, { name: null, rsvp: "maybe" }, { rsvp: "in" }] } });
+  const t = await atTime(AFTER_LAUNCH, () => send(interaction(2, { id: "c1", name: "tonight", type: 1 }), chatEnv("on", db)));
+  assert.equal(t.type, 4);
+  assert.deepEqual(ids(t), ["https://board.test/#tonight", ASK_LEVEL_BUTTON_ID, COUNTS_BUTTON_ID]);
+});
+
+test("flag off, empty RSVP: /signup shows no nudge line and no second button row (removing `nudge &&` must be caught)", async () => {
+  for (const flag of [null, "off"]) {
+    const db = seeded();
+    seed(db, { signups: { entries: [] } });
+    const s = await send(interaction(2, { id: "c2", name: "signup", type: 1 }), chatEnv(flag, db));
+    assert.deepEqual(ids(s), ["signup:rsvp:in", "signup:rsvp:maybe", "signup:rsvp:out", "https://board.test/#signups"]);
+    assert.doesNotMatch(s.data.content, /One tap/);
+  }
+});
+
+test("reactionCounts: emoji named constructor, toString, valueOf or __proto__ are counted as numbers and respect MAX_EMOJI", () => {
+  const word = (name, count) => ({ count, emoji: { name } });
+  const r = reactionCounts({ author: { bot: true }, reactions: [word("constructor", 2), word("toString", 3), word("valueOf", 4), word("__proto__", 5), word("constructor", 1)] });
+  assert.equal(r.total, 15);
+  assert.deepEqual(Object.entries(r.emoji).sort(), [["__proto__", 5], ["constructor", 3], ["toString", 3], ["valueOf", 4]].sort());
+  assert.ok(Object.values(r.emoji).every((n) => typeof n === "number"));
+  const many = [];
+  for (let i = 0; i < MAX_EMOJI; i += 1) many.push(word(`e${i}`, 1));
+  const capped = reactionCounts({ author: { bot: true }, reactions: [...many, word("constructor", 1), word("e0", 1)] });
+  assert.equal(Object.keys(capped.emoji).length, MAX_EMOJI, "a word that is not yet counted does not get past the cap");
+  assert.equal(capped.emoji.e0, 2);
+  assert.ok(!Object.hasOwn(capped.emoji, "constructor"));
+});
+
+// A failed read must not overwrite the stored counts or their `at`.
+const PREV = { at: "2026-11-14T12:00:00Z", events: { "raid-night": { interested: 1 } }, posts: { "card:signups": { total: 2, emoji: { x: 2 } } } };
+const withPrev = (db) => (seed(db, { [INTEREST_COUNTS_KEY]: PREV }), db);
+const run = (db, fetchImpl) => collectInterest({ env: { DB: db, DISCORD_BOT_TOKEN: TOKEN, INTEREST_NUDGES: "on" }, fetchImpl, now: NOW });
+function breakFetch(frag, how) {
+  const d = fakeDiscord();
+  return async (url, init) => {
+    if (!String(url).includes(frag)) return d.fetchImpl(url, init);
+    if (how === "throw") throw new Error("network down");
+    if (how === "500") return new Response("oops", { status: 500 });
+    if (how === "502") return new Response("<html>bad gateway</html>", { status: 502 });
+    if (how === "garbage") return new Response("<html>not json</html>", { status: 200 });
+    if (how === "wrong-shape") return Response.json({ message: "an object, not a list" });
+    throw new Error(how);
+  };
+}
+
+test("a failed Discord read (network throw, 500, 502, malformed success body) keeps the previous counts and their `at`, and marks the run failed", async () => {
+  const cases = [["scheduled-events", "throw"], ["scheduled-events", "500"], ["scheduled-events", "garbage"], ["scheduled-events", "wrong-shape"], [`/messages/${CARD_MSG}`, "throw"], [`/messages/${MOMENT_MSG}`, "502"], [`/messages/${CARD_MSG}`, "garbage"]];
+  for (const [frag, how] of cases) {
+    const db = withPrev(seeded());
+    const r = await run(db, breakFetch(frag, how));
+    assert.equal(r.ok, false, `${how} ${frag}`);
+    assert.equal(r.wrote, false);
+    const row = kv(db, INTEREST_COUNTS_KEY);
+    assert.equal(row.at, PREV.at, `${how} ${frag}: at kept`);
+    assert.deepEqual(row.events, PREV.events);
+    assert.deepEqual(row.posts, PREV.posts);
+    assert.equal(row.failedAt, new Date(NOW).toISOString());
+    assert.match(countsReply(row, null), /last count run failed/);
+    assert.match(countsReply(row, null), /\*\*raid-night\*\*: 1 interested/);
+  }
+  // a good run afterwards clears the mark
+  const db = withPrev(seeded());
+  await run(db, breakFetch("scheduled-events", "500"));
+  await run(db, fakeDiscord().fetchImpl);
+  assert.equal(kv(db, INTEREST_COUNTS_KEY).failedAt, undefined);
+  assert.equal(kv(db, INTEREST_COUNTS_KEY).at, new Date(NOW).toISOString());
+});
+
+test("a failed first run (no stored counts): nothing is invented, and the reply says unavailable, not 'Nothing counted yet'", async () => {
+  const db = seeded();
+  await run(db, breakFetch("scheduled-events", "500"));
+  const row = kv(db, INTEREST_COUNTS_KEY);
+  assert.deepEqual([row.events, row.posts, row.at], [{}, {}, null]);
+  assert.match(countsReply(row, null), /^Counts are unavailable/);
+  assert.doesNotMatch(countsReply(row, null), /Nothing counted yet/);
+});
+
+test("a stopped run (401/403/429) also marks the stored counts stale while keeping them", async () => {
+  const db = withPrev(seeded());
+  await run(db, fakeDiscord({ status: { "scheduled-events": 403 } }).fetchImpl);
+  const row = kv(db, INTEREST_COUNTS_KEY);
+  assert.equal(row.at, PREV.at);
+  assert.deepEqual(row.events, PREV.events);
+  assert.ok(row.failedAt);
+});
+
+test("a D1 read error or corrupt JSON in an input row keeps the stored counts (it is not read as 'no events, no posts')", async () => {
+  for (const mode of ["throw", "corrupt"]) {
+    const db = withPrev(seeded());
+    let env;
+    if (mode === "corrupt") {
+      db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run("cards", "{not json", "2026-11-01T00:00:00Z");
+      env = { DB: db };
+    } else {
+      env = { DB: { ...db, prepare: (sql) => { const st = db.prepare(sql); return { bind: (...a) => (a[0] === "cards" ? { first: async () => { throw new Error("d1 down"); } } : st.bind(...a)) }; } } };
+    }
+    const r = await collectInterest({ env: { ...env, DISCORD_BOT_TOKEN: TOKEN, INTEREST_NUDGES: "on" }, fetchImpl: fakeDiscord().fetchImpl, now: NOW });
+    assert.equal(r.ok, false, mode);
+    assert.equal(r.wrote, false);
+    const row = kv(db, INTEREST_COUNTS_KEY);
+    assert.equal(row.at, PREV.at, mode);
+    assert.deepEqual(row.posts, PREV.posts);
+    assert.ok(row.failedAt);
+  }
+});
+
+test("the counts button: an unreadable counts row says unavailable, not 'Nothing counted yet'", async () => {
+  const db = seeded();
+  db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run(INTEREST_COUNTS_KEY, "{broken", "2026-11-01T00:00:00Z");
+  const res = await send(interaction(3, { custom_id: COUNTS_BUTTON_ID, component_type: 2 }), chatEnv("on", db));
+  assert.match(res.data.content, /unavailable/);
+  assert.doesNotMatch(res.data.content, /Nothing counted yet/);
+});
+
+test("countsReply stays under Discord's 2000-character limit at every size, with complete lines only, ending 'and N more'", () => {
+  const longName = "N".repeat(100);
+  for (const n of [0, 1, 5, 12, 20, 40, 80]) {
+    const events = {}, sched = [];
+    for (let i = 0; i < n; i += 1) { events[`key-${i}`] = { interested: i }; sched.push({ key: `key-${i}`, name: `${longName}${i}` }); }
+    const posts = {};
+    for (let i = 0; i < n; i += 1) {
+      const emoji = {};
+      for (let j = 0; j < MAX_EMOJI; j += 1) emoji[`${"E".repeat(31)}${j}`] = j + 1;
+      posts[`moment:post-${i}`] = { total: 55, emoji };
+    }
+    const text = countsReply({ at: new Date(NOW).toISOString(), events, posts }, sched);
+    assert.ok(text.length <= 2000, `${n}: ${text.length}`);
+    const lines = text.split("\n");
+    const bullets = lines.filter((l) => l.startsWith("\u2022"));
+    const total = n * 2;
+    if (bullets.length < total) assert.equal(lines.at(-1), `and ${total - bullets.length} more`, `${n}`);
+    else assert.ok(!lines.some((l) => /^and \d+ more$/.test(l)));
+    for (const l of lines.slice(1)) assert.ok(l.startsWith("\u2022") || /^and \d+ more$/.test(l), `a complete line only: ${l.slice(0, 40)}`);
+    for (const l of bullets) assert.ok(/ (interested|reactions( \(.*\))?)$/.test(l), `line not cut: ${l.slice(-30)}`);
+  }
 });

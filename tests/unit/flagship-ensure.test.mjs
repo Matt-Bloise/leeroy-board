@@ -20,6 +20,8 @@ test("parseKeyList: one key per line, comments and blanks ignored, duplicates dr
   for (const bad of ["two words", "$(rm -rf)", "a;b", "--disabled", "-x", "KEY\u0000", "a".repeat(80)]) assert.throws(() => parseKeyList(bad), /not a flag key/, bad);
 });
 
+const committedKeys = () => parseKeyList(fs.readFileSync(path.join(ROOT, "infrastructure/flagship-flags.txt"), "utf8"));
+
 test("the committed key list parses and is not empty", () => {
   const keys = parseKeyList(fs.readFileSync(path.join(ROOT, "infrastructure/flagship-flags.txt"), "utf8"));
   assert.ok(keys.includes("D1_FEED"));
@@ -178,19 +180,21 @@ test("CLI: creates the missing key disabled, leaves the existing key, exit 0", (
   const f = fake({ list: JSON.stringify([{ key: "OTHER" }]) });
   const r = cli(f);
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.deepEqual(f.calls().map((c) => c.slice(2, 3)[0]), ["list", "create", "create"]);
-  assert.deepEqual(f.calls()[1], ["flagship", "flags", "create", APP, "D1_FEED", "--disabled", "--remote"]);
-  assert.deepEqual(f.calls()[2], ["flagship", "flags", "create", APP, "INTEREST_NUDGES", "--disabled", "--remote"]);
-  assert.match(r.stdout, /created D1_FEED \(disabled/);
-  assert.match(r.stdout, /created INTEREST_NUDGES \(disabled/);
+  const keys = committedKeys(); // every key in the committed list is created, in file order: nothing is hardcoded here
+  assert.deepEqual(f.calls().map((c) => c.slice(2, 3)[0]), ["list", ...keys.map(() => "create")]);
+  keys.forEach((k, i) => {
+    assert.deepEqual(f.calls()[i + 1], ["flagship", "flags", "create", APP, k, "--disabled", "--remote"]);
+    assert.match(r.stdout, new RegExp(`created ${k} \\(disabled`));
+  });
 });
 
 test("CLI: the key already exists: no create, exit 0", () => {
-  const f = fake({ list: JSON.stringify({ flags: [{ key: "D1_FEED", enabled: true }, { key: "INTEREST_NUDGES", enabled: false }] }) });
+  const keys = committedKeys();
+  const f = fake({ list: JSON.stringify({ flags: keys.map((key, i) => ({ key, enabled: i % 2 === 0 })) }) });
   const r = cli(f);
   assert.equal(r.status, 0);
   assert.equal(f.calls().length, 1);
-  assert.match(r.stdout, /D1_FEED exists, left as it is/);
+  for (const k of keys) assert.match(r.stdout, new RegExp(`${k} exists, left as it is`));
 });
 
 test("CLI: unreadable list output -> no create, a ::warning:: annotation, exit 1", () => {

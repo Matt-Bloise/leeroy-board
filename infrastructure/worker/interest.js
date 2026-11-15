@@ -73,7 +73,7 @@ export function questionFromModal(components) {
 export function reactionCounts(message) {
   if (!message || typeof message !== "object") return null;
   if (!message.author || message.author.bot !== true) return null;
-  const emoji = {};
+  const emoji = Object.create(null); // "constructor", "toString" and friends are names like any other
   let total = 0;
   for (const r of Array.isArray(message.reactions) ? message.reactions : []) {
     const n = Number(r && r.count);
@@ -81,9 +81,10 @@ export function reactionCounts(message) {
     const name = r && r.emoji && typeof r.emoji.name === "string" ? r.emoji.name.slice(0, 32) : "";
     if (!name) continue;
     total += n;
-    if (Object.keys(emoji).length < MAX_EMOJI || name in emoji) emoji[name] = (emoji[name] || 0) + n;
+    const seen = Object.hasOwn(emoji, name);
+    if (seen || Object.keys(emoji).length < MAX_EMOJI) emoji[name] = (seen ? emoji[name] : 0) + n;
   }
-  return { total, emoji };
+  return { total, emoji: { ...emoji } };
 }
 
 // Interested counts for the events in our own map. `list` is Discord's guild event list; anything not in the map is dropped.
@@ -124,12 +125,21 @@ export function ownPosts({ cards, momentsState, momentsSchedule, now }) {
 }
 
 // ---- the cron run -------------------------------------------------------------------------------------------------------------------
+// null for a missing row. THROWS on a D1 error or corrupt JSON: a failed read is not an empty answer.
 async function readKv(db, key) {
+  const row = await db.prepare("SELECT json FROM kv_state WHERE key = ?").bind(key).first();
+  return row ? JSON.parse(row.json) : null;
+}
+
+// A failed run keeps the previous snapshot and its `at`; it only adds failedAt, so the counts reply can say they are stale.
+async function markFailed(db, now) {
   try {
-    const row = await db.prepare("SELECT json FROM kv_state WHERE key = ?").bind(key).first();
-    return row ? JSON.parse(row.json) : null;
+    const prev = await readKv(db, INTEREST_COUNTS_KEY);
+    const base = prev && typeof prev === "object" && !Array.isArray(prev) ? prev : { at: null, events: {}, posts: {} };
+    const at = new Date(now).toISOString();
+    await db.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").bind(INTEREST_COUNTS_KEY, JSON.stringify({ ...base, failedAt: at }), at).run();
   } catch {
-    return null;
+    /* the stored row is unreadable or unwritable: leave it exactly as it is */
   }
 }
 
@@ -140,13 +150,19 @@ export async function collectInterest({ env, fetchImpl = fetch, now = Date.now()
   if (!(await interestOn(env))) return { ok: true, skipped: "off", wrote: false };
   if (!env || !env.DB) return { ok: false, skipped: "no_db", wrote: false };
   if (!env.DISCORD_BOT_TOKEN) return { ok: false, skipped: "no_token", wrote: false };
-  const [roster, map, cards, momentsState, momentsSchedule] = await Promise.all([
-    readKv(env.DB, "discord_roster"),
-    readKv(env.DB, "scheduled_events"),
-    readKv(env.DB, "cards"),
-    readKv(env.DB, "moments_state"),
-    readKv(env.DB, "moments"),
-  ]);
+  let roster, map, cards, momentsState, momentsSchedule;
+  try {
+    [roster, map, cards, momentsState, momentsSchedule] = await Promise.all([
+      readKv(env.DB, "discord_roster"),
+      readKv(env.DB, "scheduled_events"),
+      readKv(env.DB, "cards"),
+      readKv(env.DB, "moments_state"),
+      readKv(env.DB, "moments"),
+    ]);
+  } catch {
+    await markFailed(env.DB, now);
+    return { ok: false, failed: "kv_read", wrote: false };
+  }
   const guildId = roster && ID.test(String(roster.guildId || "")) ? String(roster.guildId) : null;
   const headers = { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` };
   const get = async (path) => {
@@ -160,20 +176,34 @@ export async function collectInterest({ env, fetchImpl = fetch, now = Date.now()
     }
   };
   const stop = (r) => (r.status === 401 ? "unauthorized" : r.status === 403 ? "forbidden" : r.status === 429 ? "rate_limited" : null);
+  // A read that did not answer (network error, 5xx) or answered with a body we cannot use fails the run.
+  const broken = (r, shape) => r.status === 0 || r.status >= 500 || (r.ok && !shape(r.json));
+  const fail = async (why) => {
+    await markFailed(env.DB, now);
+    return { ok: false, failed: why, wrote: false };
+  };
 
   let events = {};
   const hasEvents = map && typeof map === "object" && Object.keys(map).length > 0;
   if (guildId && hasEvents) {
     const r = await get(`/guilds/${guildId}/scheduled-events?with_user_count=true`);
-    if (stop(r)) return { ok: false, stopped: stop(r), wrote: false };
+    if (stop(r)) {
+      await markFailed(env.DB, now);
+      return { ok: false, stopped: stop(r), wrote: false };
+    }
+    if (broken(r, Array.isArray)) return fail("events_read");
     if (r.ok) events = eventCounts(r.json, map);
   }
 
   const posts = {};
   for (const p of ownPosts({ cards, momentsState, momentsSchedule, now })) {
     const r = await get(`/channels/${p.channel}/messages/${p.message}`);
-    if (stop(r)) return { ok: false, stopped: stop(r), wrote: false };
-    if (!r.ok) continue; // deleted or unreadable: leave it out
+    if (stop(r)) {
+      await markFailed(env.DB, now);
+      return { ok: false, stopped: stop(r), wrote: false };
+    }
+    if (broken(r, (j) => j && typeof j === "object" && !Array.isArray(j))) return fail("post_read");
+    if (!r.ok) continue; // deleted (404) or not ours to read: leave it out
     const counts = reactionCounts(r.json);
     if (counts) posts[p.ref] = counts;
   }
@@ -184,8 +214,10 @@ export async function collectInterest({ env, fetchImpl = fetch, now = Date.now()
 }
 
 // ---- showing the counts inside Discord ---------------------------------------------------------------------------------------------
+export const COUNTS_REPLY_MAX = 1900; // Discord's content limit is 2000; leave room for the "and N more" line
 // Ephemeral reply text. Event labels come from our own events_schedule names; posts are named by kind.
 export function countsReply(doc, schedule) {
+  if (doc && doc.unavailable) return "Counts are unavailable right now: Leeroy could not read them. Try again later.";
   const names = new Map((Array.isArray(schedule) ? schedule : []).filter((e) => e && typeof e.key === "string").map((e) => [e.key, String(e.name || e.key).slice(0, 100)]));
   const lines = [];
   const events = doc && doc.events && typeof doc.events === "object" ? doc.events : {};
@@ -196,13 +228,34 @@ export function countsReply(doc, schedule) {
     const parts = Object.entries((p && p.emoji) || {}).map(([k, n]) => `${k} ${n}`);
     lines.push(`• ${label}: ${Number(p && p.total) || 0} reactions${parts.length ? ` (${parts.join(", ")})` : ""}`);
   }
-  if (!lines.length) return "Nothing counted yet. Leeroy counts Interested clicks and reactions on his own posts every six hours.";
+  const failed = Boolean(doc && doc.failedAt);
+  if (!lines.length) {
+    return failed
+      ? "Counts are unavailable: the last count run failed and nothing has been counted before. Leeroy tries again every six hours."
+      : "Nothing counted yet. Leeroy counts Interested clicks and reactions on his own posts every six hours.";
+  }
   const t = Date.parse(doc.at);
   const when = Number.isFinite(t) ? ` (counted <t:${Math.floor(t / 1000)}:R>)` : "";
-  return [`**Interest so far**${when}. Counts only; nobody is signed up by a click.`, ...lines].join("\n");
+  const stale = failed ? " The last count run failed, so these numbers may be out of date." : "";
+  const head = `**Interest so far**${when}. Counts only; nobody is signed up by a click.${stale}`;
+  const out = [head];
+  let used = head.length;
+  let shown = 0;
+  for (const line of lines) {
+    if (used + 1 + line.length > COUNTS_REPLY_MAX) break;
+    out.push(line);
+    used += 1 + line.length;
+    shown += 1;
+  }
+  if (shown < lines.length) out.push(`and ${lines.length - shown} more`);
+  return out.join("\n");
 }
 
 export async function loadCountsReply(env) {
-  const [doc, schedule] = await Promise.all([readKv(env.DB, INTEREST_COUNTS_KEY), readKv(env.DB, "events_schedule")]);
-  return countsReply(doc, schedule);
+  try {
+    const [doc, schedule] = await Promise.all([readKv(env.DB, INTEREST_COUNTS_KEY), readKv(env.DB, "events_schedule")]);
+    return countsReply(doc, schedule);
+  } catch {
+    return countsReply({ unavailable: true }, null);
+  }
 }
