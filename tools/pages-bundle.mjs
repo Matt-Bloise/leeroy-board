@@ -37,7 +37,11 @@ export function stripLinks(text) {
 export const STRIPPED_FILES = Object.freeze({ "data/atlas/links.json": stripLinks });
 
 const norm = (p) => String(p).split(path.sep).join("/").replace(/^\.?\//, "");
-export const isPrivatePath = (rel) => PRIVATE_DATA_FILES.includes(norm(rel));
+// The form a request path is compared in. A Windows or macOS file system (the local static server) opens "Data/PARTY.json", "data/party.json." and "data/party.json::$DATA" as the same file,
+// so the comparison ignores case, trailing dots and spaces, and an NTFS stream suffix. The deploy (Linux) is case-sensitive; the stricter local rule can only hide more.
+export const canonPath = (rel) => norm(rel).replace(/::.*$/, "").replace(/[. ]+$/, "").toLowerCase();
+export const isPrivatePath = (rel) => PRIVATE_DATA_FILES.includes(canonPath(rel));
+export const strippedFor = (rel) => STRIPPED_FILES[canonPath(rel)] || null;
 
 function* walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

@@ -8,6 +8,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pageUrl } from "../helpers/page-url.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
+import { assertMemberState } from "../helpers/member-state.mjs";
+const MEMBER = standIn(0).name; // the first member of the party the API stub serves (never a literal name)
 import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -98,12 +101,13 @@ async function measureAll(page, dpr) {
   return got;
 }
 const browser = stubbed(await pw.chromium.launch());
+await assertMemberState(browser, pageUrl(BASE, { params: { preview: "1" } }), MEMBER); // fails loudly when MEMBER is not on the board (else the suite runs as nobody chosen)
 try {
   const mk = async (member, roomOff = false) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, serviceWorkers: "block" });
     await ctx.addInitScript(CLS_JS);
     if (roomOff) await ctx.addInitScript(() => { try { localStorage.setItem("board-room", "off"); } catch (e) {} }); /* contrast contexts only: the WebGL room is not under test there, and a software renderer made 13 screenshots time out on CI */
-    if (member) await ctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); } catch (e) {} });
+    if (member) await ctx.addInitScript((n) => { try { localStorage.setItem("board-as", n); localStorage.setItem("board-hinted", "1"); } catch (e) {} }, MEMBER);
     return ctx;
   };
   // first visit: Next steps over the wall, nobody signed in
@@ -156,7 +160,7 @@ try {
     await cctx.close(); }
   // wide screen: the same contrast rule at 1366x768
   { const wctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1, serviceWorkers: "block" });
-    await wctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} });
+    await wctx.addInitScript((n) => { try { localStorage.setItem("board-as", n); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} }, MEMBER);
     const wp = await wctx.newPage(); await wp.goto(url, { waitUntil: "load" }); await wp.waitForTimeout(3000);
     await wp.locator("#scene-close").click().catch(() => {}); await wp.waitForTimeout(2200);
     const wg = await measureAll(wp, 1);

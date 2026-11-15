@@ -15,9 +15,11 @@ The files that describe the group's members are never published as static files.
 
 1. Add its repo path to `PRIVATE_DATA_FILES` in `tools/pages-bundle.mjs` (a file that also holds public records the page needs: add a reducer to `STRIPPED_FILES` instead, and recompute any counts it derives).
 2. Serve it from the Worker only: add the name to `PUBLIC_DATA_DOCS` (`public-docs.js`) and to `MEMBER_DOCS` and `projectDataDoc` (`public-party.js`) so it passes the privacy projection; read it in the page through `dataGet` / `BoardFetch`, never `fetch("data/<name>.json")`.
-3. Add the path to `EXPECTED_PRIVATE` in `tests/unit/pages-bundle.test.mjs` (the test fails until you do, and again if the list and `MEMBER_DOCS` disagree), and to the 404 list in `tests/api/api.test.mjs`.
+3. Add the path to `EXPECTED_PRIVATE` in `tests/unit/pages-bundle.test.mjs` (the test fails until you do; it also fails when a `MEMBER_DOCS` document other than `launch` is missing from the list. `launch` is published on purpose, its repo copy has no member rows, and a test checks that. The list is not pinned equal to `MEMBER_DOCS`: it also holds `signups`), and to the 404 list in `tests/api/api.test.mjs`.
 
 ## Not covered here
 
 - The Worker's `/api/atlas/links` still carries the `start_zone` records (no projection yet); only the static copy is reduced.
 - Files stay in git history, and in the repository on GitHub, whatever the bundle holds.
+- Older Pages deployments are not touched. Per-deployment URLs and `pr-N` preview aliases that were published before this change keep serving the old files until those deployments are deleted (a production action for the owner), and an open PR on an older branch republishes them on its next preview deploy: rebase it onto master.
+- `/data/*` is cached for `max-age=300` (`_headers`), so a copy fetched shortly before a deploy can be served for up to five minutes after it.

@@ -15,7 +15,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { PRIVATE_DATA_FILES, STRIPPED_FILES, BUNDLE_ITEMS, buildBundle, assertBundleClean, stripLinks } from "../../tools/pages-bundle.mjs";
+import { PRIVATE_DATA_FILES, STRIPPED_FILES, BUNDLE_ITEMS, buildBundle, assertBundleClean, stripLinks, isPrivatePath, strippedFor } from "../../tools/pages-bundle.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
@@ -33,14 +33,39 @@ test("the exclusion list names the five member documents plus the sign-ups, and 
   assert.ok(BUNDLE_ITEMS.includes("data"), "the data folder is still published (without the private files)");
 });
 
-test("every document the Worker projects as member data is excluded from the bundle (public-party.js MEMBER_DOCS)", () => {
+// What is pinned, exactly: every name in public-party.js MEMBER_DOCS except launch is on the exclusion list (so a document added to MEMBER_DOCS fails here until it is excluded or the
+// exception below is argued), and launch's repo copy is checked to hold no member row or field (next test). The exclusion list is NOT pinned equal to MEMBER_DOCS: it also holds signups,
+// which the Worker serves without a projection but which VAREN decided is Worker-only too.
+test("every MEMBER_DOCS document except launch is on the exclusion list (public-party.js)", () => {
   const src = read("infrastructure/worker/public-party.js");
   const m = /export const MEMBER_DOCS = Object\.freeze\(\[([^\]]*)\]\)/.exec(src);
   assert.ok(m, "MEMBER_DOCS not found in public-party.js");
   const names = [...m[1].matchAll(/"([a-z-]+)"/g)].map((x) => x[1]);
-  // launch is a list of launch states with no build facts in the repo copy (the Worker removes a hidden state at read time); it is the one projected document not excluded
+  // launch is intentionally not excluded: its repo copy has no member rows (event, voice, moments, checklist); the Worker removes a hidden launch_state from rows it stores at read time
   const PUBLISHED_ON_PURPOSE = new Set(["launch"]);
   for (const n of names) if (!PUBLISHED_ON_PURPOSE.has(n)) assert.ok(PRIVATE_DATA_FILES.includes(`data/${n}.json`), `data/${n}.json is a projected member document but is not on the exclusion list`);
+});
+
+test("a MEMBER_DOCS document that is published (launch) holds no member row or member field in its repo copy", () => {
+  const src = read("infrastructure/worker/public-party.js");
+  const m = /export const MEMBER_DOCS = Object\.freeze\(\[([^\]]*)\]\)/.exec(src);
+  const published = [...m[1].matchAll(/"([a-z-]+)"/g)].map((x) => x[1]).filter((n) => !PRIVATE_DATA_FILES.includes(`data/${n}.json`));
+  assert.deepEqual(published, ["launch"], "only launch is projected and published: a new one needs this test to be extended on purpose");
+  const names = JSON.parse(read("data/party.json")).members.map((x) => String(x.name));
+  const FIELDS = ["race", "class", "class_key", "spec", "spec_status", "professions", "start_zone", "board_line", "role_detail", "state", "slug", "launch_state", "members"];
+  for (const n of published) {
+    const raw = read(`data/${n}.json`);
+    const problems = [];
+    const visit = (o, at) => {
+      if (Array.isArray(o)) { o.forEach((x, i) => visit(x, `${at}[${i}]`)); return; }
+      if (!o || typeof o !== "object") return;
+      for (const k of FIELDS) if (k in o) problems.push(`${at}.${k}`);
+      Object.entries(o).forEach(([k, v]) => visit(v, `${at}.${k}`));
+    };
+    visit(JSON.parse(raw), n);
+    for (const name of names) if (new RegExp(`(?<![A-Za-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9])`).test(raw)) problems.push("a member name");
+    assert.deepEqual(problems, [], `data/${n}.json is published but carries member rows or fields`);
+  }
 });
 
 for (const wf of WORKFLOWS) {
@@ -103,13 +128,24 @@ test("a simulated bundle carries no member field next to a member name, in any f
     }
     assert.ok(jsonFiles > 20, `scanned ${jsonFiles} JSON files`);
     assert.deepEqual(hits, []);
-    // no file of the bundle (any type) holds a member's full name next to the word for a class they play on one line of a code or markup file
+    // every member name from data/party.json (read now, never written here), as a whole word and as written, in every text file of the bundle. The only allowed places are listed with the reason.
+    const ALLOWED = [
+      ["privacy/index.html", "the operator's own name in the sentence saying who runs the site"],
+      ["scenes/probe.js", "the operator's name in the hardware probe's own send button and copy (an operator tool, not a member's build)"],
+      ["data/actions.json", "the operator's name in a step's label that points at scenes/probe.js"],
+    ];
+    const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const found = new Set();
     for (const f of walk(out)) {
-      if (!/\.(js|html|css)$/.test(f)) continue;
-      const text = fs.readFileSync(f, "utf8").toLowerCase();
-      for (const n of names) if (n.length >= 8 && text.includes(n)) hits.push(`${path.relative(out, f)}: mentions a member name`);
+      if (!/\.(js|html|css|json|txt|xml|svg|md|webmanifest)$/i.test(f) && path.basename(f) !== "_headers") continue;
+      const text = fs.readFileSync(f, "utf8"), rel = path.relative(out, f).split(path.sep).join("/");
+      for (const x of members.map((m) => String(m.name))) {
+        if (!new RegExp(`(?<![A-Za-z0-9])${esc(x)}(?![A-Za-z0-9])`).test(text)) continue;
+        if (ALLOWED.some(([file]) => file === rel)) found.add(rel); else hits.push(`${rel}: mentions a member name`);
+      }
     }
     assert.deepEqual(hits, []);
+    for (const [file, why] of ALLOWED) assert.ok(found.has(file), `allow-list entry ${file} (${why}) no longer matches anything: remove it`);
   } finally { rmrf(out); }
 });
 
@@ -148,6 +184,14 @@ test("stripLinks removes only start_zone records and their counts", () => {
   assert.equal(o.keep, 1);
 });
 
+test("the private-path match ignores case, trailing dots and spaces and stream suffixes (a Windows or macOS file system opens them as the same file)", () => {
+  for (const rel of PRIVATE_DATA_FILES) {
+    for (const v of [rel, rel.toUpperCase(), rel.replace(/^data/, "Data").replace(/json$/, "JSON"), rel + ".", rel + " ", rel + "::$DATA", "./" + rel]) assert.equal(isPrivatePath(v), true, v);
+  }
+  assert.equal(isPrivatePath("data/timeline.json"), false);
+  assert.ok(strippedFor("DATA/Atlas/Links.json"), "the reduced links file is found case-insensitively too");
+});
+
 test("the local static server answers like the deploy: 404 for the private files, a reduced links file, public data as before", async (t) => {
   const port = await new Promise((res, rej) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); s.on("error", rej); });
   const srv = spawn(process.execPath, [path.join(root, "tools", "static-server.mjs"), String(port), root], { stdio: "ignore" });
@@ -155,14 +199,16 @@ test("the local static server answers like the deploy: 404 for the private files
     let up = false;
     for (let i = 0; i < 40 && !up; i++) { try { await fetch(`http://127.0.0.1:${port}/robots.txt`); up = true; } catch { await new Promise((r) => setTimeout(r, 150)); } }
     assert.ok(up, "the static server came up");
-    for (const rel of PRIVATE_DATA_FILES) {
+    for (const rel of PRIVATE_DATA_FILES.flatMap((p) => [p, p.toUpperCase().replace(/^DATA/, "Data"), p.replace(/party/, "PARTY").replace(/^data/, "DATA")])) {
       const r = await fetch(`http://127.0.0.1:${port}/${rel}`);
       assert.equal(r.status, 404, `/${rel} must be 404 on the static server`);
       assert.equal(r.headers.get("content-type").startsWith("application/json"), false, `/${rel}: not a JSON answer`);
     }
-    const links = await fetch(`http://127.0.0.1:${port}/data/atlas/links.json`);
-    assert.equal(links.status, 200);
-    assert.ok(!(await links.json()).records.some((r) => r.kind === "start_zone"));
+    for (const p of ["data/atlas/links.json", "DATA/ATLAS/LINKS.JSON"]) {
+      const links = await fetch(`http://127.0.0.1:${port}/${p}`);
+      if (links.status !== 200) { await links.arrayBuffer(); continue; } // a case-sensitive file system has no such file: 404 is fine
+      assert.ok(!(await links.json()).records.some((r) => r.kind === "start_zone"), `${p} is reduced`);
+    }
     assert.equal((await fetch(`http://127.0.0.1:${port}/data/timeline.json`)).status, 200);
   } finally { srv.kill(); }
 });

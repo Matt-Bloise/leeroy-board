@@ -7,6 +7,9 @@
 //    state alone: scene shown or hidden as asked, board inert only while open, scene-open class matching, no closing class left, sheet inside the viewport when open, focus on the tile or in the scene, scroll unchanged.
 // C: the heading takes focus on open from the wall, sibling tiles dim while a scene is open, reduced motion opens and closes at once.
 import { pageUrl } from "../helpers/page-url.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
+import { assertMemberState } from "../helpers/member-state.mjs";
+const MEMBER = standIn(0).name; // the first member of the party the API stub serves (never a literal name)
 import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -54,9 +57,10 @@ const verdict = (s, want, scrollY) => {
 };
 
 let browser = stubbed(await pw.chromium.launch());
+await assertMemberState(browser, url, MEMBER); // fails loudly when MEMBER is not on the board (else the suite runs as nobody chosen)
 async function fresh(view, extra) {
   const ctx = await browser.newContext({ ...VIEW[view], serviceWorkers: "block", ...(extra || {}) });
-  await ctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} });
+  await ctx.addInitScript((n) => { try { localStorage.setItem("board-as", n); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} }, MEMBER);
   await ctx.addInitScript(() => { window.__cls = 0; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: "layout-shift", buffered: true }); } catch (e) {} });
   const page = await ctx.newPage(), errors = []; page.on("pageerror", (e) => errors.push(e.message));
   if (THROTTLE > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE }); }

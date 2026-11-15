@@ -33,6 +33,10 @@ export function repoPairs() {
   return cache;
 }
 
+// The stand-in for the member at position i of data/party.json: what the recorded snapshot and the API stub call that member. Browser suites that act as a member use this,
+// never a literal name. { name, slug }.
+export const standIn = (i = 0) => ({ name: STAND_INS[i % STAND_INS.length], slug: slug(STAND_INS[i % STAND_INS.length]) });
+
 export function fictionalise(text, pairs = repoPairs()) {
   let t = String(text);
   for (const [re, to] of pairs) t = t.replace(re, to);

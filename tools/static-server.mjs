@@ -9,7 +9,7 @@ import { readFile, stat } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isPrivatePath, STRIPPED_FILES } from "./pages-bundle.mjs";
+import { isPrivatePath, strippedFor } from "./pages-bundle.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.argv[2] || 8080), ROOT = path.resolve(process.argv[3] || path.join(here, ".."));
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".avif": "image/avif", ".woff2": "font/woff2", ".woff": "font/woff", ".txt": "text/plain; charset=utf-8", ".xml": "application/xml", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon", ".mp3": "audio/mpeg", ".wasm": "application/wasm" };
@@ -39,7 +39,8 @@ http.createServer(async (req, res) => {
   const target = hit || (await file(path.join(ROOT, "404.html")));
   if (!target) { res.writeHead(404, { "content-type": "text/plain" }).end("not found"); return; }
   let body = await readFile(target);
-  if (hit && repoRel in STRIPPED_FILES) body = Buffer.from(STRIPPED_FILES[repoRel](body.toString("utf8")));
+  const reduce = hit ? strippedFor(repoRel) : null;
+  if (reduce) body = Buffer.from(reduce(body.toString("utf8")));
   res.writeHead(notFound ? 404 : 200, { "cache-control": "public, max-age=0, must-revalidate", ...ruleHeaders(rel), "content-type": TYPES[path.extname(target).toLowerCase()] || "application/octet-stream" });
   res.end(req.method === "HEAD" ? undefined : body);
 }).listen(PORT, "127.0.0.1", () => console.log(`static server on http://127.0.0.1:${PORT}/ (root ${ROOT})`));
