@@ -866,13 +866,11 @@ export function shortProviderError(err) {
   const raw = String((err && (err.code === "ai_timeout" ? `timeout ${err.message}` : err.message)) || err || "error");
   const http = /^([A-Za-z0-9_.-]+) API HTTP (\d{3})/.exec(raw);
   if (http) return `${http[1]} API HTTP ${http[2]}`; // status only: never a provider body
-  return scrubSecrets(raw)
-    .replace(/[?&]key=[^\s&"]+/gi, "")
-    .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "")
-    .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 60);
+  // No provider text at all: a fixed message plus the error name and, when numeric, its status. Provider message text can carry a body, a binding or a key.
+  if (err && err.code === "ai_timeout") return "provider timeout";
+  const name = err && typeof err.name === "string" && /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(err.name) ? err.name : "Error";
+  const status = err && Number.isInteger(err.status) && err.status >= 100 && err.status <= 599 ? ` status ${err.status}` : "";
+  return `provider error (${name}${status})`;
 }
 
 // Retrieval, party state and prompt assembly for one question. Pure of side effects except D1 reads. Used by answerWithAi and by the
@@ -1542,9 +1540,9 @@ export async function answerWithAi({
     }
   } catch (err) {
     const failedAt = nowIso();
-    // The turn is read back by its asker (a guest included) and, for a shared ask, by member sockets: it gets the public text only. The real error
-    // (a provider body, a binding or secret name) goes to the log, scrubbed, and nowhere else.
-    console.error("ask failed:", scrubSecrets(String((err && err.message) || err)).slice(0, 300));
+    // The turn is read back by its asker (a guest included) and, for a shared ask, by member sockets: it gets the public text only. The log line carries
+    // no provider text either: shortProviderError is a fixed message plus the error name and status.
+    console.error("ask failed:", shortProviderError(err));
     const msg = publicAskError(err);
     await env.DB.prepare("UPDATE ask_turns SET status = 'error', answer = ?, answered_at = ? WHERE id = ?")
       .bind(msg, failedAt, intentId)
