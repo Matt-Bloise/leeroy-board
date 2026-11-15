@@ -29,7 +29,9 @@ async function ask(question, envExtra = {}) {
   invalidatePagesCache();
   const DB = schemaDb();
   DB.raw.prepare("INSERT INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES ('classes/tanking', 'classes', 'Tanking', 'Who tanks', '[]', ?, '2026-11-01T00:00:00Z')").run(JSON.stringify([{ key: "tanking.tonight", value: "Who tanks tonight is agreed in the party channel." }]));
-  const env = { DB, GROQ_API_KEY: "test-key-not-real", AI_GATEWAY_ID: "gw", CLOUDFLARE_ACCOUNT_ID: "acct", BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) }, ...envExtra };
+  // W4a: with the flag on the model call is Workers AI only (research/provider.js), so a flag-on run answers through this binding (same text as the fetch stub) instead of groq.
+  const aiBinding = envExtra.ASK_RESEARCH === "on" && !envExtra.IS_PR_PREVIEW ? { AI: { run: async (_m, inputs) => { sent.push(inputs); return { response: "Mira tanks tonight. -# Sources: classes/tanking", usage: { prompt_tokens: 5, completion_tokens: 5 } }; } } } : {};
+  const env = { DB, GROQ_API_KEY: "test-key-not-real", AI_GATEWAY_ID: "gw", CLOUDFLARE_ACCOUNT_ID: "acct", BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) }, ...aiBinding, ...envExtra };
   const id = `r${++n}`;
   DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, 'Mira', ?, 'groq', 'thinking', 1, 'x')").run(id, question);
   sent = [];
@@ -62,11 +64,14 @@ test("stub-never-ships: the stub reports not handled", async () => {
 });
 
 const OLD = (q) => ask(q, { ASK_RESEARCH: "off" });
+// W4a: flag on changes the provider (Workers AI only) and the model label, and, for a question the library cannot answer, calls the model instead of returning the code-written abstain.
+// For a question the library answers, the answer, cites, status and the outbound prompt are still the old ones.
+const same = (r) => ({ answer: r.row.answer, cites_json: r.row.cites_json, status: r.row.status, prompts: r.prompts });
 
-test("flag on with the stub: falls through to the old path, never an empty answer", async () => {
-  for (const q of QUESTIONS.slice(0, 2)) {
+test("flag on with the stub: a library-answered question gets the old answer and prompt, never an empty answer", async () => {
+  for (const q of QUESTIONS.slice(0, 1)) {
     const on = await ask(q, { ASK_RESEARCH: "on" });
-    assert.deepEqual(on, await OLD(q));
+    assert.deepEqual(same(on), same(await OLD(q)));
     assert.ok(on.row.answer && on.row.answer.length > 0);
   }
 });
@@ -75,7 +80,7 @@ test("flag-timeout-is-old-path: a Flagship binding that hangs, throws or says fa
   const q = QUESTIONS[0];
   const old = await OLD(q);
   for (const get of [() => new Promise(() => {}), () => { throw new Error("boom"); }, async () => { throw new Error("nope"); }, async () => false]) {
-    assert.deepEqual(await ask(q, { ASK_RESEARCH: "on", FLAGS: { getBooleanValue: get } }), old);
+    assert.deepEqual(same(await ask(q, { ASK_RESEARCH: "on", FLAGS: { getBooleanValue: get } })), same(old));
   }
 });
 

@@ -62,6 +62,33 @@ function checkSources(text) {
   return { present: true, masked: links.length > 0 && leftover === "", items: links.length };
 }
 
+// ---- research-mode lint (ASK_RESEARCH on) -------------------------------------------------------------------------------------
+// Pure and deterministic like lintAnswer. Checks the shape the research rules ask for (research/rules.js), not the truth of the content:
+//   one sources line holding exactly one confidence word (confirmed | likely | unconfirmed), a body that is not banter alone (a banter line is a single
+//   italic line), at most one banter line, and no refusal wording. -> { failures: [], pass }
+const CONFIDENCE_RE = /\b(?:unconfirmed|confirmed|likely)\b/gi;
+const BANTER_LINE_RE = /^\s*(?:(?<!\*)\*(?!\*)[^*\n]+\*|_[^_\n]+_)\s*$/;
+const REFUSAL_WORDS_RE = /does not (?:cover|have) that yet|doesn'?t confirm that figure|not published yet|won'?t guess|ask (?:someone|somebody|a party member|the party) else|(?:cannot|can'?t|can not) (?:answer|help with) (?:that|this)/i;
+export function lintResearchAnswer(answer) {
+  const text = typeof answer === "string" ? answer : "";
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const sourceLines = lines.filter((l) => SOURCES_LINE_RE.test(l));
+  const body = lines.filter((l) => !/^-#/.test(l));
+  const banter = body.filter((l) => BANTER_LINE_RE.test(l));
+  const substance = body.filter((l) => !BANTER_LINE_RE.test(l) && l.replace(/[^A-Za-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 0).length >= 3);
+  const failures = [];
+  if (!text.trim()) failures.push("empty");
+  if (sourceLines.length === 0) failures.push("no_sources_line");
+  else if (sourceLines.length > 1) failures.push("multiple_sources_lines");
+  const conf = sourceLines.flatMap((l) => l.match(CONFIDENCE_RE) || []);
+  if (sourceLines.length && conf.length === 0) failures.push("no_confidence_word");
+  if (conf.length > 1) failures.push("two_confidence_words");
+  if (text.trim() && substance.length === 0) failures.push(banter.length ? "banter_only" : "no_answer");
+  if (banter.length > 1) failures.push("multiple_banter");
+  if (REFUSAL_WORDS_RE.test(body.join(" "))) failures.push("refusal");
+  return { failures, pass: failures.length === 0, confidenceWords: conf.map((w) => w.toLowerCase()), banterLines: banter.length };
+}
+
 export function lintAnswer(answer, ctx = {}) {
   const text = typeof answer === "string" ? answer : "";
   const c = ctx && typeof ctx === "object" ? ctx : {};
