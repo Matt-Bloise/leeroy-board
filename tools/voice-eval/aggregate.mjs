@@ -54,7 +54,7 @@ function normaliseVerdicts(mapping, verdicts) {
   const seen = new Set();
   const out = new Map(); // judge -> Map(taskId -> verdict)
   for (const v of verdicts) {
-    const entry = mapping.tasks[v && v.taskId];
+    const entry = v && typeof v.taskId === "string" && Object.hasOwn(mapping.tasks, v.taskId) ? mapping.tasks[v.taskId] : undefined; // own keys only: "constructor" or "toString" are not task ids
     if (!entry) throw new Error(`unknown taskId ${JSON.stringify(v && v.taskId)}`);
     const verdict = String(v.verdict ?? "").trim().toUpperCase();
     if (!["A", "B", "NONE"].includes(verdict)) throw new Error(`bad verdict ${JSON.stringify(v.verdict)} for ${v.taskId}: expected A, B or NONE`);
@@ -116,6 +116,8 @@ function judgeReport(groups, verdictMap, { candidate, strictNumbers, clusterSize
     const verdicts = g.tasks.map((t) => ({ ...t, verdict: verdictMap.get(t.taskId) }));
     if (verdicts.some((t) => t.verdict === undefined) || verdicts.length !== 2) {
       row.incomplete++;
+      // An unanswered or half-answered preference pair counts as INCONSISTENT in the consistency gate, so leaving pairs out can never raise it.
+      if (g.kind === "pref" && !row.self) prefNonSelf++;
       continue;
     }
     row.n++;
@@ -173,7 +175,7 @@ function judgeReport(groups, verdictMap, { candidate, strictNumbers, clusterSize
   const consistencyRate = prefNonSelf ? prefNonSelfConsistent / prefNonSelf : null;
   const reliable = consistencyRate === null ? (decided > 0 ? !positionBiased : null) : consistencyRate >= MIN_CONSISTENCY && !positionBiased;
   const unreliableWhy = [];
-  if (consistencyRate !== null && consistencyRate < MIN_CONSISTENCY) unreliableWhy.push(`order-swap consistency ${(consistencyRate * 100).toFixed(1)}% is below 85%`);
+  if (consistencyRate !== null && consistencyRate < MIN_CONSISTENCY) unreliableWhy.push(`order-swap consistency ${(Math.floor(consistencyRate * 10000) / 100).toFixed(2)}% is below the ${MIN_CONSISTENCY * 100}% gate`);
   if (positionBiased) unreliableWhy.push(`position bias: ${(aShare * 100).toFixed(1)}% of verdicts are "A" (95% interval ${(aInterval[0] * 100).toFixed(1)}-${(aInterval[1] * 100).toFixed(1)}% excludes 50%)`);
 
   const finishPref = (row) => {
@@ -289,7 +291,7 @@ export function formatReport(rep) {
     ? `Independence: ${rep.corePrompts} core prompts in ${rep.clusters} clusters of about ${rep.clusterSize} (one writer per cluster); intervals treat every prompt as independent and are optimistic.`
     : "Independence: intervals treat every prompt as independent and are optimistic if arms were written in batches by separate agents; pass --cluster-size N to report the cluster count.");
   for (const [name, j] of Object.entries(rep.judges)) {
-    lines.push(`Judge ${name}: order-swap consistency ${pct(j.consistencyRate)} over ${j.completePrefPairs} non-self preference pairs; A-share ${pct(j.aShare)} (95% ${ci(j.aShareInterval95)}) -> ${j.reliable === null ? "no data" : j.reliable ? "reliable" : `UNRELIABLE: ${j.unreliableWhy.join("; ")}`}`);
+    lines.push(`Judge ${name}: order-swap consistency ${pct(j.consistencyRate)} over ${j.completePrefPairs} non-self preference pairs; A-share ${pct(j.aShare)} (95% ${ci(j.aShareInterval95)}) -> ${j.completePrefPairs === 0 && j.reliable !== false ? "insufficient data (no non-self preference pairs to test order-swap consistency)" : j.reliable === null ? "no data" : j.reliable ? "reliable" : `UNRELIABLE: ${j.unreliableWhy.join("; ")}`}`);
     for (const r of j.pairs) {
       const [x, y] = r.arms;
       const tag = `[${r.set}/${r.variant}]`;

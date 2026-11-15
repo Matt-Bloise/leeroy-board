@@ -113,22 +113,22 @@ export function buildTasks({ prompts, rubric, arms: rawArms, seed = 1, sets = ["
   if (tolerant) {
     const keep = [];
     for (const p of selected) {
-      const bad = armNames.filter((arm) => { const r = rawArms[arm][p.id]; return typeof r !== "string" || !(normalise ? normaliseAnswer(r) : r).trim(); });
+      const bad = armNames.filter((arm) => { const r = Object.hasOwn(rawArms[arm], p.id) ? rawArms[arm][p.id] : undefined; return typeof r !== "string" || !(normalise ? normaliseAnswer(r) : r).trim(); });
       if (bad.length) excluded.push({ promptId: p.id, arms: bad }); else keep.push(p);
     }
     selected = keep;
     if (!selected.length) throw new Error("tolerant mode: every prompt has a missing or mistyped answer in some arm; nothing to judge");
   }
   for (const n of armNames) if (!VALID_ARM_NAME.test(n)) throw new Error(`arm name "${n}" is not allowed: 3 to 40 characters from letters, digits, dot, dash, underscore`);
-  if (reference && !rawArms[reference]) throw new Error(`reference arm "${reference}" has no answers`);
+  if (reference && !Object.hasOwn(rawArms, reference)) throw new Error(`reference arm "${reference}" has no answers`);
   // From here on `arms` holds what the judges will see: normalised when asked, the same way for every arm.
-  const arms = {};
+  const arms = Object.create(null); // keyed by external arm names and prompt ids: no prototype members
   const armStats = {};
   for (const arm of armNames) {
-    arms[arm] = {};
+    arms[arm] = Object.create(null);
     const before = [], after = [];
     for (const p of selected) {
-      const raw = rawArms[arm][p.id];
+      const raw = Object.hasOwn(rawArms[arm], p.id) ? rawArms[arm][p.id] : undefined;
       if (typeof raw !== "string" || !raw.trim()) throw new Error(`arm "${arm}": missing answer for prompt "${p.id}"`);
       arms[arm][p.id] = normalise ? normaliseAnswer(raw) : raw;
       before.push(raw.length);
@@ -155,7 +155,7 @@ export function buildTasks({ prompts, rubric, arms: rawArms, seed = 1, sets = ["
   }
   const seenPairs = new Set();
   for (const [x, y] of prefPairs) {
-    if (!arms[x] || !arms[y]) throw new Error(`pair ${x}:${y} names an arm with no answers`);
+    if (!Object.hasOwn(arms, x) || !Object.hasOwn(arms, y)) throw new Error(`pair ${x}:${y} names an arm with no answers`);
     const key = [x, y].sort().join("\u0000");
     if (seenPairs.has(key)) throw new Error(`pair ${x}:${y} is listed twice (a pair and its reverse count as the same pair)`);
     seenPairs.add(key);
@@ -201,7 +201,7 @@ export function buildTasks({ prompts, rubric, arms: rawArms, seed = 1, sets = ["
 }
 
 function parseArgs(argv) {
-  const o = { arms: {}, sets: ["core"], seed: 1, out: ".", prompts: join(HERE, "prompts.json"), rubric: join(HERE, "rubric.md"), allowUnfrozen: false };
+  const o = { arms: Object.create(null), sets: ["core"], seed: 1, out: ".", prompts: join(HERE, "prompts.json"), rubric: join(HERE, "rubric.md"), allowUnfrozen: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const v = () => {
@@ -213,7 +213,7 @@ function parseArgs(argv) {
       const eq = s.indexOf("=");
       if (eq < 1) throw new Error("--arm needs name=file.jsonl");
       const name = s.slice(0, eq);
-      if (o.arms[name]) throw new Error(`--arm ${name} given twice`);
+      if (Object.hasOwn(o.arms, name)) throw new Error(`--arm ${name} given twice`);
       o.arms[name] = s.slice(eq + 1);
     } else if (k === "--seed") o.seed = Number(v());
     else if (k === "--sets") o.sets = v().split(",");
@@ -241,12 +241,12 @@ function main() {
   if (!Object.keys(o.arms).length) throw new Error("give at least one --arm name=file.jsonl");
   const prompts = JSON.parse(readFileSync(o.prompts, "utf8").replace(/^\uFEFF/, ""));
   const rubric = readFileSync(o.rubric, "utf8");
-  const arms = {};
+  const arms = Object.create(null);
   for (const [name, file] of Object.entries(o.arms)) {
-    arms[name] = {};
+    arms[name] = Object.create(null);
     for (const row of readJsonl(file)) {
       if (o.tolerant && (!row || typeof row !== "object" || typeof row.id !== "string")) { console.warn(`make-tasks: arm "${name}": skipped a row with no string id`); continue; }
-      if (arms[name][row.id] !== undefined) throw new Error(`arm "${name}": duplicate id ${row.id}`);
+      if (Object.hasOwn(arms[name], row.id)) throw new Error(`arm "${name}": duplicate id ${row.id}`);
       arms[name][row.id] = row.answer;
     }
   }

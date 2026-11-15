@@ -1,6 +1,6 @@
 # Voice evaluation: blind pairwise harness
 
-This tool measures whether Leeroy's voice is restored, offline. It never calls a model. Sessions generate the answers and run the judges; this tool builds the blind tasks and scores the verdicts. Every prompt and answer is fictional (Testbard, Examplemage and friends): never put real friend names, real chat content or real questions in any file here. A unit test scans every file in this folder for roster names.
+This tool measures whether Leeroy's voice is restored, offline. The scoring tools (`make-tasks`, `make-batches`, `aggregate`, `owner-sample`) never call a model, and the arm runner's default modes (`--emit-prompts`, `--ingest-answers`, `--dry-run`) make no network call; only `run-arms.mjs --live --yes` calls model providers. The arm runner imports `ROSTER_DATA` from the Worker and holds it in memory only, to swap each real display name for a fictional one before any prompt is built; it never prints or writes the roster. Sessions generate the answers and run the judges; this tool builds the blind tasks and scores the verdicts. Every prompt and answer is fictional (Testbard, Examplemage and friends): never put real friend names, real chat content or real questions in any file here. A unit test scans every file in this folder for roster names.
 
 ## What the arms measure
 
