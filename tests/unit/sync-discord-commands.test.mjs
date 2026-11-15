@@ -293,7 +293,7 @@ test("the deploy runs the command sync as a non-failing step after the Worker de
 // and they carry no description. The first production run failed with "manifest command has no valid name" because the validator applied the
 // slash-command rules to every command.
 import { validateManifest } from "../../tools/sync-discord-commands.mjs";
-const REAL = JSON.parse(readFileSync(new URL("../fixtures/discord/live-manifest-2026-11-15.json", import.meta.url), "utf8"));
+const REAL = JSON.parse(readFileSync(new URL("../fixtures/manifest/live-manifest-2026-11-15.json", import.meta.url), "utf8"));
 const MENUS = REAL.commands.filter((c) => c.type === 3);
 
 test("the real manifest validates: 25 commands, two message context-menu commands", () => {
