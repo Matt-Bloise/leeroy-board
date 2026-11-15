@@ -14,6 +14,7 @@ Set `ASK_RESEARCH = "off"` in `infrastructure/wrangler.toml` and deploy. The off
 
 ## Before the flip (needs the owner's go; none of this has been run)
 
+0. Anthropic data terms, read 2026-11-15 on https://www.anthropic.com/legal/commercial-terms (effective Jun 17, 2025; a summarising fetch, so re-read the page before relying on it): section B says Anthropic "may not train models on Customer Content from Services". Retention of API inputs and outputs: not stated on that page (it points to a Data Processing Addendum that was not read). An express right to review inputs or outputs for abuse: not found; section D.2 asks the customer to cooperate with Usage Policy requests. Real names and group history go to Claude under this plan, so the owner reads the DPA and the key's organisation data settings once before the flip.
 1. Key: `ANTHROPIC_API_KEY` is an encrypted env secret on the leeroy-brain Worker (no Secrets Store binding, no BYOK). The resolver falls through to it; `tests/unit/ai-keys-env-secret.test.mjs` pins that. Do not paste the key anywhere.
 2. Model ids and prices: with that key, one live call per model id in `wrangler.toml` (`RESEARCH_CLAUDE_MODEL_FAST`, `RESEARCH_CLAUDE_MODEL_DEEP`, and the fallback ids) to confirm they exist and what they cost. The 5-5 ids are unverified.
 3. Latency: `tools/measure-claude-latency.mjs` against the real endpoint (see `research-latency.md`). Pass: compose p95 under 5 s, retry p95 under 2.5 s. The live run needs the owner's go because it spends tokens.
