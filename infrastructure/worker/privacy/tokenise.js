@@ -250,7 +250,11 @@ function findMatches(seg, map) {
   const collVars = plainVars.map((p) => ({ ...collapseWithMap(p.str, el.sp), leet: p.leet }));
   const found = [];
   const diff = new Int32Array(el.n + 2);
+  // Work bound (no clock): map.work = { steps, max } counts roster entries visited and needle-search iterations; past the cap the caller fails closed (it throws).
+  const work = map.work;
+  const tick = () => { if (work && ++work.steps > work.max) throw new Error("privacy: work bound exceeded"); };
   for (const entry of map.entries) {
+    tick();
     const key = entry.key;
     const L = key.length;
     const canLeet = L >= 5;
@@ -261,6 +265,7 @@ function findMatches(seg, map) {
       for (;;) {
         const i = hay.indexOf(needle, from);
         if (i < 0 || count++ > 20000) break;
+        tick();
         from = i + 1;
         const a = first ? first[i] : i;
         const b = last ? last[i + needle.length - 1] : i + needle.length - 1;

@@ -11,9 +11,9 @@ import { skeleton } from "./skeleton.js";
 
 export const genericAliases = ["mage", "rat", "tank"];
 
-// Words that must never become a tokenisable key when they arrive from a sheet name, a first name or a character name (a key "light" would replace the word everywhere
-// in the prompt). genericAliases is the one explicit list; these are the common English and game words it is extended with for SHEET-derived names, plus a library-text
-// check (libraryWords). A multi-word name ("Light Dawnbringer") is never rejected as a whole: only a single word is tested.
+// Words that must never become a tokenisable key when they arrive from a SHEET (never from the roster): a key "light" would replace the word everywhere in the prompt.
+// genericAliases is the explicit list; COMMON_WORDS extends it with ordinary English and game vocabulary. A multi-word name ("Light Dawnbringer") is never rejected as a
+// whole: only a single word is tested. Where each list applies is in researchMembersFor.
 const COMMON_WORDS = new Set((
   "light heavy dark red blue green black white gold silver big small old new fast slow high low east west north south sun moon star fire ice frost storm wind rain snow earth stone " +
   "iron steel wolf bear cat dog fox hawk owl crow raven eagle lion tiger drake dragon king queen lord lady prince knight baron duke earl bishop monk priest cleric healer " +
@@ -25,43 +25,78 @@ const COMMON_WORDS = new Set((
   "skinning leatherworking blacksmithing enchanting engineering alchemy herbalism mining tailoring fishing cooking first aid bandage smith smithing " +
   "retribution protection holy restoration feral elemental enhancement balance guardian discipline assassination combat subtlety arms fury beast marksmanship survival destruction affliction demonology arcane " +
   "stormwind orgrimmar ironforge darnassus undercity thunder bluff elwynn durotar barrens westfall duskwood stranglethorn tanaris ungoro winterspring silithus felwood ashenvale darkshore teldrassil dun morogh loch modan redridge badlands blasted swamp hinterlands plaguelands " +
-  "starter starters trainer trainers zone area camp camping pack packs price prices macro macros keybind keybinds setting settings addon addons patch beta launch " +
-  "hands hand offhand offhands spell spells wards ward " +
   "dagger mace robe cloak ring amulet trinket boots gloves helm belt bracers mount reputation talent spec level class race faction horde alliance"
 ).split(" ").filter(Boolean));
 export const GAME_WORDS = [...COMMON_WORDS];
-// Words the guard must not treat as a fragment of a name (outbound-guard.js roster.fragmentWords): the first/last 5 letters of a long name never block text when that fragment is
-// one of these words (or the start/end of one). Exact, spaced, leet and reversed matches of the whole name are unaffected.
-export const fragmentWords = [...COMMON_WORDS];
 
-const WORD_RE = /[a-z][a-z'-]{1,}/g;
-const libWordCache = new WeakMap();
-// The set of lowercase words in the library text (titles, blurbs, fact values) for a pages array. Cached per array object.
-export function libraryWords(pages) {
-  if (!Array.isArray(pages)) return new Set();
-  const hit = libWordCache.get(pages);
-  if (hit) return hit;
-  const out = new Set();
-  const add = (t) => { if (typeof t === "string") for (const w of t.toLowerCase().match(WORD_RE) || []) out.add(w.replace(/^['-]+|['-]+$/g, "")); };
+// ---- library words (lazy, cached) ---------------------------------------------------------------------------------------------------------------------
+// Only a word that the library text uses in LOWERCASE counts as an ordinary word: a name the facts mention ("Testbard heals well") is written capitalised and stays a key.
+// Fact keys are identifiers, not prose. The set is built on the first has() call (most parties have no first or alt name to test, so most asks never pay for it) and cached
+// by a cheap signature (page count, ids, fact count, total fact characters), so a refreshed pages array with the same content reuses it.
+const WORD_RE = /[A-Za-z][A-Za-z'-]{1,}/g;
+const EMPTY_LIB = { has: () => false };
+const libByArray = new WeakMap();
+const libBySignature = new Map();
+function pagesSignature(pages) {
+  let facts = 0;
+  let chars = 0;
+  let h = 5381;
   for (const p of pages) {
-    if (!p || typeof p !== "object") continue;
-    add(p.title); add(p.blurb);
-    for (const fct of Array.isArray(p.facts) ? p.facts : []) { add(fct && fct.value); add(fct && fct.key); }
+    const id = p && typeof p === "object" && typeof p.id === "string" ? p.id : "";
+    for (let i = 0; i < id.length; i++) h = ((h << 5) + h + id.charCodeAt(i)) | 0;
+    const fl = p && Array.isArray(p.facts) ? p.facts : [];
+    facts += fl.length;
+    for (const x of fl) { const v = x && x.value; chars += typeof v === "string" ? v.length : 0; }
   }
-  libWordCache.set(pages, out);
-  return out;
+  return `${pages.length}:${facts}:${chars}:${h}`;
+}
+export function libraryWords(pages) {
+  if (!Array.isArray(pages)) return EMPTY_LIB;
+  const known = libByArray.get(pages);
+  if (known) return known;
+  const sig = pagesSignature(pages);
+  let lib = libBySignature.get(sig);
+  if (!lib) {
+    let set = null;
+    lib = {
+      has(w) {
+        if (!set) {
+          set = new Set();
+          const add = (t) => { if (typeof t === "string") for (const x of t.match(WORD_RE) || []) if (x === x.toLowerCase()) set.add(x.replace(/^['-]+|['-]+$/g, "")); };
+          for (const p of pages) {
+            if (!p || typeof p !== "object") continue;
+            add(p.title); add(p.blurb);
+            for (const fct of Array.isArray(p.facts) ? p.facts : []) add(fct && fct.value);
+          }
+        }
+        return set.has(w);
+      },
+    };
+    if (libBySignature.size >= 4) libBySignature.clear();
+    libBySignature.set(sig, lib);
+  }
+  libByArray.set(pages, lib);
+  return lib;
 }
 
-// True when a name must not be a key: it is one of genericAliases, a single common/game word, or a single word that occurs in the library text.
+const LEET_FOLD_I = { 0: "o", 1: "i", 3: "e", 4: "a", 5: "s", 7: "t" };
+const LEET_FOLD_L = { 0: "o", 1: "l", 3: "e", 4: "a", 5: "s", 7: "t" };
+// The word forms a single-word name takes after the same normalisation the guard uses (case, punctuation, lookalikes) and with leet digits folded ("L1ght", "Light.").
+function wordForms(text) {
+  const k = skeleton(text);
+  return [...new Set([k, k.replace(/[013457]/g, (d) => LEET_FOLD_I[d]), k.replace(/[013457]/g, (d) => LEET_FOLD_L[d])])];
+}
+
+// True when a name must not be a key: it is one of genericAliases, or a single word that is common/game vocabulary, or (only when libWords is given) a single word the
+// library text uses in lowercase. A multi-word name is never rejected whole.
 export function isGenericName(raw, libWords) {
   const text = String(raw ?? "").trim();
   if (!text) return false;
-  const key = skeleton(text);
-  if (genericAliases.some((g) => skeleton(g) === key)) return true;
+  const forms = wordForms(text);
+  if (genericAliases.some((g) => forms.includes(skeleton(g)))) return true;
   if (/\s/.test(text)) return false;
-  const w = text.toLowerCase();
-  if (COMMON_WORDS.has(w)) return true;
-  return Boolean(libWords && typeof libWords.has === "function" && libWords.has(w));
+  if (forms.some((w) => COMMON_WORDS.has(w))) return true;
+  return Boolean(libWords && typeof libWords.has === "function" && forms.some((w) => libWords.has(w)));
 }
 
 let firstNameSource = null;
@@ -83,73 +118,78 @@ export function researchMembers() {
 let cached = null;
 // The same object each time (the guard caches its parse per object); rebuilt when the first-name source changes.
 export function researchRoster() {
-  if (!cached) cached = { members: researchMembers(), genericAliases: [...genericAliases], fragmentWords };
+  if (!cached) cached = { members: researchMembers(), genericAliases: [...genericAliases] };
   return cached;
 }
 
 // ---- the party as the Worker knows it at request time ----------------------------------------------------------------------------------------------
 // ROSTER_DATA is the five known members; the party/sheet document can hold more names (a sixth sheet, a renamed member, character names). Every name the
 // Worker is about to put in a prompt must be a key, or it reaches the model verbatim. So the members used for tokenising and guarding are the roster plus the
-// names found on the sheets: sheet name, slug and character names. A sheet whose name or slug matches a roster member (same skeleton) adds its extra names to
-// that member; otherwise it becomes a member of its own. A name that would collide with another member, is one character long or is a reserved word is
+// names found on the sheets: sheet name, slug, character/alt names and first names. A sheet whose name or slug matches a roster member (same skeleton) adds its extra
+// names to that member; otherwise it becomes a member of its own. A name that would collide with another member, is one character long or is a reserved word is
 // skipped (the member that owns the colliding key already protects it).
+//
+// Which names are dropped as "ordinary words" (never for roster members, never for a multi-word name):
+//   sheet name / slug         genericAliases and the common/game list only. A library word never drops a sheet's own name: a party member's name that a fact mentions must be a key.
+//   alt / character names     genericAliases, the common/game list, and words the library text uses in lowercase.
+//   first names derived from  the same as alt names (a "Light" in "Light Dawnbringer" is not a person).
+//     the first word of a multi-word sheet name
+//   explicit first_name /     every word is a key unless it is in genericAliases: a sheet that states a first name is naming a person, so a common word is still keyed.
+//     real_name fields
 const RESERVED = new Set(["id", "all", "guild", "invite", "everyone", "here", "someone"]);
 const CHAR_FIELDS = ["character", "character_name", "main", "alts", "alt", "characters"];
+const TITLES = new Set(["dr", "mr", "mrs", "ms", "mx", "sir", "lady", "lord", "jr", "sr", "the", "of", "de", "van", "von", "la", "el"]); // not names: skipped when a real_name is split into words
+const FIRST_NAME_FIELDS =["first_name", "firstname", "real_name", "realname"];
 const nameStrings = (v, out = []) => {
   if (typeof v === "string") out.push(v);
   else if (Array.isArray(v)) v.forEach((x) => nameStrings(x, out));
   else if (v && typeof v === "object") nameStrings(v.name, out);
   return out;
 };
+const fieldValue = (fv) => (fv && typeof fv === "object" && !Array.isArray(fv) && "value" in fv ? fv.value : fv);
 
-const FIRST_NAME_FIELDS = ["first_name", "firstname", "real_name", "realname"];
 export function researchMembersFor(sheets, libWords = null) {
   const members = researchMembers();
   const owner = new Map(); // skeleton -> member index
   const usable = (k) => [...k].length >= 2 && !RESERVED.has(k) && !/^p\d+$/.test(k);
-  const okName = (n) => usable(skeleton(n)) && !isGenericName(n, libWords);
+  const okOwn = (n) => usable(skeleton(n)) && !isGenericName(n, null);
+  const okAlt = (n) => usable(skeleton(n)) && !isGenericName(n, libWords);
+  const okExplicit = (n) => usable(skeleton(n)) && !genericAliases.some((g) => skeleton(g) === skeleton(n));
   members.forEach((m, i) => {
     for (const n of [m.display, ...m.aliases, ...m.firstNames]) { const k = skeleton(String(n)); if (k && !owner.has(k)) owner.set(k, i); }
   });
   for (const s of Array.isArray(sheets) ? sheets : []) {
     if (!s || typeof s !== "object") continue;
-    const own = [s.name, s.slug].filter((x) => typeof x === "string" && x.trim());
+    const clip = (x) => x.trim().slice(0, 60);
+    const own = [s.name, s.slug].filter((x) => typeof x === "string" && x.trim()).map(clip);
     const chars = [];
     for (const k of ["characters", "character", "main", "alts"]) nameStrings(s[k], chars);
     const f = s.fields && typeof s.fields === "object" ? s.fields : {};
-    for (const k of CHAR_FIELDS) {
-      const fv = f[k];
-      nameStrings(fv && typeof fv === "object" && !Array.isArray(fv) && "value" in fv ? fv.value : fv, chars);
-    }
-    // First names as the party data shows them: the first word of a multi-word sheet name ("First Last"; a one-word handle has none), and first_name / real_name fields.
-    const firsts = [];
-    if (typeof s.name === "string" && /\s/.test(s.name.trim())) firsts.push(s.name.trim().split(/\s+/)[0]);
-    for (const k of FIRST_NAME_FIELDS) {
-      const fv = f[k];
-      for (const t of nameStrings(fv && typeof fv === "object" && !Array.isArray(fv) && "value" in fv ? fv.value : fv)) firsts.push(/\s/.test(t.trim()) && k.includes("real") ? t.trim().split(/\s+/)[0] : t.trim());
-    }
-    const all = [...own, ...chars].map((x) => x.trim().slice(0, 60)).filter(Boolean);
+    for (const k of CHAR_FIELDS) nameStrings(fieldValue(f[k]), chars);
+    const alts = chars.map(clip).filter(Boolean);
+    // First names as the party data shows them. Explicit: every word of a first_name / real_name field. Derived: the first word of a multi-word sheet name.
+    const explicit = [];
+    for (const k of FIRST_NAME_FIELDS) for (const t of nameStrings(fieldValue(f[k]))) for (const w of t.split(/\s+/)) if (w.trim() && !TITLES.has(w.trim().toLowerCase().replace(/\.$/, ""))) explicit.push(clip(w));
+    const derived = typeof s.name === "string" && /\s/.test(s.name.trim()) ? [clip(s.name.trim().split(/\s+/)[0])] : [];
     let idx = -1;
     for (const n of own) { const k = skeleton(n); if (owner.has(k)) { idx = owner.get(k); break; } }
     if (idx < 0) {
-      const first = all.find((n) => okName(n) && !owner.has(skeleton(n)));
-      if (!first) continue;
-      members.push({ display: first, aliases: [], firstNames: [] });
+      const display = [...own.filter(okOwn), ...alts.filter(okAlt), ...explicit.filter(okExplicit), ...derived.filter(okAlt)].find((n) => !owner.has(skeleton(n)));
+      if (!display) continue;
+      members.push({ display, aliases: [], firstNames: [] });
       idx = members.length - 1;
-      owner.set(skeleton(first), idx);
+      owner.set(skeleton(display), idx);
     }
-    for (const n of all) {
+    const add = (n, field) => {
       const k = skeleton(n);
-      if (!okName(n) || owner.has(k)) continue;
+      if (owner.has(k)) return;
       owner.set(k, idx);
-      (members[idx].characterNames ||= []).push(n);
-    }
-    for (const n of firsts.map((x) => x.slice(0, 60)).filter(Boolean)) {
-      const k = skeleton(n);
-      if (!okName(n) || owner.has(k)) continue;
-      owner.set(k, idx);
-      (members[idx].firstNames ||= []).push(n);
-    }
+      (members[idx][field] ||= []).push(n);
+    };
+    for (const n of own) if (okOwn(n)) add(n, "characterNames");
+    for (const n of alts) if (okAlt(n)) add(n, "characterNames");
+    for (const n of explicit) if (okExplicit(n)) add(n, "firstNames");
+    for (const n of derived) if (okAlt(n)) add(n, "firstNames");
   }
   return members;
 }

@@ -5,7 +5,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { scanUserText } from "../infrastructure/worker/privacy/outbound-guard.js";
-import { researchRoster, fragmentWords } from "../infrastructure/worker/privacy/roster-config.js";
+import { researchRoster } from "../infrastructure/worker/privacy/roster-config.js";
 
 const textOf = (p) => { const vals = []; const walk = (v) => { if (typeof v === "string") vals.push(v); else if (v && typeof v === "object") Object.values(v).forEach(walk); }; walk(p); return vals.join("\n"); };
 
@@ -20,10 +20,10 @@ export function libraryPages(dir = new URL("../data/library/", import.meta.url))
 }
 
 // Pure: [{ id, why: ["kind/layer/len", ...] }] for every page with at least one strict-guard leak.
-export function libraryTrips(roster, pages = libraryPages()) {
+export function libraryTrips(roster, pages = libraryPages(), opts = { noFragments: true }) {
   const trips = [];
   for (const p of pages) {
-    const leaks = scanUserText([p.text], roster, { maxChars: 60000, blockScripts: false });
+    const leaks = scanUserText([p.text], roster, { maxChars: 60000, blockScripts: false, ...opts });
     if (leaks.length) trips.push({ id: p.id, why: [...new Set(leaks.map((l) => (l.layer ? `${l.ekind}/${l.layer}/len${l.keylen}` : l.kind)))].sort() });
   }
   return { checked: pages.length, trips };
@@ -35,6 +35,12 @@ export function tripsReport({ checked, trips }) {
 
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   const base = researchRoster();
-  console.log(tripsReport(libraryTrips({ members: base.members, genericAliases: base.genericAliases, fragmentWords })));
+  const roster = { members: base.members, genericAliases: base.genericAliases };
+  console.log("prompt scan (whole-name layers, what the Worker runs on library text):");
+  console.log(tripsReport(libraryTrips(roster)));
+  if (process.argv.includes("--full")) {
+    console.log("full rule incl. 5-letter fragments (what friend-typed text gets; for comparison):");
+    console.log(tripsReport(libraryTrips(roster, libraryPages(), {})));
+  }
 }
 void fileURLToPath;

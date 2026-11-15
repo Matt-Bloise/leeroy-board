@@ -11,7 +11,7 @@ import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { ROSTER_DATA } from "../../infrastructure/worker/bot-data.js";
 import { scanBody, CANARY } from "../../infrastructure/worker/privacy/outbound-guard.js";
 import { researchRoster, setFirstNameSource, genericAliases } from "../../infrastructure/worker/privacy/roster-config.js";
-import { resetResearchClaudeForTests, privacyBudget, classifyField, STRUCTURED_FIELDS, FREE_TEXT_FIELDS, prepareResearchPrivacy, reserveTokens, counterKey, estimateTokens, usageTokens } from "../../infrastructure/worker/research/claude.js";
+import { resetResearchClaudeForTests, privacyBudget, workBound, classifyField, STRUCTURED_FIELDS, FREE_TEXT_FIELDS, prepareResearchPrivacy, reserveTokens, counterKey, estimateTokens, usageTokens } from "../../infrastructure/worker/research/claude.js";
 import { buildNameMap, tokenise } from "../../infrastructure/worker/privacy/tokenise.js";
 import { RESEARCH_MAX_TOKENS } from "../../infrastructure/worker/research/rules.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
@@ -974,4 +974,69 @@ test("E2. a real member's first name that is a common word (Wren, Mason, Hunter)
   assert.ok(!/wren/i.test(anthText(asker) + bodiesText(asker.wai)), "an asker called by a common-word first name");
   const reply = await ask(ABSTAIN_Q, { claude: () => ({ status: 200, text: "**Wren should play whatever is fun.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed" }) });
   assert.ok(!/Wren/.test(reply.answer), "a reply naming the first name is discarded");
+});
+
+// ---- PR 360 round 2: fragments, prompt-scan settings, work bound -----------------------------------------------------------------------------------------
+test("F1. truncated forms of a sheet-derived display name typed in the QUESTION stop Claude (full fragment rule for friend text); the whole name is tokenised and Claude is used", async () => {
+  const sheets = [...sheetOf({ class: vis("paladin") }), { slug: "shadowhunter", name: "Shadowhunter", fields: { class: f("rogue") }, updated: "x" }];
+  const whole = await ask("what would Shadowhunter say about the weather", { sheets });
+  assert.equal(whole.anth.length, 1, whole.row.model);
+  assert.ok(!/shadowhunter/i.test(anthText(whole)));
+  for (const t of ["Shadowhunte", "Shadowhun", "shado", "adowhunter"]) {
+    const r = await ask(`what would ${t} say about the weather`, { sheets });
+    assert.equal(r.anth.length, 0, `truncated form ${t.length} chars reached Claude`);
+    assert.match(r.row.model, /guard:/);
+    assert.ok(r.wai.length >= 1, "Workers AI answers");
+  }
+});
+
+test("F2. a fragment of a real roster name inside LIBRARY text does not stop Claude (prompt scan skips fragments), while the same fragment in the question does", async () => {
+  const frag = NAMES[2].replace(/\s+/g, "").toLowerCase().slice(0, 5);
+  const facts = [{ key: "tanking.tonight", value: `Who tanks tonight is agreed in the party channel; bring ${frag} gear and a spare.` }];
+  const lib = await ask("who tanks tonight", { facts });
+  assert.equal(lib.anth.length, 1, lib.row.model);
+  const q = await ask(`who tanks tonight, ${frag} style`, { facts });
+  assert.equal(q.anth.length, 0, "friend-typed fragment still stops Claude");
+});
+
+test("F3. prompt-scan settings are deliberate: a 25,000-character clean persona still reaches Claude; a lookalike-script character in the PERSONA does not stop it but the same character in the QUESTION does; over 60,000 characters fails closed before any scan", async () => {
+  const big = await ask("who tanks tonight", { persona: { system: "You are a dry guild veteran. " + "Keep it short and plain. ".repeat(1000) } });
+  assert.equal(big.anth.length, 1, big.row.model);
+  const look = "ᴀ";
+  const persona = await ask("who tanks tonight", { persona: { system: `You are a dry guild veteran ${look}.` } });
+  assert.equal(persona.anth.length, 1, persona.row.model);
+  const question = await ask(`who tanks tonight ${look}`);
+  assert.equal(question.anth.length, 0, "the question keeps the script block");
+  const huge = await ask("who tanks tonight", { persona: { system: "You are a dry guild veteran. " + "Keep it short and plain. ".repeat(2600) } });
+  assert.equal(huge.anth.length, 0);
+  assert.match(huge.row.model, /cpu:budget/);
+});
+
+test("F4. a sheet ALT name that is a library word (lowercase 'mason' in a fact) is not tokenised, so the prompt text keeps the word; a non-library alt name is tokenised (proves the library reaches researchParty)", async () => {
+  const facts = [{ key: "tanking.tonight", value: "Who tanks tonight is agreed in the party channel; a mason can repair the wall." }];
+  const sheets = [...sheetOf({ class: vis("paladin") }), { slug: "zq", name: "Zqxvname", fields: { class: f("rogue"), main: f("Mason") }, updated: "x" }, { slug: "zr", name: "Zrxvname", fields: { class: f("rogue"), main: f("Quillbert") }, updated: "x" }];
+  const r = await ask("who tanks tonight, and is a mason useful, and what about Quillbert", { sheets, facts });
+  assert.equal(r.anth.length, 1, r.row.model);
+  const user = r.anth[0].body.messages[0].content;
+  assert.match(user, /is a mason useful/, "the library word is left alone");
+  assert.ok(!/quillbert/i.test(user), "the other alt name is a key");
+});
+
+test("F5. work bound: a step cap hit in the guard or the tokeniser fails closed to Workers AI with a short code, never a wall; the default cap does not fire on a normal ask", async () => {
+  const normal = await ask("who tanks tonight");
+  assert.equal(normal.anth.length, 1);
+  const savedG = workBound.guardSteps, savedT = workBound.tokeniseSteps;
+  try {
+    workBound.guardSteps = 3;
+    const g = await ask("who tanks tonight");
+    assert.equal(g.anth.length, 0);
+    assert.match(g.row.model, /guard:toolong/);
+    assert.ok(g.wai.length >= 1 && !BAD_LINE.test(g.answer));
+    workBound.guardSteps = savedG;
+    workBound.tokeniseSteps = 3;
+    const t = await ask("who tanks tonight");
+    assert.equal(t.anth.length, 0);
+    assert.match(t.row.model, /cpu:steps/);
+    assert.ok(t.wai.length >= 1 && !BAD_LINE.test(t.answer));
+  } finally { workBound.guardSteps = savedG; workBound.tokeniseSteps = savedT; }
 });

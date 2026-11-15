@@ -16,7 +16,7 @@ import { stripFence } from "../prompt-fence.js";
 import { buildNameMap, tokenise, detokenise, stripRestorableTokens, makeNonce } from "../privacy/tokenise.js";
 import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
-import { researchMembers, researchMembersFor, genericAliases, fragmentWords, libraryWords } from "../privacy/roster-config.js";
+import { researchMembers, researchMembersFor, genericAliases, libraryWords } from "../privacy/roster-config.js";
 import { RESEARCH_MAX_TOKENS } from "./rules.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 2000000;
@@ -25,8 +25,12 @@ export const CLAUDE_COMPOSE_MS = 6000; // the compose send's own deadline inside
 export const PAUSE_MS = 10 * 60 * 1000;
 export const USAGE_CLAMP = 200000; // per usage field, per call
 const RETRY_MIN_MS = 2500;
-const MAX_PROMPT_CHARS = 60000; // CPU proxy that does not depend on a clock (Workers freezes timers during pure compute)
-// Wall-clock budget for tokenise + guards per ask (measured with performance.now; in a Worker the clock may not advance during compute, so MAX_PROMPT_CHARS is the backstop).
+const MAX_PROMPT_CHARS = 60000; // checked FIRST (before any tokenising or scanning): a clock-free bound on the input
+// WORK bound: no clock. Workers freezes timers during pure compute, so performance.now() does not advance and a time budget alone never fires in production. Every scan counts
+// steps (a candidate text, a roster entry visited in the guard; a needle search iteration in the tokeniser) and past the cap the ask fails closed to Workers AI (guard:toolong,
+// cpu:steps). Normal asks use a few hundred steps. Tests lower the caps; a deployed measurement is still needed for the real CPU cost (docs/runbooks/flags.md).
+export const workBound = { guardSteps: 20000, tokeniseSteps: 60000 };
+// Secondary, clock-based check (kept: it still fires in Node and in any runtime whose clock advances). Not relied on in a Worker.
 export const privacyBudget = { ms: 8 };
 
 // Sheet fields shown to the model (ask-build.js FIELD_ORDER). STRUCTURED values are short enumerated game data; FREE_TEXT is whatever the member typed.
@@ -116,7 +120,7 @@ function contextFor(members) {
   const key = JSON.stringify(members);
   let c = ctxCache.get(key);
   if (!c) {
-    const roster = { members, genericAliases: [...genericAliases], fragmentWords };
+    const roster = { members, genericAliases: [...genericAliases] };
     const template = buildNameMap(members, null, { genericAliases, nonce: "tmpl" });
     c = { roster, template };
     if (ctxCache.size >= 8) ctxCache.clear();
@@ -196,10 +200,12 @@ const LEFTOVER_TOKEN = /\{\s{0,3}(?:p\s{0,3}\d|id\b|all\b|invite\b|guild\b)/i;
 export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, by, party }) {
   try {
     if (party && party.failed) return { ok: false, reason: "tokenise:error" };
+    if (String(systemPrompt ?? "").length + String(userPrompt ?? "").length > MAX_PROMPT_CHARS) return { ok: false, reason: "cpu:budget" }; // input bound first, before any tokenising
     const members = party && party.members ? party.members : researchMembers();
     const ctx = contextFor(members); // compiled once per isolate and roster; not part of the per-ask budget
     const t0 = performance.now();
     const map = cloneMap(ctx.template, makeNonce());
+    map.work = { steps: 0, max: workBound.tokeniseSteps };
     const askerRaw = String(by ?? "").trim();
     const userSegments = [tokenise(question, map)];
     if (previousQuestion) userSegments.push(tokenise(previousQuestion, map));
@@ -237,8 +243,8 @@ export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, pre
         return detokenise(text, map);
       },
     };
-  } catch {
-    return { ok: false, reason: "tokenise:error" };
+  } catch (e) {
+    return { ok: false, reason: e && /work bound/.test(String(e.message)) ? "cpu:steps" : "tokenise:error" };
   }
 }
 
@@ -266,13 +272,19 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   if (!anthropicAvailable(env)) return { reason: null };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
   if (!priv || !priv.ok) return { reason: (priv && priv.reason) || "tokenise:error" };
+  if (priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" }; // the input bound comes before any scan
   const g0 = performance.now();
+  const work = { steps: 0, max: workBound.guardSteps };
   try {
-    guardUserText(priv.userSegments, priv.roster);
-    for (const seg of priv.partySegments) guardUserText([seg], priv.roster);
-    for (const seg of priv.promptSegments) guardUserText([seg], priv.roster, { maxChars: MAX_PROMPT_CHARS, blockScripts: false });
+    // Friend-typed segments: the full strict rule, fragments included (first/last 5 letters, reversed fragments, every kind of name). Nothing here is relaxed.
+    guardUserText(priv.userSegments, priv.roster, { work });
+    for (const seg of priv.partySegments) guardUserText([seg], priv.roster, { work });
+    // The rest of the prompt (persona, rules, library facts, party state, sheet blocks) is scanned for every WHOLE-name layer (exact, spaced, leet, reversed, collapsed, ids,
+    // mentions, canary) but not for 5-letter fragments: a fragment of a name inside ordinary library prose is an accident of the despaced text, and the friend-typed segments
+    // above already carry the full fragment rule. blockScripts is off on purpose: persona and library text may hold accents or symbols; the friend-typed segments keep it on.
+    for (const seg of priv.promptSegments) guardUserText([seg], priv.roster, { maxChars: MAX_PROMPT_CHARS, blockScripts: false, noFragments: true, work });
   } catch (e) { return { reason: guardReason(e) }; }
-  if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
+  if (priv.ms + (performance.now() - g0) > privacyBudget.ms) return { reason: "cpu:budget" };
 
   const budgetStart = Date.now(); // the 9 s / 6 s budgets start here, so the reservation write is inside them
   const hardEnd = Number(hardEndAt) > 0 ? Number(hardEndAt) : Infinity;

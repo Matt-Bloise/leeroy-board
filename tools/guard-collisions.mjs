@@ -1,10 +1,11 @@
-// Offline: which game / dictionary words does the strict outbound guard (privacy/outbound-guard.js) still flag as USER text, by kind of roster name.
-// Roster source: privacy/roster-config.js researchRoster() (the same one the tests use). Run: node tools/guard-collisions.mjs
-// Output is counts and the colliding GAME WORDS by name kind. It never prints a member name or a fragment of one: a fragment (partial) collision prints only the
-// fragment length. A probe word that IS a name (whole key) is counted, never listed.
+// Offline: which game / dictionary words does the strict outbound guard (privacy/outbound-guard.js) still flag as text, by kind of roster name, under both scans the Worker
+// runs: FRIEND-TYPED text (the full rule, fragments included) and the PROMPT scan (persona, library, sheet blocks: whole-name layers only, no fragments).
+// Roster source: privacy/roster-config.js researchRoster() (the same one the tests use). Run: node tools/guard-collisions.mjs [--sheets file.json]
+// The output is counts and GAME WORDS only. It never prints a member name or any piece of one: a fragment collision prints its fragment length; a probe word that shares
+// four or more letters in a row with ANY name (a word that contains a name or a fragment of one) is not printed at all, only counted with its length; a probe word that is a name is counted.
 import { pathToFileURL } from "node:url";
 import { scanUserText } from "../infrastructure/worker/privacy/outbound-guard.js";
-import { researchRoster, researchMembersFor, genericAliases, fragmentWords } from "../infrastructure/worker/privacy/roster-config.js";
+import { researchRoster, researchMembersFor, genericAliases } from "../infrastructure/worker/privacy/roster-config.js";
 import { skeleton } from "../infrastructure/worker/privacy/skeleton.js";
 
 export const PROBE_WORDS = (
@@ -20,28 +21,41 @@ const KINDS = ["display", "alias", "first", "character"];
 const FIELD = { alias: "aliases", first: "firstNames", character: "characterNames" };
 const PLACEHOLDER = "qzxjvkkw";
 
-// Pure: returns { kinds: { kind: { names, exactWords, substringWords: [], partialCount, partialLengths: Set } } } with no member name in it.
+const allKeys = (members) => members.flatMap((m) => [m.display, ...(m.aliases || []), ...(m.firstNames || []), ...(m.characterNames || [])]).map((n) => skeleton(String(n || ""))).filter(Boolean);
+// True when the word shares 4+ letters in a row with any name (either contains a piece of the other).
+export function sharesFourLetters(word, keys) {
+  const w = skeleton(word);
+  for (let i = 0; i + 4 <= w.length; i++) { const win = w.slice(i, i + 4); if (keys.some((k) => k.includes(win))) return true; }
+  return false;
+}
+
+// Pure. Returns { mode: { kind: { names, exact, partial, printable: Set, withheld: [lengths] } } } with no member name or fragment in it.
 export function collisions(roster, words = PROBE_WORDS) {
+  const keys = allKeys(roster.members);
   const out = {};
-  const members = roster.members;
-  for (const kind of KINDS) {
-    const rec = { names: 0, exact: 0, substringWords: new Set(), partial: 0, partialLengths: new Set() };
-    out[kind] = rec;
-    for (const m of members) {
-      const list = kind === "display" ? [m.display] : m[FIELD[kind]] || [];
-      for (const name of list) {
-        if (typeof name !== "string" || !name.trim()) continue;
-        if (kind === "alias" && genericAliases.includes(name.toLowerCase())) continue;
-        rec.names++;
-        const single = { members: [kind === "display" ? { display: name } : { display: PLACEHOLDER, [FIELD[kind]]: [name] }], genericAliases: roster.genericAliases, fragmentWords: roster.fragmentWords };
-        const key = skeleton(name);
-        for (const w of words) {
-          let leaks;
-          try { leaks = scanUserText([w], single); } catch { continue; }
-          const mine = leaks.filter((l) => l.kind === "name" || l.kind === "partial");
-          if (!mine.length) continue;
-          if (skeleton(w) === key) { rec.exact++; continue; }
-          if (mine.some((l) => l.kind === "partial")) { rec.partial++; rec.partialLengths.add(5); } else rec.substringWords.add(w);
+  for (const [mode, opts] of [["friend-typed", {}], ["prompt", { noFragments: true }]]) {
+    out[mode] = {};
+    for (const kind of KINDS) {
+      const rec = { names: 0, exact: 0, partial: 0, printable: new Set(), withheld: [] };
+      out[mode][kind] = rec;
+      for (const m of roster.members) {
+        const list = kind === "display" ? [m.display] : m[FIELD[kind]] || [];
+        for (const name of list) {
+          if (typeof name !== "string" || !name.trim()) continue;
+          if (kind === "alias" && genericAliases.includes(name.toLowerCase())) continue;
+          rec.names++;
+          const single = { members: [kind === "display" ? { display: name } : { display: PLACEHOLDER, [FIELD[kind]]: [name] }], genericAliases: roster.genericAliases };
+          const key = skeleton(name);
+          for (const w of words) {
+            let leaks;
+            try { leaks = scanUserText([w], single, opts); } catch { continue; }
+            const mine = leaks.filter((l) => l.kind === "name" || l.kind === "partial");
+            if (!mine.length) continue;
+            if (skeleton(w) === key) { rec.exact++; continue; }
+            if (mine.some((l) => l.kind === "partial")) rec.partial++;
+            else if (sharesFourLetters(w, keys)) rec.withheld.push(w.length);
+            else rec.printable.add(w);
+          }
         }
       }
     }
@@ -51,14 +65,19 @@ export function collisions(roster, words = PROBE_WORDS) {
 
 export function report(result, probeCount = PROBE_WORDS.length) {
   const lines = [`probe words: ${probeCount}`];
-  for (const [kind, r] of Object.entries(result)) {
-    lines.push(`${kind}: ${r.names} names checked; ${r.exact} probe words equal a name (not listed); ${r.partial} fragment collisions (fragment length only: ${[...r.partialLengths].join(",") || "-"}); ${r.substringWords.size} word-contains-name collisions${r.substringWords.size ? `: ${[...r.substringWords].sort().join(", ")}` : ""}`);
+  for (const [mode, kinds] of Object.entries(result)) {
+    lines.push(`[${mode}]`);
+    for (const [kind, r] of Object.entries(kinds)) {
+      const withheld = r.withheld.length ? `; ${r.withheld.length} words withheld (share 4+ letters with a name; word lengths: ${[...r.withheld].sort((a, b) => a - b).join(",")})` : "";
+      const words = r.printable.size ? `: ${[...r.printable].sort().join(", ")}` : "";
+      lines.push(`${kind}: ${r.names} names checked; ${r.exact} probe words equal a name (not listed); ${r.partial} fragment collisions (fragments are 5 letters; not listed); ${r.printable.size} whole-word collisions${words}${withheld}`);
+    }
   }
   return lines.join("\n");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
-  // Options: --sheets <file.json> adds sheet-derived members (a party_sheets array) the way the Worker does; --no-stop shows the old behaviour (no fragmentWords).
+  // --sheets <file.json> adds sheet-derived members (a party_sheets array) the way the Worker does.
   const argv = process.argv.slice(2);
   const sheetsAt = argv.indexOf("--sheets");
   const base = researchRoster();
@@ -67,5 +86,5 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
     const { readFileSync } = await import("node:fs");
     members = researchMembersFor(JSON.parse(readFileSync(argv[sheetsAt + 1], "utf8")));
   }
-  console.log(report(collisions({ members, genericAliases: base.genericAliases, ...(argv.includes("--no-stop") ? {} : { fragmentWords }) })));
+  console.log(report(collisions({ members, genericAliases: base.genericAliases })));
 }

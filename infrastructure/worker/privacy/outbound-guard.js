@@ -142,11 +142,6 @@ export function parseRoster(roster, opts = {}) {
     if (typeof g !== "string" || g !== g.toLowerCase()) throw configError("genericAliases entries must be lowercase strings");
     generic.add(skel(g));
   }
-  // Optional: lowercase game/dictionary words that cannot identify a person. They only switch OFF the fragment (first/last 5 letters) rule for a name that is one of them
-  // or whose fragment is one of them (or the start/end of one); every whole-name form (exact, spaced, leet, reversed, collapsed) still matches.
-  const stopIn = Array.isArray(roster) ? [] : roster.fragmentWords ?? [];
-  if (!Array.isArray(stopIn)) throw configError("fragmentWords must be an array");
-  const stop = stopIn.length ? stopIn.map((w) => skel(String(w))).filter((w) => w.length >= 3) : null;
   const entries = [];
   const ids = [];
   const bodyNames = [];
@@ -163,7 +158,7 @@ export function parseRoster(roster, opts = {}) {
       const sig = `${i}|${key}|${kind}`;
       if (seen.has(sig)) continue;
       seen.add(sig);
-      entries.push(compileKey(raw, key, kind, i, stop));
+      entries.push(compileKey(raw, key, kind, i));
       const lower = raw.toLowerCase().replace(/\s+/g, " ").trim();
       const letters = key.length;
       const multi = /\s/.test(lower);
@@ -191,21 +186,7 @@ function withAsker(R, asker) {
   return { ...R, entries: [...R.entries, compileKey(raw, key, "asker", -1)] };
 }
 
-// Fragment (partial) keys: first 5 and last 5 letters of a 7+ letter name. Only for display/character/first names (and every kind when no stop list is given, as before),
-// never for a name that is itself a stop word, and never for a fragment that is a stop word or the start (first 5) / end (last 5) of one.
-const PARTIAL_KINDS = new Set(["display", "character", "first"]);
-function partialsOf(key, kind, stop) {
-  const frags = [...new Set([key.slice(0, 5), key.slice(-5)])];
-  if (!stop) return frags;
-  if (!PARTIAL_KINDS.has(kind) || stop.includes(key)) return [];
-  return frags.filter((f, i) => {
-    const first = i === 0 || key.slice(0, 5) === key.slice(-5) ? stop.some((w) => w.startsWith(f)) : false;
-    const last = i !== 0 || key.slice(0, 5) === key.slice(-5) ? stop.some((w) => w.endsWith(f)) : false;
-    return !(first || last);
-  });
-}
-
-function compileKey(raw, key, kind, member, stop = null) {
+function compileKey(raw, key, kind, member) {
   const e = { raw, key, kind, member, short: key.length <= 4, plain: [], coll: [], partial: [], words: null };
   if (e.short) {
     const w = spaced(raw);
@@ -221,9 +202,8 @@ function compileKey(raw, key, kind, member, stop = null) {
   }
   e.plain = [...u];
   e.coll = [...new Set([...u].map(collapse))];
-  if (key.length >= 7) e.partial = partialsOf(key, kind, stop);
-  // The reversed whole key always matches. A reversed fragment is a weak signal: with a stop list it is dropped when the reversed fragment sits inside a listed word ("starter").
-  e.rev = [key, ...e.partial.filter((f) => !(stop && stop.some((w) => w.includes(reverse(f)))))].map(reverse);
+  if (key.length >= 7) e.partial = [...new Set([key.slice(0, 5), key.slice(-5)])];
+  e.rev = [key, ...e.partial].map(reverse);
   return e;
 }
 
@@ -334,7 +314,7 @@ function detail(rec, layer, e) {
   return rec;
 }
 
-function scanSkeleton(text, R, kinds, out, seg) {
+function scanSkeleton(text, R, kinds, out, seg, opts = {}) {
   const clean = text.replace(TOKEN_RE, " ");
   const sp = spaced(clean);
   if (!sp) return;
@@ -360,8 +340,10 @@ function scanSkeleton(text, R, kinds, out, seg) {
     v = { plain, coll: [...new Set(plain.map(collapse))] };
     return v;
   };
+  const work = opts.work;
   for (const e of R.entries) {
     if (kinds && !kinds.has(e.kind)) continue;
+    if (work && ++work.steps > work.max) { out.push({ kind: "toolong", seg }); return; }
     if (e.short) {
       for (const n of e.shortNeedles) if (padded.includes(n)) { out.push(detail({ kind: "name", seg, ref: e.member }, "short", e)); break; }
       continue;
@@ -371,10 +353,11 @@ function scanSkeleton(text, R, kinds, out, seg) {
     let layer = "";
     for (const n of e.plain) { for (const t of vs.plain) if (t.includes(n)) { hit = "name"; layer = "plain"; break; } if (hit) break; }
     if (!hit) for (const n of e.coll) { for (const t of vs.coll) if (t.includes(n)) { hit = "name"; layer = "collapse"; break; } if (hit) break; }
-    if (!hit) for (const n of e.partial) { for (const t of vs.plain) if (t.includes(n)) { hit = "partial"; layer = "partial"; break; } if (hit) break; }
+    if (!hit && !opts.noFragments) for (const n of e.partial) { for (const t of vs.plain) if (t.includes(n)) { hit = "partial"; layer = "partial"; break; } if (hit) break; }
     if (!hit && e.rev) {
       // the name typed backwards (or shown backwards by a bidi override that was stripped)
-      for (const n of e.rev) if (sk.includes(n)) { hit = "name"; layer = "reverse"; break; }
+      // noFragments: only the reversed whole key (the first element); the reversed 5-letter fragments are skipped
+      for (const n of opts.noFragments ? e.rev.slice(0, 1) : e.rev) if (sk.includes(n)) { hit = "name"; layer = "reverse"; break; }
     }
     if (hit) out.push(detail({ kind: hit, seg, ref: e.member }, layer, e));
   }
@@ -384,9 +367,12 @@ function scanText(text, R, opts, out, seg) {
   if (!text) return;
   // A user segment this long is not a question; do not spend CPU on it, refuse it.
   if (text.length > (opts.maxChars ?? 20000)) { out.push({ kind: "toolong", seg }); return; }
-  for (const c of candidates(text)) {
+  const cands = candidates(text);
+  // Work bound (no clock: a Worker's timers do not advance during compute): opts.work = { steps, max } is shared across segments; one step per candidate and per roster entry visited.
+  if (opts.work && (opts.work.steps += cands.length) > opts.work.max) { out.push({ kind: "toolong", seg }); return; }
+  for (const c of cands) {
     if (opts.blockScripts !== false && BLOCK_RE.test(c)) out.push({ kind: "script", seg });
-    scanSkeleton(c, R, opts.kinds, out, seg);
+    scanSkeleton(c, R, opts.kinds, out, seg, opts);
     structural(c, out, seg);
   }
 }
