@@ -23,6 +23,8 @@ const realFetch = globalThis.fetch;
 let patches = [];
 let anth = [];
 let claudeText = null; // null: the Anthropic endpoint is unreachable
+// CHANGED (real-names PR): a member is answered by Claude, never Workers AI. makeEnv gives research asks the fake key and beforeEach makes Claude answer WORKERS_TEXT, so the walls tests still
+// see "a real answer"; tests about the old Workers AI hop now assert the degraded line (+degraded) instead.
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
   if (u.includes("/messages/@original")) { patches.push(JSON.parse(init.body)); return new Response("{}", { status: 200 }); }
@@ -34,7 +36,7 @@ globalThis.fetch = async (url, init = {}) => {
   return new Response("{}", { status: 200 });
 };
 test.after(() => { globalThis.fetch = realFetch; });
-test.beforeEach(() => { privacyBudget.ms = 1000; /* cold JIT under a full run can pass the real 8 ms CPU budget */ resetKeyCacheForTests(); resetResearchClaudeForTests(); invalidateConfigCache(); invalidatePersonaCache(); invalidatePagesCache(); patches = []; anth = []; claudeText = null; });
+test.beforeEach(() => { privacyBudget.ms = 1000; /* cold JIT under a full run can pass the real 8 ms CPU budget */ resetKeyCacheForTests(); resetResearchClaudeForTests(); invalidateConfigCache(); invalidatePersonaCache(); invalidatePagesCache(); patches = []; anth = []; claudeText = WORKERS_TEXT; });
 
 const ADMIN = "admin-token-for-tests-0123456789abcdef";
 const MEMBER_KEY = "member-key-for-tests-0123456789ab";
@@ -58,7 +60,7 @@ async function makeEnv({ research = true, persona = null, extra = {} } = {}) {
     DB, BOARD_ADMIN_TOKEN: ADMIN, KEY_SALT, USER_SALT, ALLOWED_ORIGINS: "", DISCORD_PUBLIC_KEY: signer.publicKeyHex,
     BOARD_ROOM: { idFromName: () => "r", get: () => room },
     AI: { run: async () => { env.__wai = (env.__wai || 0) + 1; return { response: env.__waiReply ? env.__waiReply() : WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } }; } },
-    ...(research ? { ASK_RESEARCH: "on" } : {}), ASK_DEADLINE_MS: "5000", ...extra,
+    ...(research ? { ASK_RESEARCH: "on", ANTHROPIC_API_KEY: "sk-ant-FAKE-TEST-0000" } : {}), ASK_DEADLINE_MS: "5000", ...extra,
   };
   return env;
 }
@@ -136,6 +138,14 @@ test("1. the per-user cap is not special: 100 asks over the cap in a row are all
 // ---- 2. the neuron cap degrades, never walls -----------------------------------------------------------------------------------------------
 for (const [name, ask] of [["web", async (env) => (await webAsk(env)).row], ["discord /ask", async (env) => (await discordAsk(env)).row], ["discord Ask Leeroy", async (env) => (await discordMenu(env)).row]]) {
   test(`2. ${name}: neurons exhausted for the day: a member still gets an answer (library facts, honest in-voice line), no wall text`, async () => {
+    // CHANGED: the neuron cap is Workers AI's, and a member no longer uses Workers AI. With Claude up the cap changes nothing (checked first); with Claude down the degraded line plus library facts answers.
+    const up = await makeEnv();
+    setRow(up, `ai_budget:${day()}`, { neurons: 99999, asks: 5, cron: 0 });
+    const upRow = await ask(up);
+    assert.equal(upRow.status, "answered", upRow.model);
+    assert.match(upRow.model, /^claude:/, upRow.model);
+    assert.equal(up.__wai, undefined);
+    claudeText = null;
     const env = await makeEnv();
     setRow(env, `ai_budget:${day()}`, { neurons: 99999, asks: 5, cron: 0 });
     const row = await ask(env);
@@ -143,8 +153,9 @@ for (const [name, ask] of [["web", async (env) => (await webAsk(env)).row], ["di
     assert.match(row.answer, /Onyxia's Lair opens on 2026-12-09/, "the library fact is the answer");
     assert.equal(env.__wai, undefined, "Workers AI was not called past the cap");
     assert.ok(!/budget_|daily-limit/.test(row.model), row.model);
+    assert.match(row.model, /\+degraded$/, "never silent");
     assert.doesNotMatch(row.answer, WALL_RE);
-    assert.match(row.answer, /research hand/i, "the honest line says what this is");
+    assert.match(row.answer, /good brain is out/i, "the honest line says what this is");
   });
 }
 
@@ -212,7 +223,8 @@ test("3. a guest flood (guest tenant share spent): guests are refused, the membe
   assert.equal(member.row.status, "answered");
   assert.match(member.row.answer, /Onyxia/);
   assert.ok(!/budget/.test(member.row.model));
-  assert.equal(env.__wai, 1, "the member reached Workers AI: the guests' spend left room");
+  assert.equal(anth.length, 1, "CHANGED: the member reached Claude (was Workers AI): the guests' spend left room");
+  assert.equal(env.__wai, undefined, "a member never reaches Workers AI under research");
   assert.doesNotMatch(before, /guest/);
   assert.equal(getRow(env, `ai_budget:${day()}:tenant:default`) && getRow(env, `ai_budget:${day()}:tenant:default`).asks, 1, "only the member's own ask moved the member tenant row");
 });
@@ -322,7 +334,8 @@ test("6. a stored budget line or error line from earlier is never reused as the 
   assert.notEqual(row.model, "reused-answer");
   assert.match(row.answer, /Onyxia's Lair opens/);
   assert.doesNotMatch(row.answer, /back at midnight|Off-voted/);
-  assert.equal(env.__wai, 1, "a fresh model call, not a reuse");
+  assert.equal(anth.length, 1, "a fresh model call (Claude since the real-names PR; it was Workers AI), not a reuse");
+  assert.equal(env.__wai, undefined);
 });
 
 test("6. flag on, a good earlier answer is not reused either (reuse stays off in research mode, so no refusal or Off-voted row can ever come back)", async () => {
@@ -452,25 +465,41 @@ test("12. researchTimeoutMs keeps every Workers AI attempt inside deadline minus
   assert.equal(researchTimeoutMs(19000, 9000), 1000, "exactly 1 s left still runs");
 });
 
-test("12. worst case with a faked clock: Claude takes 9 s, then Workers AI; every Workers AI attempt ends by 20 s, and a retry only starts at or before 12 s", async () => {
+test("12. worst case with a faked clock: Claude takes 9 s, then the degraded line (no Workers AI); a guest's Workers AI attempt ends by 20 s and its retry only starts at or before 12 s", async () => {
+  // CHANGED: this was "Claude takes 9 s, then Workers AI". A member's chain ends at Claude; the Workers AI timing rules now belong to the guests' path (no Claude, no 9 s).
   const realNow = Date.now, realTimeout = AbortSignal.timeout;
-  for (const [firstCost, expectRetry] of [[3000, true], [4000, false]]) {
+  {
     const env = await makeEnv({ extra: { ANTHROPIC_API_KEY: FAKE_KEY, ASK_DEADLINE_MS: "24000" } });
+    let clock = 1_800_000_000_000; const start = clock;
+    Date.now = () => clock;
+    const sends = [];
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => { if (String(url).includes("anthropic")) { sends.push(clock - start); clock += 9000; return new Response("down", { status: 500 }); } return prevFetch(url, init); };
+    let waiRuns = 0; env.AI.run = async () => { waiRuns++; return { response: WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } }; };
+    try {
+      const r = await webAsk(env);
+      assert.equal(r.row.status, "answered", r.row.model);
+      assert.match(r.row.model, /\+degraded$/, r.row.model);
+    } finally { Date.now = realNow; globalThis.fetch = prevFetch; }
+    assert.equal(waiRuns, 0, "a member never reaches Workers AI");
+    assert.ok(sends.length >= 1 && sends.length <= 2, JSON.stringify(sends));
+    assert.ok(sends.every((t) => t <= 20000));
+  }
+  for (const [firstCost, expectRetry] of [[3000, true], [13000, false]]) {
+    const env = await makeEnv({ extra: { ASK_DEADLINE_MS: "24000" } });
     let clock = 1_800_000_000_000;
     const start = clock;
     Date.now = () => clock;
     let lastMs = null; const ai = [];
     AbortSignal.timeout = (ms) => { lastMs = ms; return new AbortController().signal; };
-    const prevFetch = globalThis.fetch;
-    globalThis.fetch = async (url, init) => { if (String(url).includes("anthropic")) { clock += 9000; return new Response("down", { status: 500 }); } return prevFetch(url, init); };
     env.AI.run = async () => { ai.push({ at: clock - start, ms: lastMs }); clock += firstCost; return { response: "I can't help with that.", usage: { prompt_tokens: 5, completion_tokens: 5 } }; };
     try {
-      const r = await webAsk(env);
+      const r = await webAsk(env, { member: false, ip: "198.51.100.40" });
       assert.equal(r.row.status, "answered", r.row.model);
-    } finally { Date.now = realNow; AbortSignal.timeout = realTimeout; globalThis.fetch = prevFetch; }
+    } finally { Date.now = realNow; AbortSignal.timeout = realTimeout; }
     assert.equal(ai.length, expectRetry ? 2 : 1, JSON.stringify(ai));
     for (const a of ai) assert.ok(a.at + a.ms <= 20000, `attempt at ${a.at} with ${a.ms} ms ends after 20 s`);
-    assert.equal(ai[0].ms, 11000);
+    assert.equal(ai[0].ms, 12000);
     if (expectRetry) assert.ok(ai[1].at <= 12000);
   }
 });
@@ -535,9 +564,10 @@ test("17. a non-roster Discord user at the guests' share gets library facts, not
 });
 
 test("18. reservation latency comes out of the attempt's time, and an attempt with under 1 s left is skipped (library facts), never started past the margin", async () => {
+  // CHANGED: asked as a guest. The reservation is Workers AI's, and a member no longer reaches Workers AI; the guest has no 9 s Claude hop, so the skipping latency is 19.5 s (hard end 20 s).
   const realNow = Date.now, realTimeout = AbortSignal.timeout;
-  for (const [latency, expectCall] of [[3000, true], [11000, false]]) {
-    const env = await makeEnv({ extra: { ANTHROPIC_API_KEY: FAKE_KEY, ASK_DEADLINE_MS: "24000" } });
+  for (const [latency, expectCall] of [[3000, true], [19500, false]]) {
+    const env = await makeEnv({ extra: { ASK_DEADLINE_MS: "24000" } });
     let clock = 1_800_000_000_000; const start = clock;
     Date.now = () => clock;
     let lastMs = null; const ai = [];
@@ -548,7 +578,7 @@ test("18. reservation latency comes out of the attempt's time, and an attempt wi
     env.DB.prepare = (sql) => { if (/json_set\(kv_state\.json, '\$\.neurons'/.test(sql) && /WHERE COALESCE/.test(sql)) clock += latency; return prep.call(env.DB, sql); };
     env.AI.run = async () => { ai.push({ at: clock - start, ms: lastMs }); return { response: WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } }; };
     try {
-      const r = await webAsk(env);
+      const r = await webAsk(env, { member: false, ip: "198.51.100.41" });
       assert.equal(r.row.status, "answered", r.row.model);
       if (!expectCall) assert.match(r.row.model, /local-d1-rag/, r.row.model);
     } finally { Date.now = realNow; AbortSignal.timeout = realTimeout; globalThis.fetch = prevFetch; }
@@ -610,7 +640,7 @@ test("20. a non-roster Discord user at 40 a day keeps the per-user refusal even 
 });
 
 // Fake-clock helpers for the deadline tests (the clock is frozen; every wait is an explicit advance).
-async function fakeClockAsk({ extra = {}, latency = 0, claudeCost = null, onAi }) {
+async function fakeClockAsk({ extra = {}, latency = 0, claudeCost = null, onAi, member = true }) {
   const realNow = Date.now, realTimeout = AbortSignal.timeout;
   const env = await makeEnv({ extra: { ASK_DEADLINE_MS: "24000", ...extra } });
   let clock = 1_800_000_000_000; const start = clock;
@@ -623,13 +653,13 @@ async function fakeClockAsk({ extra = {}, latency = 0, claudeCost = null, onAi }
   env.DB.prepare = (sql) => { if (/json_set\(kv_state\.json, '\$\.neurons'/.test(sql) && /WHERE COALESCE/.test(sql)) clock += latency; return prep.call(env.DB, sql); };
   env.AI.run = async (_m, _i, opts) => { const rec = { at: clock - start, ms: lastMs, gateway: Boolean(opts && opts.gateway) }; ai.push(rec); return onAi(rec, (n) => { clock += n; }); };
   let row;
-  try { row = (await webAsk(env)).row; } finally { Date.now = realNow; AbortSignal.timeout = realTimeout; globalThis.fetch = prevFetch; }
+  try { row = (await webAsk(env, { member, ip: member ? "203.0.113.9" : "198.51.100.42" })).row; } finally { Date.now = realNow; AbortSignal.timeout = realTimeout; globalThis.fetch = prevFetch; }
   return { ai, claude, row };
 }
 
-test("21. gateway path (AI_GATEWAY_ID set): no 1 s floor and no direct run after a gateway failure when there is no margin; every attempt ends by the attempt's deadline", async () => {
-  for (const [latency, wantDirect] of [[10000, false], [7000, true]]) {
-    const r = await fakeClockAsk({ extra: { AI_GATEWAY_ID: "gw" }, latency, onAi: (rec, advance) => { advance(rec.ms); if (rec.gateway) throw new Error("gateway timed out"); return { response: WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } }; } });
+test("21. (guest: CHANGED, Workers AI is the guests' path only) gateway path (AI_GATEWAY_ID set): no 1 s floor and no direct run after a gateway failure when there is no margin; every attempt ends by the attempt's deadline", async () => {
+  for (const [latency, wantDirect] of [[10000, false], [3500, true]]) { // CHANGED: 7000 became 3500; the guest reservation path is hit by the latency hook more than once per ask, so 7000 no longer left room for the direct run
+    const r = await fakeClockAsk({ member: false, extra: { AI_GATEWAY_ID: "gw" }, latency, onAi: (rec, advance) => { advance(rec.ms); if (rec.gateway) throw new Error("gateway timed out"); return { response: WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } }; } });
     assert.equal(r.row.status, "answered", r.row.model);
     for (const a of r.ai) assert.ok(a.at + a.ms <= 12000, `attempt at ${a.at} + ${a.ms} ms passes the attempt deadline (12 s)`);
     assert.equal(r.ai.filter((a) => !a.gateway).length, wantDirect ? 1 : 0, JSON.stringify(r.ai));
@@ -644,8 +674,8 @@ test("22. the margin uses the delivery deadline: with ASK_DEADLINE_MS=8000 neith
   assert.equal(r.row.status, "answered", r.row.model);
   assert.equal(r.claude.length, 2);
   for (const c of r.claude) assert.ok(c.at + c.ms <= hardEnd + 1, `Claude send ends at ${c.at + c.ms}, hard end ${hardEnd}`);
-  assert.equal(r.ai.length, 1);
-  assert.ok(r.ai[0].at + r.ai[0].ms <= hardEnd + 1, `Workers AI ends at ${r.ai[0].at + r.ai[0].ms}, hard end ${hardEnd}`);
+  assert.equal(r.ai.length, 0, "CHANGED: was 1. A member never reaches Workers AI; the degraded line answers");
+  assert.match(r.row.model, /\+degraded$/, r.row.model);
 });
 
 test("22b. the original slow-Claude scenario (each send burns 3 s of an 8 s deadline): no Claude send runs past the hard end and the ask is still answered", async () => {
