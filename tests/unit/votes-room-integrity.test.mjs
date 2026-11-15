@@ -148,7 +148,7 @@ test("sheet: a field that turns hidden is stored whole and projected on every re
   const stored = () => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json).members[0];
   const sheets = () => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").get().json);
   const read = () => projectForAnonymous(JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json), sheets()).members[0];
-  const ev = (field, value, visible) => recordSheetEventInD1(env, ORIGIN, { slug: "santa", name: "Santa", field, value, visible });
+  const ev = (field, value, visible) => recordSheetEventInD1(env, ORIGIN, { slug: "santa", name: "Santa", field, value, visible, visibleGiven: typeof visible === "boolean" });
   await ev("race", "Troll", true);
   assert.equal(read().race, "Troll");
   await ev("race", "Troll", false);

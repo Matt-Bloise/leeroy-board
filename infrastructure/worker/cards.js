@@ -33,6 +33,8 @@ export const boardLinesEnabled = (env) => flag(env && env.BOARD_LINES_ENABLED);
 export const RSVP_STATES = ["in", "maybe", "late", "out"];
 export const RSVP_LABEL = { in: "In", maybe: "Tentative", late: "Running late", out: "Out" };
 export const RSVP_PHRASE = { in: "is in", maybe: "is tentative", late: "is running late", out: "is out" };
+// A stored rsvp is friend data: "constructor" or "__proto__" must read as no answer, not as an inherited property of the table.
+const rsvpLabel = (v) => (typeof v === "string" && Object.hasOwn(RSVP_LABEL, v) ? RSVP_LABEL[v] : "No answer");
 export const DEFAULT_MEET = ["Valley of Strength", "The Crossroads"];
 export const DEFAULT_WHEN = ["6pm", "8pm", "later"];
 
@@ -52,16 +54,26 @@ export function sanitiseWriteIn(raw, max = WRITE_IN_MAX) {
   let s = String(raw === undefined || raw === null ? "" : raw).normalize("NFKC");
   s = s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, " ");
   s = s.replace(/<[^>]*>/g, " ");
-  s = s.replace(/https?:\/\/\S+/gi, " ");
+  // Markdown characters go first: "ht*tps://e.test/a" and "ht[]tp://e.test" must read as the URL they render as, and then go with it.
   s = s.replace(/[@`*_~|\\[\]()<>]/g, "");
+  s = s.replace(/https?:\/\/\S+/gi, " ");
   s = s.replace(/\s+/g, " ").trim();
   return [...s].slice(0, max).join("").trim();
 }
 
-// A display name safe to print in a card or a board line.
+// A display name safe to print in a card or a board line. A bare Discord invite (no scheme, so sanitiseWriteIn keeps it) is removed too:
+// Discord renders discord.gg/<code> as a live invite. Removed before the cut, so a half invite never survives.
+const BARE_INVITE = /(?:www\.)?(?:discord\.gg|discord(?:app)?\.com\/invite)\/\S*/gi;
 export function cleanName(raw) {
-  return sanitiseWriteIn(raw, NAME_MAX) || "Someone";
+  const s = sanitiseWriteIn(raw, Infinity).replace(BARE_INVITE, " ").replace(/\s+/g, " ").trim();
+  return [...s].slice(0, NAME_MAX).join("").trim() || "Someone";
 }
+// A free-text `when` or `meet` as printed: cleaned, a bare invite removed before the cut. An offered admin option (`offered`) prints unchanged.
+const cleanPlace = (raw, offered) => {
+  if (typeof raw === "string" && offered && offered.includes(raw)) return raw;
+  const s = sanitiseWriteIn(raw, Infinity).replace(BARE_INVITE, " ").replace(/\s+/g, " ").trim();
+  return [...s].slice(0, WRITE_IN_MAX).join("").trim();
+};
 
 // Turn a button token or select value into the stored value, or null when it is not an allowed choice.
 export function resolveChoice(field, token, options) {
@@ -89,7 +101,8 @@ export function applySignupChange(doc, change) {
   const next = structuredClone(doc && typeof doc === "object" ? doc : { entries: [] });
   next.entries = Array.isArray(next.entries) ? next.entries : [];
   const key = String(name || "").toLowerCase();
-  let entry = next.entries.find((e) => String(e.name || "").toLowerCase() === key);
+  // A stored row that is not an object (null, a number, a string, an array) is never matched; it stays where it is.
+  let entry = next.entries.find((e) => e && typeof e === "object" && !Array.isArray(e) && String(e.name || "").toLowerCase() === key);
   if (!entry) {
     entry = { name, ...(slug ? { slug } : {}) };
     next.entries.push(entry);
@@ -135,13 +148,18 @@ export function tallyEntries(state) {
   const mopts = meetOptions(state && state.options);
   for (const e of entries) {
     const n = cleanName(e && e.name);
-    if (e && out.rsvp[e.rsvp]) out.rsvp[e.rsvp].push(n);
-    if (e && out.pack[e.pack]) out.pack[e.pack].push(n);
+    if (e && typeof e.rsvp === "string" && Object.hasOwn(out.rsvp, e.rsvp)) out.rsvp[e.rsvp].push(n);
+    if (e && typeof e.pack === "string" && Object.hasOwn(out.pack, e.pack)) out.pack[e.pack].push(n);
     if (e && typeof e.meet === "string" && e.meet) {
-      const label = mopts.includes(e.meet) ? e.meet : e.meet === "vos" ? "Valley of Strength" : e.meet === "xroads" ? "The Crossroads" : `Elsewhere: ${sanitiseWriteIn(e.meet)}`;
+      const label = mopts.includes(e.meet) ? e.meet : e.meet === "vos" ? "Valley of Strength" : e.meet === "xroads" ? "The Crossroads" : `Elsewhere: ${cleanPlace(e.meet)}`;
       out.meet.set(label, [...(out.meet.get(label) || []), n]);
     }
-    if (e && typeof e.when === "string" && e.when) out.when.set(e.when, [...(out.when.get(e.when) || []), n]);
+    if (e && typeof e.when === "string" && e.when) {
+      // Free text (a member write takes any short string): cleaned like `meet`, and a leading heading, quote or list marker is dropped
+      // because the label starts a line in the Arriving field. The offered options (6pm, 8pm, later) print unchanged.
+      const label = whenOptions(state && state.options).includes(e.when) ? e.when : cleanPlace(e.when).replace(/^[\s#>-]+/, "");
+      if (label) out.when.set(label, [...(out.when.get(label) || []), n]);
+    }
   }
   return out;
 }
@@ -169,7 +187,8 @@ export function renderSignupCard(state) {
     }
   }
   if (members) {
-    const quiet = members.filter((m) => { const e = claimed.byMember.get(m); return !(e && e.rsvp); });
+    // "Answered" means a valid state: a stored rsvp such as "constructor" is in no list above, so that member belongs here.
+    const quiet = members.filter((m) => { const e = claimed.byMember.get(m); return !(e && RSVP_STATES.includes(e.rsvp)); });
     if (quiet.length) fields.push({ name: `No answer yet (${quiet.length})`, value: clampText(quiet.map((m) => `${iconFor(m, emoji)}${m.name}`).join(", "), 1024), inline: false });
   }
   if (t.pack.yes.length || t.pack.no.length) {
@@ -233,10 +252,12 @@ function assetUrl(state, path) {
 }
 
 const DETAIL_MAX = 1024;
-const detailBits = (e) => {
-  const bits = [RSVP_LABEL[e && e.rsvp] || "No answer"];
-  if (e && e.when) bits.push(sanitiseWriteIn(e.when));
-  if (e && e.meet) bits.push(sanitiseWriteIn(e.meet));
+const detailBits = (e, options) => {
+  const bits = [rsvpLabel(e && e.rsvp)];
+  const when = e && e.when ? cleanPlace(e.when, whenOptions(options)) : "";
+  if (when) bits.push(when);
+  const meet = e && e.meet ? cleanPlace(e.meet, meetOptions(options)) : "";
+  if (meet) bits.push(meet);
   if (e && (e.pack === "yes" || e.pack === "no")) bits.push(`pack ${e.pack}`);
   return bits;
 };
@@ -249,11 +270,11 @@ function boardBlocks(state, entries) {
   for (const m of state.members) {
     const e = claimed.byMember.get(m);
     const head = [m.classLabel, m.role].filter(Boolean).join(" · ");
-    blocks.push(`${iconFor(m, emoji)}**${m.name}**${head ? ` · ${head}` : ""}\n-# ${[m.race, ...detailBits(e)].filter(Boolean).join(" · ")}`);
+    blocks.push(`${iconFor(m, emoji)}**${m.name}**${head ? ` · ${head}` : ""}\n-# ${[m.race, ...detailBits(e, state.options)].filter(Boolean).join(" · ")}`);
   }
   for (const e of entries) {
     if (!e || claimed.byEntry.has(e)) continue;
-    blocks.push(`**${cleanName(e && e.name)}**\n-# Not on the party sheets yet · ${detailBits(e).join(" · ")}`);
+    blocks.push(`**${cleanName(e && e.name)}**\n-# Not on the party sheets yet · ${detailBits(e, state.options).join(" · ")}`);
   }
   return blocks;
 }
@@ -294,10 +315,12 @@ export function renderBoardCard(state) {
     fields = fit.values.map((value, i) => ({ name: i === 0 ? "Who" : "\u200b", value, inline: false }));
   } else {
     const lines = entries.map((e) => {
-      const bits = [RSVP_LABEL[e && e.rsvp] || "No answer"];
-      if (e && e.when) bits.push(String(e.when));
-      if (e && e.meet) bits.push(sanitiseWriteIn(e.meet));
-      if (e && e.pack) bits.push(`pack ${e.pack}`);
+      const bits = [rsvpLabel(e && e.rsvp)];
+      const when = e && e.when ? cleanPlace(e.when, whenOptions(state && state.options)) : "";
+      if (when) bits.push(when);
+      const meet = e && e.meet ? cleanPlace(e.meet, meetOptions(state && state.options)) : "";
+      if (meet) bits.push(meet);
+      if (e && (e.pack === "yes" || e.pack === "no")) bits.push(`pack ${e.pack}`);
       return `**${cleanName(e && e.name)}**: ${bits.join(" · ")}`;
     });
     fields = lines.length ? [{ name: "Who", value: clampText(lines.join("\n"), 1024), inline: false }] : [];

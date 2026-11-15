@@ -353,6 +353,7 @@
   }
   const shelfSeals = () => [...document.querySelectorAll("#su-shelf .sh-seal")];
   K.on("signups", shelf);
+  { const bb = window.BoardBrain; if (bb && typeof bb.on === "function") bb.on("me", shelf); } /* /me arrives after the sign-ups: repaint so your own seal is marked */
   MECH.signups = { hint: "to stamp the shelf of counts again, then raise a mug below", press: ({ say: sy }) => {
     const items = shelfCounts(); if (!items) return;
     shelfSeals().forEach((x) => { x.classList.remove("bump"); void x.offsetWidth; x.classList.add("bump"); setTimeout(() => x.classList.remove("bump"), 900); });

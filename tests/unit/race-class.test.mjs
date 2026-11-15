@@ -23,7 +23,7 @@ test("/tonight never says undefined for a member who hides race, class or both",
   const party = { members: [{ name: "Ada", role: "tank" }, { name: "Bo", race: "Troll", role: "healer" }, { name: "Di", class: "Priest", role: "healer" }, { name: "Ed", race: "Orc", class: "Mage", role: "damage" }] };
   const text = tonightLines({ now: 1, byName: "Ada", party, signups: { entries: [] }, boardUrl: "https://x.test" }).join("\n");
   assert.ok(!/undefined|null/.test(text), text);
-  assert.ok(text.includes("Ada (Build hidden)") && text.includes("Bo (Troll)") && text.includes("Di (Priest)") && text.includes("Ed (Orc Mage)"));
+  assert.ok(text.includes("Ada · Bo (Troll) · Di (Priest) · Ed (Orc Mage)"));
 });
 
 test("no template joins a member's race and class by hand any more", () => {

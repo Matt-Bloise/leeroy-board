@@ -8,7 +8,7 @@ const SCENES = {
   chamber: () => [new URL("../scenes/chamber.css?v=ceca5fbe60", HERE), new URL("../scenes/chamber.js?v=9e50294446", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=1768b64335", HERE), new URL("../scenes/decide.js?v=d379465361", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=1c5e2abb08", HERE), new URL("../scenes/probe.js?v=24d1f46113", HERE)],
-  data: () => [new URL("../scenes/data.css?v=ee39216ed8", HERE), new URL("../scenes/data.js?v=46a654146f", HERE)],
+  data: () => [new URL("../scenes/data.css?v=ee39216ed8", HERE), new URL("../scenes/data.js?v=d10660b289", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=0c70badf8e", HERE), new URL("../scenes/walk.js?v=fef65c1b6a", HERE)],
   place: () => [new URL("../scenes/place.css?v=d0b34a8d10", HERE), new URL("../scenes/place.js?v=d64b8d4e6d", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=d7744ab4c3", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],

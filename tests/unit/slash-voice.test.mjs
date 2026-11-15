@@ -3,7 +3,7 @@
 // the real signed-request handler. No network, no AI. Run: node --test tests/unit/slash-voice.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js";
+import { handleDiscordInteraction, LAUNCH_UTC } from "../../infrastructure/worker/discord.js";
 import { SLASH_COPY } from "../../infrastructure/worker/slash-copy.js";
 import { buildStartReply } from "../../infrastructure/worker/announce.js";
 import { tonightLines } from "../../infrastructure/worker/tonight-copy.js";
@@ -125,7 +125,9 @@ test("handler: replies keep the Discord response shape, the facts and the limits
   const start = await send(slash("start"));
   assert.equal(start.data.content.split("\n").length, 4);
 
-  const launch = await send(slash("launch"));
+  // The status board only runs before launch; after it /launch answers with one line (discord-components.test.mjs).
+  const realNow = Date.now; Date.now = () => LAUNCH_UTC - 3600000;
+  const launch = await send(slash("launch")).finally(() => { Date.now = realNow; });
   assert.ok(launch.data.content.startsWith(SLASH_COPY.launchHeader() + "\n"));
   assert.equal(launch.data.flags, 64);
 

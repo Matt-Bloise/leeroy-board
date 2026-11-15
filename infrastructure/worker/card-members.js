@@ -18,7 +18,7 @@ export function cardMembers(partyDoc) {
     const slug = slugify(m.name);
     if (!slug || seen.has(slug)) continue;
     seen.add(slug);
-    const key = typeof m.class_key === "string" && CLASSES[m.class_key] ? m.class_key : "";
+    const key = typeof m.class_key === "string" && Object.hasOwn(CLASSES, m.class_key) ? m.class_key : "";
     out.push({ slug, name: clean(m.name) || "Someone", classKey: key, classLabel: key ? CLASSES[key].label : clean(m.class, 16), race: clean(m.race, 16), role: clean(m.role, 12) });
   }
   return out;
@@ -55,4 +55,4 @@ export function claimEntries(members, entries) {
   }
   return { byEntry, byMember };
 }
-export const iconFor = (member, emoji) => (member && member.classKey && emoji && emoji[member.classKey] ? `${emoji[member.classKey]} ` : "");
+export const iconFor = (member, emoji) => (member && typeof member.classKey === "string" && emoji && typeof emoji === "object" && Object.hasOwn(emoji, member.classKey) && emoji[member.classKey] ? `${emoji[member.classKey]} ` : "");
