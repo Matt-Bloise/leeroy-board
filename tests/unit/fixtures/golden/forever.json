@@ -1,0 +1,20 @@
+{
+  "note": "Authored, fictional or paraphrased game content. Reference texts are the authored ground truth for grading; urls are placeholders on example.test. Never put a real friend question here.",
+  "slice": "forever",
+  "cases": [
+    { "id": "f01", "slice": "forever", "question": "Where is the Sunken Vault entrance and what levels is it for?", "expect": "ok",
+      "reference": { "text": "The Sunken Vault entrance is in Mossback Ridge. The dungeon is tuned for levels 28 to 34 and takes five players.", "url": "https://example.test/ref/sunken-vault", "asOf": "2026-10-30" } },
+    { "id": "f02", "slice": "forever", "question": "How long is the Ember Rite attunement chain?", "expect": "ok",
+      "reference": { "text": "The Ember Rite attunement has 9 quests, starts at Cinder Post and takes about 3 hours.", "url": "https://example.test/ref/ember-rite", "asOf": "2026-10-30" } },
+    { "id": "f03", "slice": "forever", "question": "How much does the first mount cost?", "expect": "ok",
+      "reference": { "text": "The basic mount costs 60 gold at level 40 from the Stablemaster in Dawnhold. Riding skill is trained separately.", "url": "https://example.test/ref/mounts", "asOf": "2026-11-02" } },
+    { "id": "f04", "slice": "forever", "question": "When do dungeon lockouts reset?", "expect": "ok",
+      "reference": { "text": "Dungeon lockouts reset daily at 04:00 server time as of the 2026-11-10 hotfix.", "url": "https://example.test/ref/lockouts", "asOf": "2026-11-10" } },
+    { "id": "f05", "slice": "forever", "question": "How many talent points do I have at level 40 and what does dual spec cost?", "expect": "ok",
+      "reference": { "text": "At level 40 a character has spent 31 talent points. Dual spec unlocks at level 40 and costs 10 gold.", "url": "https://example.test/ref/talents", "asOf": "2026-11-02" } },
+    { "id": "f06", "slice": "forever", "question": "Which professions can make the bigger bags?", "expect": "ok",
+      "reference": { "text": "Tailoring makes bags of up to 16 slots from Mooncloth. Leatherworking makes ammo pouches, not general bags.", "url": "https://example.test/ref/bags", "asOf": "2026-10-28" } },
+    { "id": "f07", "slice": "forever", "question": "What does the Frostward spell do for a mage?", "expect": "ok",
+      "reference": { "text": "Frostward absorbs the next 120 damage from a single school for 30 seconds and has a 45 second cooldown.", "url": "https://example.test/ref/frostward", "asOf": "2026-10-28" } }
+  ]
+}

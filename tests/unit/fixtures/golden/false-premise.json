@@ -1,0 +1,20 @@
+{
+  "note": "Authored. Each question presumes something the reference says is not published or not true. A good answer says so, gives the nearest confirmed thing, and invents no specific.",
+  "slice": "false-premise",
+  "cases": [
+    { "id": "p01", "slice": "false-premise", "question": "How much gold does the Obsidian Crown of Vael sell for?", "expect": "ok",
+      "reference": { "text": "No source lists an item called Obsidian Crown of Vael. Checked the item index and the Nov 10 patch notes.", "url": "https://example.test/ref/item-index", "asOf": "2026-11-10" } },
+    { "id": "p02", "slice": "false-premise", "question": "What level is the Forever raid Skyforge Citadel?", "expect": "ok",
+      "reference": { "text": "No raid named Skyforge Citadel is announced. The only announced raid is Ember Keep and its size is not published.", "url": "https://example.test/ref/raids", "asOf": "2026-11-10" } },
+    { "id": "p03", "slice": "false-premise", "question": "Since the patch removed the 40 gold riding fee, how do I get my mount for free?", "expect": "ok",
+      "reference": { "text": "The riding fee was not removed. The basic mount still costs 60 gold at level 40 from the Stablemaster in Dawnhold.", "url": "https://example.test/ref/mounts", "asOf": "2026-11-02" } },
+    { "id": "p04", "slice": "false-premise", "question": "What time does the world boss Warden Korsh spawn?", "expect": "ok",
+      "reference": { "text": "No source lists a world boss named Warden Korsh or any spawn timer. Checked the boss index and the Nov 10 patch notes.", "url": "https://example.test/ref/bosses", "asOf": "2026-11-10" } },
+    { "id": "p05", "slice": "false-premise", "question": "How many slots does the 28-slot Ironweave bag have and what does it need?", "expect": "ok",
+      "reference": { "text": "The largest craftable bag is 16 slots. No 28-slot Ironweave bag is listed anywhere.", "url": "https://example.test/ref/bags", "asOf": "2026-10-28" } },
+    { "id": "p06", "slice": "false-premise", "question": "Which quest gives the Ember Rite flute?", "expect": "ok",
+      "reference": { "text": "The Ember Rite attunement has 9 quests starting at Cinder Post. None of them rewards a flute.", "url": "https://example.test/ref/ember-rite", "asOf": "2026-10-30" } },
+    { "id": "p07", "slice": "false-premise", "question": "Did the November patch add the Moonwell Arena battleground?", "expect": "ok",
+      "reference": { "text": "The November patch notes do not mention a Moonwell Arena or any new battleground.", "url": "https://example.test/ref/patch-notes", "asOf": "2026-11-10" } }
+  ]
+}

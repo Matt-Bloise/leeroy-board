@@ -1,0 +1,16 @@
+{
+  "note": "Authored. Advice questions: the answer must open with one pick, one reason and a choose-the-other-if.",
+  "slice": "advice",
+  "cases": [
+    { "id": "a01", "slice": "advice", "question": "Should Testbard take Mining or Herbalism alongside Skinning?", "expect": "ok" },
+    { "id": "a02", "slice": "advice", "question": "Is it better to spend my first 60 gold on the mount or on bags?", "expect": "ok",
+      "reference": { "text": "The basic mount costs 60 gold at level 40. Tailoring makes bags of up to 16 slots.", "url": "https://example.test/ref/mounts", "asOf": "2026-11-02" } },
+    { "id": "a03", "slice": "advice", "question": "Which should Examplemage level first, Frost or Fire?", "expect": "ok" },
+    { "id": "a04", "slice": "advice", "question": "Do we do the Sunken Vault tonight or the Ember Rite chain?", "expect": "ok",
+      "reference": { "text": "The Sunken Vault is a five-player dungeon for levels 28 to 34. The Ember Rite attunement has 9 quests and takes about 3 hours.", "url": "https://example.test/ref/sunken-vault", "asOf": "2026-10-30" } },
+    { "id": "a05", "slice": "advice", "question": "Cloth or leather for a pure healer at this level?", "expect": "ok" },
+    { "id": "a06", "slice": "advice", "question": "Should I buy dual spec as soon as it unlocks?", "expect": "ok",
+      "reference": { "text": "Dual spec unlocks at level 40 and costs 10 gold.", "url": "https://example.test/ref/talents", "asOf": "2026-11-02" } },
+    { "id": "a07", "slice": "advice", "question": "What is the best use of one evening: gold farming or leveling?", "expect": "ok" }
+  ]
+}
