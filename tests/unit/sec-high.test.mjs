@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../../infrastructure/worker/index.js";
-import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js";
+import { handleDiscordInteraction, setPatchClockForTests } from "../../infrastructure/worker/discord.js";
 import { buildAnswerInputs, answerWithAi, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { askBudgetKeys, hashId, recordAttributed, recordUsage, checkAskBudget, DEFAULT_USER_DAILY_ASKS } from "../../infrastructure/worker/budget.js";
 import { resolveMember } from "../../infrastructure/worker/members.js";
@@ -24,7 +24,15 @@ const ADMIN = "admin-token-for-tests-0123456789abcdef";
 const MEMBER_KEY = "member-key-for-tests-0123456789ab";
 const KEY_SALT = "salt-for-tests-0123456789";
 const room = { fetch: async () => new Response("ok") };
-const ctx = { waitUntil() {}, passThroughOnException() {} };
+// Work a handler hands to ctx.waitUntil (an answer, a Discord delivery with its retries) is collected and awaited after every test, so no test's
+// background work can still be running, and calling fetch, while a later test counts outbound calls. Delivery retries sleep on an injected clock, not real timers.
+const pending = [];
+const ctx = { waitUntil(p) { pending.push(Promise.resolve(p).catch(() => {})); }, passThroughOnException() {} };
+test.beforeEach(() => setPatchClockForTests({ now: () => Date.now(), sleep: async () => {} }));
+test.afterEach(async () => {
+  const warn = console.warn; console.warn = () => {};
+  try { while (pending.length) await Promise.all(pending.splice(0)); } finally { console.warn = warn; setPatchClockForTests(null); }
+});
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 async function makeEnv() {
@@ -105,7 +113,7 @@ test("2. Discord /ask model:claude is stopped by the per-user cap with the frien
   const ask = (model) => handleDiscordInteraction(signer.signedRequest({
     type: 2, id: "1", application_id: "2", token: "t", channel_id: "3", member: { user: { id: user, username: "someone" } },
     data: { name: "ask", options: [{ name: "question", type: 3, value: "when is onyxia" }, { name: "model", type: 3, value: model }] },
-  }), env, { waitUntil() {} }, "https://worker.test");
+  }), env, ctx, "https://worker.test");
   for (const model of ["claude", "workers-ai"]) {
     const body = await (await ask(model)).json();
     assert.equal(body.type, 4, model);
@@ -135,7 +143,7 @@ test("3. through the Discord handler a guest named Santa gets the guest attribut
   const res = await handleDiscordInteraction(signer.signedRequest({
     type: 2, id: "1", application_id: "2", token: "t", channel_id: "3", member: { nick: "Santa", user: { id: "100000000000000777", username: "impostor" } },
     data: { name: "sheet", options: [] },
-  }), env, { waitUntil() {} }, "https://worker.test");
+  }), env, ctx, "https://worker.test");
   const text = JSON.stringify(await res.json());
   assert.match(text, /can't tell which party member you are|not on the roster/i);
 });
@@ -211,7 +219,7 @@ test("6. question length: 2000 characters pass, 2001 are a 400, for /api/intent 
   const ask = async (q) => (await handleDiscordInteraction(signer.signedRequest({
     type: 2, id: "1", application_id: "2", token: "t", channel_id: "3", member: { user: { id: "100000000000000042", username: "u" } },
     data: { name: "ask", options: [{ name: "question", type: 3, value: q }] },
-  }), env, { waitUntil() {} }, "https://worker.test")).json();
+  }), env, ctx, "https://worker.test")).json();
   const refused = await ask("q".repeat(2001));
   assert.equal(refused.data.flags, 64);
   assert.match(refused.data.content, /too long/i);
