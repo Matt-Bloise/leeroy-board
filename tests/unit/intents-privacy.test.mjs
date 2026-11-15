@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../../infrastructure/worker/index.js";
-import { handleDiscordInteraction, DISCORD_SLASH_COMMANDS_MANIFEST } from "../../infrastructure/worker/discord.js";
+import { handleDiscordInteraction, DISCORD_SLASH_COMMANDS_MANIFEST, GATE_OFF_NOTE } from "../../infrastructure/worker/discord.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
 import * as privacy from "../../infrastructure/worker/sheet-privacy.js";
@@ -243,12 +243,25 @@ test("/intents and /ack admin rights are bound to the roster guild", async () =>
   assert.equal(intentRows(env).length, 0, "roster-guild admin clears the mailbox");
 });
 
-test("/intents refuses an admin when no roster guild is configured", async () => {
+test("no roster guild configured: the server gate is off, admins keep /intents and are told so; non-admins are still refused", async () => {
   const env = await makeEnv();
   env.DB.raw.prepare("DELETE FROM kv_state WHERE key = 'discord_roster'").run();
   invalidateConfigCache();
   addRow(env, "journey", { journey: "curious" });
-  assert.ok(!(await discordCmd(env, "intents", "32")).data.content.includes("curious"));
+  const admin = (await discordCmd(env, "intents", "32")).data.content;
+  assert.ok(admin.includes("curious"), "an admin still sees the mailbox");
+  assert.ok(admin.includes(GATE_OFF_NOTE), "the reply says the server check is off");
+  const nonAdmin = (await discordCmd(env, "intents", "0")).data.content;
+  assert.ok(!nonAdmin.includes("curious"), "a non-admin is still refused");
+  invalidateConfigCache();
+});
+
+test("roster guild configured: no gate-off note", async () => {
+  const env = await makeEnv();
+  addRow(env, "journey", { journey: "curious" });
+  const admin = (await discordCmd(env, "intents", "32")).data.content;
+  assert.ok(admin.includes("curious"));
+  assert.ok(!admin.includes(GATE_OFF_NOTE));
 });
 
 test("a non-admin cannot supply permissions: an option or a top-level field is ignored", async () => {

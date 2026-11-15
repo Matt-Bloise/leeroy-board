@@ -70,12 +70,18 @@ import { canManageGuild } from "./setup-command.js";
 // Staff for the roster server only: Manage Server or Administrator in interaction.member.permissions (the field Discord signs; nothing a
 // user types is read), AND the interaction comes from the guild configured in discord_roster. An admin of any other server that installs
 // the bot is not staff here. Fails closed when no roster guild is configured.
-async function isRosterAdmin(env, interaction) {
-  if (!canManageGuild(interaction.member && interaction.member.permissions)) return false;
+// Staff check for the mailbox commands: the signed Manage Server / Administrator bit and, once a roster guild is
+// configured, a call from that guild. With no roster guild set the server gate is OFF (the permission check still
+// applies), so admins keep /intents, /ack and /answer; /intents says so in its reply (GATE_OFF_NOTE).
+async function rosterAdminCheck(env, interaction) {
+  if (!canManageGuild(interaction.member && interaction.member.permissions)) return { ok: false, gateOff: false };
   const roster = await loadConfigKey(env, "discord_roster");
   const rosterGuild = roster && roster.guildId != null ? String(roster.guildId) : "";
-  return /^[0-9]{5,25}$/.test(rosterGuild) && String(interaction.guild_id || "") === rosterGuild;
+  if (!/^[0-9]{5,25}$/.test(rosterGuild)) return { ok: true, gateOff: true };
+  return { ok: String(interaction.guild_id || "") === rosterGuild, gateOff: false };
 }
+async function isRosterAdmin(env, interaction) { return (await rosterAdminCheck(env, interaction)).ok; }
+export const GATE_OFF_NOTE = "Server check is off: no roster server is set, so any server admin can use this.";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
 import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
 
@@ -1648,7 +1654,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     // 2r. `/intents`
     if (cmd === "intents") {
       // Staff only, like GET /intents: the mailbox holds every member's changes. Same rule as /ack's whole-mailbox clear and /setup.
-      if (!(await isRosterAdmin(env, interaction))) {
+      const gate = await rosterAdminCheck(env, interaction);
+      if (!gate.ok) {
         return new Response(
           JSON.stringify({ type: 4, data: { content: "That command is for server admins.", flags: 64 } }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -1673,7 +1680,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           JSON.stringify({
             type: 4,
             data: {
-              content: `📬 **Intents Mailbox:** No pending intents (total pending: ${countRow ? countRow.count : 0}).`,
+              content: `📬 **Intents Mailbox:** No pending intents (total pending: ${countRow ? countRow.count : 0}).${gate.gateOff ? `\n${GATE_OFF_NOTE}` : ""}`,
               flags: 64,
             },
           }),
@@ -1694,7 +1701,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         JSON.stringify({
           type: 4,
           data: {
-            content: `📬 **Intents Mailbox** (${intents.length} shown, ${countRow ? countRow.count : 0} total pending):\n${list}`,
+            content: `📬 **Intents Mailbox** (${intents.length} shown, ${countRow ? countRow.count : 0} total pending):\n${list}${gate.gateOff ? `\n${GATE_OFF_NOTE}` : ""}`,
             flags: 64,
           },
         }),
@@ -1717,7 +1724,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       }
 
       // Only a server admin clears the whole mailbox; any other roster member clears their own intents.
-      const adminCaller = await isRosterAdmin(env, interaction);
+      const ackGate = await rosterAdminCheck(env, interaction);
+      const adminCaller = ackGate.ok;
       const res = adminCaller
         ? await env.DB.prepare("DELETE FROM intents WHERE seq <= ?").bind(upTo).run()
         : await env.DB.prepare("DELETE FROM intents WHERE seq <= ? AND slug = ?").bind(upTo, member.slug).run();
@@ -1728,7 +1736,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         JSON.stringify({
           type: 4,
           data: {
-            content: `✅ Acknowledged and cleared intents up to seq **${upTo}**. Deleted **${deleted}** intent(s) (${countRow ? countRow.count : 0} still pending).`,
+            content: `✅ Acknowledged and cleared intents up to seq **${upTo}**. Deleted **${deleted}** intent(s) (${countRow ? countRow.count : 0} still pending).${adminCaller && ackGate.gateOff ? `
+${GATE_OFF_NOTE}` : ""}`,
             flags: 64,
           },
         }),
