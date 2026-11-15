@@ -4,9 +4,10 @@
 // default document never carries a hidden member's class or race. A stored row, when there is one, always wins.
 import client from "../../data/client.json" with { type: "json" };
 
-const DEFAULTS = Object.freeze({ client });
+// Serialised once at module load (a cold read used to stringify the whole document each time); the text is identical, JSON.stringify(client).
+const DEFAULTS = Object.freeze({ client: JSON.stringify(client) });
 
 // The row shape the /data route reads ({ json, updated_at }), or null when the name has no bundled default.
 export function defaultDocRow(name) {
-  return Object.hasOwn(DEFAULTS, name) ? { json: JSON.stringify(DEFAULTS[name]), updated_at: null } : null;
+  return Object.hasOwn(DEFAULTS, name) ? { json: DEFAULTS[name], updated_at: null } : null;
 }

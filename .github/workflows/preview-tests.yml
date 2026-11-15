@@ -227,7 +227,6 @@ jobs:
           PREVIEW_API: ${{ needs.preview.outputs.worker }}
           PREVIEW_PAGES: ${{ needs.preview.outputs.pages }}
           PREVIEW_ADMIN_BASE: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
-          CRAWL_REPORT: ${{ runner.temp }}/preview-crawl.json
         run: |
           set -o pipefail
           # The preview Worker holds a per-PR token derived from the preview-only secret (see pr-preview-cloudflare.yml), never a production one.
@@ -239,7 +238,9 @@ jobs:
           echo "::add-mask::$BOARD_ADMIN_TOKEN"
           export BOARD_ADMIN_TOKEN
           unset PREVIEW_ADMIN_BASE
-          npm run test:api 2>&1 | tee "$RUNNER_TEMP/api.log"
+          # A crawl that was cancelled earlier can leave the preview's admin member hidden. Put it back BEFORE any test reads the preview (writes nothing when no planted marker is present).
+          npm run test:recover 2>&1 | tee "$RUNNER_TEMP/api.log"
+          npm run test:api 2>&1 | tee -a "$RUNNER_TEMP/api.log"
 
       - name: Upload logs
         if: always()
@@ -248,7 +249,6 @@ jobs:
           name: preview-test-logs-api
           path: |
             ${{ runner.temp }}/api.log
-            ${{ runner.temp }}/preview-crawl.json
           if-no-files-found: ignore
 
   browser:
@@ -426,9 +426,59 @@ jobs:
           retention-days: 14
 
 
+  crawl:
+    # The anonymous crawl (tests/api/preview-crawl.test.mjs) hides all nine sheet lines of the preview's admin member for about 15 s. It runs ALONE: after api, browser, layout and visual-audit
+    # have finished, so nothing else reads the preview while a member is hidden, and a run cancelled mid-crawl is repaired by the next api job (test:recover) and by the crawl's own start.
+    # It runs whenever api runs (same scope rule, same preview), whatever the other jobs returned, but not when the run is cancelled. Gating: it is in the report's needs.
+    name: crawl
+    needs: [scope, preview, api, browser, layout, visual-audit]
+    if: ${{ !cancelled() && needs.scope.outputs.api_needed == 'true' && needs.preview.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci --no-audit --no-fund
+
+      - name: Preview crawl
+        working-directory: tests
+        env:
+          PREVIEW_API: ${{ needs.preview.outputs.worker }}
+          PREVIEW_ADMIN_BASE: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
+          CRAWL_REPORT: ${{ runner.temp }}/preview-crawl.json
+        run: |
+          set -o pipefail
+          if [ -z "$PREVIEW_ADMIN_BASE" ]; then
+            echo "::error::BOARD_PREVIEW_ADMIN_TOKEN is missing. The preview-secrets job should have skipped this job; there is no fallback to a production secret."
+            exit 1
+          fi
+          BOARD_ADMIN_TOKEN=$(printf '%s' "preview:BOARD_ADMIN_TOKEN:leeroy-brain-pr-$PR_NUMBER" | openssl dgst -sha256 -hmac "$PREVIEW_ADMIN_BASE" -r | cut -d' ' -f1)
+          echo "::add-mask::$BOARD_ADMIN_TOKEN"
+          export BOARD_ADMIN_TOKEN
+          unset PREVIEW_ADMIN_BASE
+          npm run test:crawl 2>&1 | tee "$RUNNER_TEMP/crawl.log"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: preview-test-logs-crawl
+          path: |
+            ${{ runner.temp }}/crawl.log
+            ${{ runner.temp }}/preview-crawl.json
+          if-no-files-found: ignore
+
   report:
     name: report
-    needs: [scope, unit, stamps, preview-secrets, preview, api, browser, layout]
+    needs: [scope, unit, stamps, preview-secrets, preview, api, crawl, browser, layout]
     # Not on cancel: a newer push cancels this run and its own run posts the result for the newer commit.
     # The comment is the merge gate, so skipped dependencies are judged by tools/ci-report.mjs, never by a blanket `!= 'failure'`.
     if: always() && !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'unlabeled' && (github.event.action != 'labeled' || github.event.label.name == 'ci-full')
@@ -463,6 +513,7 @@ jobs:
           UNIT_RESULT: ${{ needs.unit.result }}
           STAMPS_RESULT: ${{ needs.stamps.result }}
           API_RESULT: ${{ needs.api.result }}
+          CRAWL_RESULT: ${{ needs.crawl.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
           LAYOUT_RESULT: ${{ needs.layout.result }}
           PREVIEW_SECRETS: ${{ needs.preview-secrets.outputs.enabled }}
@@ -499,7 +550,7 @@ jobs:
       - name: Fail the job if a suite failed
         env:
           OK: ${{ steps.build.outputs.ok }}
-          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }} full=${{ needs.scope.outputs.full }} api_needed=${{ needs.scope.outputs.api_needed }} docs_only=${{ needs.scope.outputs.docs_only }} site_changed=${{ needs.scope.outputs.site_changed }}
+          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} crawl=${{ needs.crawl.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }} full=${{ needs.scope.outputs.full }} api_needed=${{ needs.scope.outputs.api_needed }} docs_only=${{ needs.scope.outputs.docs_only }} site_changed=${{ needs.scope.outputs.site_changed }}
         run: |
           echo "$RESULTS"
           [ "$OK" = "true" ] || { echo "::error::Checks failed ($RESULTS)."; exit 1; }

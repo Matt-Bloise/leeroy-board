@@ -204,7 +204,8 @@ test("trust card: 'sees' says what the enumeration proves, and nothing stronger"
   assert.ok(sees.includes(`the shared planning pages (decide, buffs, the atlas guide, tonight's suggestions) go blank and show one line: ${WITHHELD_LINE}`), "the line on the card is the one the Worker sends");
   assert.match(sees, /While any member hides anything/);
   assert.ok(sees.includes("A change is in force on the very next read of the server: the party, the shared planning pages and the sheet list are never held in a cache."), "true: index.js memberPath keeps these out of every cache and sends no-store (tests/unit/cache-control-on-hit.test.mjs)");
-  assert.ok(sees.includes("The old address matt-bloise.github.io is a frozen copy that reads the files on the site directly, so it does not follow hide switches."), "true: BoardBrain.url answers null for data/ on that host (js/brain.js LEGACY)");
+  assert.ok(sees.includes("A copy of the board that is served without the API reads the files directly, so it does not follow hide switches."), "true: a host with no brain base (js/brain.js baseFor() null) and the legacy host answer null for data/, and the board then reads the static file");
+  assert.ok(!sees.includes("github.io"), "the GitHub Pages site does not exist (gh api repos/Matt-Bloise/leeroy-board/pages: 404): no sentence names it");
   assert.ok(sees.includes("The first members' builds are also in the board's public code and in files on the site, and in older commits; hiding a field does not remove them there."), "the card says plainly where the first members' builds also are");
   assert.match(sees, /Your settings and your own sheet need your key./);
   assert.match(sees, /named on the privacy page/i);

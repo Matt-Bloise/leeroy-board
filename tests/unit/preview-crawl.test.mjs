@@ -4,6 +4,7 @@
 // GET /api/data/party, a leak in a header, a leak in the live socket) and when the restore would not hold. That second part proves the CI test can fail.
 // The same crawl runs against the real PR preview in tests/api/preview-crawl.test.mjs. No network, no AI. Made-up documents, salts and token.
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import worker, { purgeWorkerCache, PARTY_CACHE_PATHS } from "../../infrastructure/worker/index.js";
 import { PARTY_MEMBERS } from "../../infrastructure/worker/party-source.js";
@@ -11,7 +12,7 @@ import { BoardRoom } from "../../infrastructure/worker/room.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
-import { crawlPaths, runPreviewCrawl, canaryRegex, buildCanaries, formatTable, assertPreviewBase, MIN_CANARY_LENGTH } from "../helpers/preview-crawl.mjs";
+import { crawlPaths, runPreviewCrawl, canaryRegex, buildCanaries, formatTable, assertPreviewBase, compositeHits, MIN_CANARY_LENGTH } from "../helpers/preview-crawl.mjs";
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async () => new Response("blocked in tests", { status: 599 });
@@ -50,13 +51,18 @@ const SHEETS = CAST.map((m) => {
   return { slug: m.name === TARGET.name ? TARGET.slug : m.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: m.name, fields, updated: AT };
 });
 
-async function makeEnv({ preview = true } = {}) {
+// What a PR preview is seeded with: the repo's data/*.json (scripts/seed-d1.mjs), NO `client` row (the Worker serves its bundled copy, default-docs.js) and no party_sheets row.
+const repoDoc = (n) => JSON.parse(readFileSync(new URL(`../../data/${n}.json`, import.meta.url), "utf8"));
+const repoText = (n) => readFileSync(new URL(`../../data/${n}.json`, import.meta.url), "utf8");
+const REPO_DOCS = ["party", "decide", "tonight", "guided-atlas", "launch"];
+
+async function makeEnv({ preview = true, repo = false } = {}) {
   invalidatePagesCache(); invalidateConfigCache();
   await purgeWorkerCache(ORIGIN, [...PARTY_CACHE_PATHS, "/api/signups", "/api/data/signups", "/api/data/signups.json"]);
   const DB = schemaDb();
   const kv = (k, v) => DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run(k, typeof v === "string" ? v : JSON.stringify(v), AT);
-  for (const [n, doc] of Object.entries(FICTION)) kv(n, doc);
-  kv("party_sheets", SHEETS);
+  if (repo) for (const n of REPO_DOCS) kv(n, repoDoc(n));
+  else { for (const [n, doc] of Object.entries(FICTION)) kv(n, doc); kv("party_sheets", SHEETS); }
   kv("signups", { generated: AT, present: true, updated: AT, options: { meet: [], when: [] }, entries: [], tallies: {} });
   const anon = { got: [], send(m) { anon.got.push(m); }, serializeAttachment() {}, deserializeAttachment() { return null; } };
   const room = new BoardRoom({ getWebSockets: () => [anon], setWebSocketAutoResponse() {}, acceptWebSocket() {} }, { DB });
@@ -92,7 +98,7 @@ const fieldsOf = async (h) => JSON.parse((await h.raw("GET", "/api/sheet", { hea
 const same = (a, b) => Object.keys(a).every((k) => JSON.stringify([a[k].value, a[k].visible !== false]) === JSON.stringify([b[k] ? b[k].value : null, !b[k] || b[k].visible !== false]));
 
 async function crawl(opts = {}) {
-  const env = await makeEnv();
+  const env = await makeEnv({ repo: opts.repo });
   const h = harness(env, opts);
   const before = await fieldsOf(h);
   const lines = [];
@@ -209,6 +215,53 @@ for (const [what, tamper, want] of MUTATIONS) {
     process.stdout.write(`mutation "${what}": red, fields ${report.hits.join(", ")}\n`);
   });
 }
+
+// ---- the same crawl on PREVIEW-SHAPED data: the repo's data/*.json, no client row (the bundled client document names 8 of the 9 class labels), no stored sheets.
+// The review of 3e20c396 found that on this data the class was searched only where attributed, so a projectClient that passes the document through stayed green.
+test("GREEN (preview-shaped data): the crawl finds nothing, every composite is withheld with its member sections empty, and every line is put back", async () => {
+  const { report, error, before, after } = await crawl({ repo: true });
+  assert.equal(error, null, error && error.message);
+  assert.deepEqual(report.hits, [], `hits: ${report.hits}; routes: ${report.routes.filter((r) => r.hits.length).map((r) => r.path + "=" + r.hits).join(" ")}; live: ${report.live.hits}`);
+  assert.equal(report.restored, true);
+  assert.ok(same(before, after));
+  const client = report.routes.find((r) => r.path === "/data/client");
+  assert.ok(client && client.status === 200, "the bundled client document is served (no row)");
+});
+
+const bundledClient = (m, p, headers, res) => (m === "GET" && /^\/api\/data\/client(\.json)?(\?|$)/.test(p) && !headers.Authorization ? { ...res, text: repoText("client") } : res);
+test("RED (mutation, preview-shaped data): projectClient passes the bundled client document through: the class and the composite are reported", async () => {
+  const { report, error, before, after } = await crawl({ repo: true, tamper: bundledClient });
+  assert.equal(error, null, error && error.message);
+  assert.ok(report.hits.includes("class"), `class must be reported; hits: ${report.hits}`);
+  assert.ok(report.hits.includes("composite:client") && report.hits.includes("composite:client.classes"), `hits: ${report.hits}`);
+  assert.ok(report.routes.some((r) => r.path.startsWith("/data/client") && r.hits.includes("class")), "the route that leaks is named");
+  assert.equal(report.restored, true);
+  assert.ok(same(before, after));
+});
+
+test("RED (mutation, preview-shaped data): a composite inside /bootstrap or /state that is not withheld is reported even when no value is searched for", async () => {
+  const edits = [
+    ["decide whole in /bootstrap", rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, decide: repoDoc("decide") })), "composite:decide"],
+    ["tonight whole in /state", rewrite(/^\/api\/state(\?|$)/, (j) => ({ ...j, tonight: repoDoc("tonight") })), "composite:tonight"],
+    ["party settled lines in /state", rewrite(/^\/api\/state(\?|$)/, (j) => ({ ...j, partyDoc: { ...j.partyDoc, settled: ["Tank: invented"] } })), "composite:party.settled"],
+  ];
+  for (const [what, tamper, want] of edits) {
+    const { report, error } = await crawl({ repo: true, tamper });
+    assert.equal(error, null, error && error.message);
+    assert.ok(report.hits.includes(want), `${what}: ${want} must be reported; hits: ${report.hits}`);
+  }
+});
+
+test("compositeHits: withheld must be set and every member-derived section empty or absent; a document that is not there is not judged", () => {
+  const ok = { withheld: "x", classes: {}, racials: {}, synergy: [], buffs: { build: "1", list: [], rules: [] } };
+  assert.deepEqual(compositeHits("/data/client.json", JSON.stringify(ok)), []);
+  assert.deepEqual(compositeHits("/data/client?full=1", JSON.stringify({ ...ok, withheld: undefined })), ["composite:client"]);
+  assert.deepEqual(compositeHits("/data/client", JSON.stringify({ ...ok, synergy: [{ a: 1 }], buffs: { list: [1], rules: [] } })), ["composite:client.synergy", "composite:client.buffs.list"]);
+  assert.deepEqual(compositeHits("/data/guided-atlas", JSON.stringify({ withheld: "x" })), []);
+  assert.deepEqual(compositeHits("/bootstrap", JSON.stringify({ decide: null, tonight: { withheld: "x", people: [], week_one: { trainers: { a: "b" } } } })), ["composite:tonight.week_one.trainers"]);
+  assert.deepEqual(compositeHits("/data/signups", JSON.stringify({ classes: { a: 1 } })), []);
+  assert.deepEqual(compositeHits(undefined, JSON.stringify({ type: "data", key: "decide", data: { people: [{ a: 1 }] } })), ["composite:decide", "composite:decide.people"]);
+});
 
 test("the target is named by position and a salted hash in the report and the log, never by name or slug", async () => {
   const { report, lines } = await crawl();

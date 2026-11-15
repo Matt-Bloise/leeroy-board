@@ -263,16 +263,41 @@ export async function broadcastToRoom(env, payload) {
 //    sheet that says "everything visible". That is only true if they never hid anything, so the sheet_events log is replayed for them, and a stored sheet that
 //    belongs to nobody in the document (the old name of a rename) hides its hidden fields on every such row (the link is unknowable: fail closed).
 //  - strict: a failed read throws instead of falling back to a visible-everything list, so the caller (loadPublicInputs) can fail closed.
+// A write could not read the log of who hid what (a failed sheet_events read) and must not guess: nothing was stored, the caller answers 503. A write that guessed "all hidden" would persist a
+// member with no stored sheet as all-hidden, which blanks every composite for everyone (a read may fall back to that; a write may not).
+export class SheetLogUnreadableError extends Error {
+  constructor(cause) { super("The sheet log could not be read"); this.name = "SheetLogUnreadableError"; this.cause = cause; }
+}
+
+// The log of hide/show events, read once per isolate and database while nothing changed. Every uncached read that has a party-document member without a stored sheet needs it, and an
+// unmemoised read scans the whole table each time. The key is MAX(id) (one rowid lookup), read BEFORE the log so a later event can only make the key older than the content, never newer:
+// the next read then rescans. Rows deleted by an erasure that leave the newest id alone stay in the memo until the next event; they can only hide more, never less. `last` memoises the
+// result per row (slug + name): the last visibility of each field.
+const EVENT_LOGS = new WeakMap();
+async function sheetEventLog(env) {
+  const m = await env.DB.prepare("SELECT MAX(id) AS m FROM sheet_events").first();
+  const max = m && m.m !== undefined && m.m !== null ? m.m : null;
+  const hit = EVENT_LOGS.get(env.DB);
+  if (hit && hit.max === max) return hit;
+  const events = (await env.DB.prepare("SELECT slug, name, field, visible FROM sheet_events ORDER BY id ASC").all()).results || [];
+  const log = { max, events, last: new Map() };
+  EVENT_LOGS.set(env.DB, log);
+  return log;
+}
+// For tests: forget what this isolate memoised.
+export function forgetSheetEventLogs(db) { if (db) EVENT_LOGS.delete(db); }
+
 async function hideFromEvents(env, rows, known, partyDoc, strict, memo = null) {
   const added = rows.filter((r) => !known.has(r));
   if (!added.length) return rows;
   const ALLNAMES = SHEET_FIELD_NAMES;
   const hideAll = (r) => ({ ...r, fields: { ...Object.fromEntries(ALLNAMES.map((k) => [k, { value: null, visible: false, source: "board" }])), ...Object.fromEntries(Object.entries(r.fields || {}).map(([k, v]) => [k, { ...v, visible: false }])) } });
-  let events;
+  let log;
   try {
-    // memo: a sheet write retries its compute on a lost race, and the log is read once per write (the subrequest budget). A hide recorded in between lands in the stored sheets the retry reads, not here.
-    events = (memo && memo.events) || (await env.DB.prepare("SELECT slug, name, field, visible FROM sheet_events ORDER BY id ASC").all()).results || [];
-    if (memo) memo.events = events;
+    // memo: a sheet write retries its compute on a lost race, and the log is read once per write (the subrequest budget). It is scoped to ONE write (a hide recorded by an earlier write must be seen
+    // by the next one: tests/unit/sheet-events-memo.test.mjs). A hide recorded in between lands in the stored sheets the retry reads, not here.
+    log = (memo && memo.log) || (await sheetEventLog(env));
+    if (memo) memo.log = log;
   } catch (err) {
     if (strict) throw err;
     return rows.map((r) => (known.has(r) ? r : hideAll(r)));
@@ -288,8 +313,15 @@ async function hideFromEvents(env, rows, known, partyDoc, strict, memo = null) {
   }
   return rows.map((r) => {
     if (known.has(r)) return r;
-    const last = new Map();
-    for (const e of events) if (e.slug === r.slug || (e.name && normName(e.name) === normName(r.name))) last.set(e.field, Boolean(e.visible));
+    const memoKey = `${r.slug} ${normName(r.name)}`;
+    let seen = log.last.get(memoKey);
+    if (!seen) {
+      seen = new Map();
+      for (const e of log.events) if (e.slug === r.slug || (e.name && normName(e.name) === normName(r.name))) seen.set(e.field, Boolean(e.visible));
+      if (log.last.size >= 500) log.last.clear();
+      log.last.set(memoKey, seen);
+    }
+    const last = new Map(seen);
     for (const k of orphanHidden) last.set(k, false);
     let out = r;
     for (const [field, visible] of last) {
@@ -408,9 +440,11 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
       // The rows reconcile adds (a person added or renamed through the document) are all-visible by construction. That is only true if they never hid anything, so they get the same
       // events / orphaned-sheet rule the read path applies (hideFromEvents) BEFORE anything is persisted: otherwise this write would store an all-visible sheet for a renamed member who had hidden fields.
-      const base = Array.isArray(cur) && cur.length > 0 ? cur : (await buildPartySheetsFromD1(env, { persist: false, partyDoc })).party;
+      // strict: a read of the sheet log that fails stops the write (SheetLogUnreadableError, 503, nothing stored). The lenient fallback "all hidden" is for reads; a write would persist it.
+      const unreadable = async (read) => { try { return await read(); } catch (err) { throw new SheetLogUnreadableError(err); } };
+      const base = Array.isArray(cur) && cur.length > 0 ? cur : (await unreadable(() => buildPartySheetsFromD1(env, { persist: false, partyDoc, strict: true }))).party;
       const reconciled = reconcileSheetsWithDoc(base, partyDoc);
-      const currentParty = reconciled === base ? reconciled : await hideFromEvents(env, reconciled, new Set(base), partyDoc, false, eventsMemo);
+      const currentParty = reconciled === base ? reconciled : await unreadable(() => hideFromEvents(env, reconciled, new Set(base), partyDoc, true, eventsMemo));
       // Same identity as the reconcile above: a write that arrives under a renamed document member's new slug lands on the person's existing
       // sheet (which takes the new slug and name) instead of starting a second one-field sheet. Events keyed by the old slug stay as history.
       let memberSheet = sheetForWrite(currentParty, partyDoc, slug, name);
@@ -2025,6 +2059,7 @@ const worker = {
       return jsonResp({ error: "Not found", path }, 404, cors);
     } catch (err) {
       console.error("Worker error:", err, String((err && err.message) || err));
+      if (err instanceof SheetLogUnreadableError) return jsonResp({ error: "The sheet could not be saved right now. Try again." }, 503, { ...cors, "Retry-After": "5" });
       return jsonResp({ error: "Internal error" }, 500, cors);
     }
   },

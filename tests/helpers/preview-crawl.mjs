@@ -105,11 +105,49 @@ const attributable = (text, identity) => {
 // The target's class and class key are asserted unique in the party (runPreviewCrawl refuses a target whose class another member shares), so they are searched UNCONDITIONALLY:
 // any appearance anywhere, named or not, is a leak (an unnamed class-key list, a name-keyed object, a whole-document pass-through). The one exception is an answer that lists the game's
 // whole class vocabulary (the sheet page's options): there the class is game text, and it counts only where it is attributed to the target, as for every other game word.
+// A COMPOSITE answer (compositeDocsOf) never gets that exception: the bundled client document names most class labels by design, and a projection that passes it through would hide
+// behind the exemption. Composites are searched unconditionally and checked structurally (compositeHits) instead.
 export const UNCONDITIONAL_FIELDS = new Set(["class", "class_key"]);
 const listsClassVocab = (hay) => {
   const labels = Object.values(SHEET_VOCAB.class).map((l) => String(l).toLowerCase());
   return labels.filter((l) => canaryRegex(l).test(hay)).length >= Math.ceil(labels.length * 0.8);
 };
+
+// The composites: documents built from the whole party. While anything is hidden, each must say `withheld` and carry its member-derived sections empty or absent (public-party.js).
+export const COMPOSITE_SECTIONS = {
+  client: [["classes"], ["racials"], ["synergy"], ["buffs", "list"], ["buffs", "rules"]],
+  decide: [["people"], ["party"]],
+  "guided-atlas": [["classes"]],
+  tonight: [["people"], ["week_one", "trainers"]],
+  party: [["settled"], ["settled_extra"], ["open"], ["glossary"]],
+};
+const emptyDeep = (v) => v === null || v === undefined || (Array.isArray(v) ? v.every(emptyDeep) : typeof v === "object" ? Object.values(v).every(emptyDeep) : v === "");
+// [[name, doc], ...] for the composite documents inside one anonymous answer: /data/<name>, /state, /bootstrap (path without /api), or a live "data" message (no path)
+export function compositeDocsOf(path, text) {
+  let j; try { j = JSON.parse(text); } catch { return []; }
+  if (!j || typeof j !== "object") return [];
+  const p = path ? String(path).split("?")[0] : "";
+  const m = /^\/data\/([a-z-]+?)(?:\.json)?$/.exec(p);
+  let out = [];
+  if (m && COMPOSITE_SECTIONS[m[1]]) out = [[m[1], j]];
+  else if (p === "/state") out = [["party", j.partyDoc], ["tonight", j.tonight], ["decide", j.decide]];
+  else if (p === "/bootstrap") out = [["party", j.party], ["tonight", j.tonight], ["decide", j.decide]];
+  else if (!p && j.type === "data" && COMPOSITE_SECTIONS[j.key]) out = [[j.key, j.data]];
+  return out.filter(([, d]) => d !== null && d !== undefined);
+}
+// Field names (never values) of what a composite shows while everything is hidden: "composite:<name>" when `withheld` is not set, "composite:<name>.<section>" for a section that is not empty.
+export function compositeHits(path, text) {
+  const hits = [];
+  for (const [name, doc] of compositeDocsOf(path, text)) {
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) { hits.push(`composite:${name}`); continue; }
+    if (!doc.withheld || typeof doc.withheld !== "string") hits.push(`composite:${name}`);
+    for (const sec of COMPOSITE_SECTIONS[name]) {
+      const v = sec.reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), doc);
+      if (!emptyDeep(v)) hits.push(`composite:${name}.${sec.join(".")}`);
+    }
+  }
+  return hits;
+}
 
 // The structural rule: no object that NAMES the target (its name or slug as a value, or as a key) carries a private field key or a hidden value anywhere beneath it.
 // This catches what a value search cannot: a level or race that is too short or shared with another member, in whatever shape the answer puts it.
@@ -150,10 +188,12 @@ export function findHits(canaries, answers, ctx = { identity: [] }) {
   for (const a of answers) {
     const hay = haystackOf(a);
     let attr = null, vocab = null;
+    const composite = compositeDocsOf(a.path, a.text).length > 0;
     for (const h of structuralHits(a.text, ctx.identity, canaries)) hit.add(h);
+    for (const h of compositeHits(a.path, a.text)) hit.add(h);
     for (const c of canaries) {
       if (hit.has(c.field) || !canaryRegex(c.value).test(hay)) continue;
-      if (c.unconditional && vocab === null) vocab = listsClassVocab(hay);
+      if (c.unconditional && vocab === null) vocab = !composite && listsClassVocab(hay);
       if (c.generic || (c.unconditional && vocab)) {
         if (attr === null) attr = attributable(a.text, ctx.identity);
         if (!canaryRegex(c.value).test(attr)) continue;
@@ -236,6 +276,40 @@ export function assertPreviewBase(base) {
   if (FORBIDDEN_HOSTS.includes(host)) throw new Error(`refusing to run against ${host}: this test writes to the sheet and only runs against a PR preview`);
 }
 
+// ---- recovery of an earlier cancelled or killed run --------------------------------------------------------------------------------------------------
+// The crawl hides all nine lines of the admin's member and plants a value in goals and launch_state. A run that is cancelled or killed after that leaves the member hidden for every
+// other test that reads the preview. A preview's seed has every line visible and no goals or launch_state, so the original is derived from the seed: the planted lines go back to
+// empty and every line back to visible. A member with no planted marker is left alone (nothing is written). Used at the start of the crawl and at the start of the api job (tests/api/recover-preview.mjs).
+export const PLANTED_MARKER = /^qz(goal|launch)/i;
+const leftover = (f) => ["goals", "launch_state"].some((k) => f && f[k] && typeof f[k].value === "string" && PLANTED_MARKER.test(f[k].value));
+export async function assertIsPreview(call) {
+  let health;
+  try { health = JSON.parse((await call("GET", "/api/health", {})).text); } catch { throw new Error("GET /api/health: not JSON"); }
+  if (health.isPrPreview !== true) throw new Error("GET /api/health does not say isPrPreview:true: this crawl writes to a member's sheet and only runs against a PR preview");
+}
+// adminCall(method, path, body) -> { status, text, headers }. Returns { mine, recovered } where mine is the admin sheet read as the original of this run.
+export async function recoverTarget({ adminCall, say = () => {} }) {
+  const read = async () => {
+    const r = await adminCall("GET", "/api/sheet");
+    if (r.status !== 200) throw new Error(`GET /api/sheet (admin): HTTP ${r.status}`);
+    try { return JSON.parse(r.text); } catch { throw new Error(`GET /api/sheet: not JSON (HTTP ${r.status})`); }
+  };
+  let mine = await read();
+  if (!mine.slug) throw new Error("the admin sheet read names no member");
+  let recovered = false;
+  if (leftover(mine.sheet && mine.sheet.fields)) {
+    for (const k of SHEET_FIELDS) {
+      const r = k === "goals" || k === "launch_state" ? await adminCall("POST", "/api/sheet", { field: k, value: null, visible: true }) : await adminCall("POST", "/api/sheet", { field: k, visible: true });
+      if (r.status !== 200) throw new Error(`recovery of an earlier killed run: POST /api/sheet ${k}: HTTP ${r.status}`);
+    }
+    mine = await read();
+    if (leftover(mine.sheet && mine.sheet.fields)) throw new Error("recovery of an earlier killed run did not clear the planted values");
+    recovered = true;
+    say("recovered the target's sheet from an earlier run that was cancelled or killed (planted lines emptied, every line visible, as the preview's seed has them)");
+  }
+  return { mine, recovered };
+}
+
 // ---- the crawl --------------------------------------------------------------------------------------------------------------------------------------
 // call(method, path, { headers, body }) -> { status, text, headers: [[name, value], ...] }   path starts with /api
 // live(trigger) -> Promise<string[]>   opens an anonymous socket, awaits trigger(), returns what the room sent
@@ -247,26 +321,12 @@ export async function runPreviewCrawl({ call, live, admin, say = () => {}, concu
   const expect200 = (r, what) => { if (r.status !== 200) throw new Error(`${what}: HTTP ${r.status}`); return r; };
 
   // 1. preview only
-  const health = json(await call("GET", "/api/health", {}), "GET /api/health");
-  if (health.isPrPreview !== true) throw new Error("GET /api/health does not say isPrPreview:true: this crawl writes to a member's sheet and only runs against a PR preview");
+  await assertIsPreview(call);
 
   // 2. the target. The admin token writes as the Worker's default admin member (POST /api/sheet), so that is the member whose nine lines can be hidden here.
-  let mine = json(expect200(await adminCall("GET", "/api/sheet"), "GET /api/sheet (admin)"), "GET /api/sheet");
+  // A run that was cancelled or killed leaves the nine lines hidden and a planted value behind: recoverTarget puts them back first (the api job runs the same recovery before any other test).
+  const { mine } = await recoverTarget({ adminCall, say });
   const slug = mine.slug, name = String(mine.name || "");
-  if (!slug) throw new Error("the admin sheet read names no member");
-  // A run that was cancelled or killed leaves the nine lines hidden and a planted value in goals and launch_state. A preview's seed has every line visible and no goals or launch_state,
-  // so the original is derived from the seed: the planted lines go back to empty and every line back to visible, and only then is the sheet read as the original of THIS run.
-  const PLANTED = /^qz(goal|launch)/i;
-  const leftover = (f) => ["goals", "launch_state"].some((k) => f && f[k] && typeof f[k].value === "string" && PLANTED.test(f[k].value));
-  if (leftover(mine.sheet && mine.sheet.fields)) {
-    for (const k of SHEET_FIELDS) {
-      const r = k === "goals" || k === "launch_state" ? await adminCall("POST", "/api/sheet", { field: k, value: null, visible: true }) : await adminCall("POST", "/api/sheet", { field: k, visible: true });
-      if (r.status !== 200) throw new Error(`recovery of an earlier killed run: POST /api/sheet ${k}: HTTP ${r.status}`);
-    }
-    mine = json(expect200(await adminCall("GET", "/api/sheet"), "GET /api/sheet (admin)"), "GET /api/sheet");
-    if (leftover(mine.sheet && mine.sheet.fields)) throw new Error("recovery of an earlier killed run did not clear the planted values");
-    say("recovered the target's sheet from an earlier run that was cancelled or killed (planted lines emptied, every line visible, as the preview's seed has them)");
-  }
   const original = {};
   for (const k of SHEET_FIELDS) {
     const e = mine.sheet && mine.sheet.fields ? mine.sheet.fields[k] : undefined;
@@ -334,7 +394,7 @@ export async function runPreviewCrawl({ call, live, admin, say = () => {}, concu
           await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
         }
         if (r.status === 429) throw new Error(`GET /api${path}: still rate limited after 4 tries: the crawl is incomplete`);
-        answers.push({ route, path, status: r.status, hits: findHits(built.canaries, [r], ctx) });
+        answers.push({ route, path, status: r.status, hits: findHits(built.canaries, [{ ...r, path }], ctx) });
       }
     };
     await Promise.all(Array.from({ length: concurrency }, one));
