@@ -330,7 +330,7 @@ function launchLine() {
   const parts = Object.fromEntries(dtf("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
   return `${parts.weekday}, ${parts.month} ${parts.day}, ${parts.hour}${parts.minute !== "00" ? `:${parts.minute}` : ""} ${parts.dayPeriod} ET`;
 }
-const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "What is settled, what is open", signups: "Answers for launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open, by Blizzard's dates" };
+const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "What is settled, what is open", get signups() { return launchPast() ? "Answers for this week" : "Answers for launch night"; }, librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open, by Blizzard's dates" };
 function startSubtitles() {
   for (const [k, sub] of Object.entries(SUBTITLE)) {
     const title = document.querySelector(`#board [data-scene="${k}"] .tile-title`);
@@ -526,8 +526,8 @@ function renderTiles() {
     })(),
     h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
   if (S && S.tallies) {
-    const T = S.tallies;
-    const when = T.when ? h("span", { class: "tile-line su-when" }, [["6pm", "6 PM ET"], ["8pm", "8 PM ET"], ["later", "Later"]].filter(([k]) => T.when[k]).map(([k, l]) => h("span", { class: "su-slot" }, h("b", { text: l }), ` ${T.when[k].names.length ? T.when[k].names.map(cleanName).join(", ") : "nobody yet"}`))) : null;
+    const W = wk(), T = { rsvp: W.rsvp, when: W.when }; /* this week's answers only (wk) */
+    const when = W.empty ? h("span", { class: "tile-line su-when su-empty" }, h("b", { text: W.empty.nobody }), ` ${W.empty.last}`) : T.when ? h("span", { class: "tile-line su-when" }, [["6pm", "6 PM ET"], ["8pm", "8 PM ET"], ["later", "Later"]].filter(([k]) => T.when[k]).map(([k, l]) => h("span", { class: "su-slot" }, h("b", { text: l }), ` ${T.when[k].names.length ? T.when[k].names.map(cleanName).join(", ") : "nobody yet"}`))) : null;
     const cnt = (k) => (T.rsvp[k] ? T.rsvp[k].count : 0), none = Math.max(0, p.members.length - RSVP_KEYS.reduce((n, k) => n + cnt(k), 0));
     const nums = [...RSVP_KEYS.filter((k) => k === "in" || cnt(k)).map((k) => [cnt(k), RSVP_SAY[k], k]), [none, "No answer", "none"]];
     fill("signups", h("span", { class: "su-nums" }, nums.map(([v, l, k]) => h("span", { class: "su-num", "data-land": `signups.${k}` }, h("b", { text: String(v) }), h("small", { text: l })))),
@@ -1263,7 +1263,7 @@ function openLine(o, link) {
   if (cq) return [`The poll closed ${fmtWhen(cq.closes_epoch)}${cq.result ? `: ${cq.result}` : /name/i.test(o.title) ? " with no name chosen yet" : ", no result on the board yet"}.`];
   if (unchosen(o)) return meetLine(o).slice(1);
   if (gap) return [`Nobody has ${gap[1]} yet. `, l ? link(l, `The options for ${o.title.toLowerCase()} in Discord`) : null, l ? "." : null];
-  if (o.status === "the event") { const T = D.signups && D.signups.tallies, n = T ? RSVP_KEYS.reduce((a, k) => a + (T.rsvp[k] ? T.rsvp[k].count : 0), 0) : null; return [cardDates((o.detail || "").replace(/\s*Who's on\?/, "")), " ", l ? link(l) : null, l ? "." : null, n === null ? null : ` Launch-night answers: ${n} of ${D.party.members.length} so far.`]; }
+  if (o.status === "the event") { const w = D.signups && D.signups.tallies ? wk() : null, n = w ? w.total : null; return [cardDates((o.detail || "").replace(/\s*Who's on\?/, "")), " ", l ? link(l) : null, l ? "." : null, n === null ? null : launchPast() ? ` Answers for this week: ${n} of ${D.party.members.length} so far.` : ` Launch-night answers: ${n} of ${D.party.members.length} so far.`]; }
   return linkify(capFirst(cardDates(o.status ? `${o.status}${/^nobody/i.test(o.status) ? " yet" : ""}. ${o.detail || ""}` : o.text || "")).replace(/\(Pacific\)/g, "(Pacific time)"), o.links || [], (x) => link(x, o));
 }
 const capFirst = (x) => x.charAt(0).toUpperCase() + x.slice(1);
@@ -1508,38 +1508,54 @@ function startDiscordPresence(sdk) {
 const RSVP_KEYS = ["in", "maybe", "late", "out"];
 const RSVP_SAY = { in: "I'm in", maybe: "Tentative", late: "Running late", out: "Out" };
 const cleanName = (n) => String(n).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "") || String(n);
+// This week's sign-ups (js/signups-week.js): after launch, only entries stamped in the last 7 days count. The server's RSVP tallies cover every
+// answer ever given, so RSVP and time-slot counts are recomputed here; pack and meeting point keep the server's tallies (launch-night questions).
+// Before launch every answer is for launch night, so the board shows what it showed before this change: every entry and the server's tallies.
+function wk() {
+  const S = D.signups; if (!S) return null;
+  const le = launchEvent(), W = window.BoardWeek;
+  if (W && launchPast()) return W.week(S, Date.now(), le && le.epoch ? le.epoch * 1000 : NaN);
+  const T = S.tallies || {}, all = Array.isArray(S.entries) ? S.entries : [];
+  return { current: all, earlier: [], rsvp: T.rsvp || {}, when: T.when, total: RSVP_KEYS.reduce((a, k) => a + (T.rsvp && T.rsvp[k] ? T.rsvp[k].count : 0), 0), signed: ["in", "late", "maybe"].reduce((a, k) => a + (T.rsvp && T.rsvp[k] ? T.rsvp[k].count : 0), 0), last: null, empty: null, all: true };
+}
+const weekMine = (member) => { const w = member && wk(); return w ? w.current.find((e) => e && (w.all || e.rsvp) && cleanName(e.name).toLowerCase() === member.name.toLowerCase()) || null : null; };
+// Your own entry as the board's brain holds it (js/brain.js mine()), counted for this week only once launch is past.
+const weekOwn = (e) => (!e || !launchPast() || !window.BoardWeek ? e : BoardWeek.isCurrent(e, Date.now()) ? e : null);
+const emptyWeekEls = (w, cls) => w && w.empty ? [h("p", { class: `${cls} su-empty`, text: w.empty.nobody }), h("p", { class: cls, text: w.empty.last }), h("p", { class: cls, text: w.empty.how })] : [];
+const earlierLine = (w, cls) => w && w.earlier.length ? h("p", { class: `${cls} su-earlier`, text: `From an earlier week, not counted: ${w.earlier.map((e) => `${cleanName(e.name)} (${RSVP_SAY[e.rsvp] || e.rsvp})`).join(", ")}.` }) : null;
 function actRow() {
   const url = D.party && D.party.signup_url; if (!url) return;
   $("#dsu-act").replaceChildren(h("a", { class: "act-btn", href: url, target: "_blank", rel: "noopener noreferrer" }, emb("speech"), "The Sign-ups card in Discord"), h("p", { class: "act-how", text: "The card in #wow-forever takes I'm in, Tentative, Running late or Out." }));
 }
 function renderSeats(S) {
   const box = $("#dsu-seats"); if (!box) return;
-  const ms = D.party.members, W = 640, step = (W - 80) / ms.length;
-  const ans = (m) => (S.entries || []).find((e) => cleanName(e.name).toLowerCase() === m.name.toLowerCase()) || null;
-  const WHEN = { "6pm": "6 PM ET", "8pm": "8 PM ET", later: "later" }, SAY = RSVP_SAY;
-  const svg = s("svg", { viewBox: `0 0 ${W} 236`, role: "img", "aria-label": `Launch-night table: ${ms.map((m) => { const a = ans(m); return `${m.name} ${a && a.rsvp ? SAY[a.rsvp] || a.rsvp : "no answer yet"}`; }).join(", ")}` },
+  const ms = D.party.members, W = 640, step = (W - 80) / ms.length, past = launchPast();
+  const ans = (m) => weekMine(m); /* this week's answer only; an older one shows as no answer */
+  const WHEN = { "6pm": "6 PM ET", "8pm": "8 PM ET", later: "later" }, SAY = RSVP_SAY, NO = past ? "no answer this week" : "no answer yet";
+  const svg = s("svg", { viewBox: `0 0 ${W} 236`, role: "img", "aria-label": `${past ? "This week's table" : "Launch-night table"}: ${ms.map((m) => { const a = ans(m); return `${m.name} ${a && a.rsvp ? SAY[a.rsvp] || a.rsvp : NO}`; }).join(", ")}` },
     s("image", { class: "seat-table-img", href: "img/seats/table.webp", x: 0, y: 58, width: W, height: 135, preserveAspectRatio: "none" }));
   ms.forEach((m, i) => {
     const x = 40 + step * (i + 0.5), a = ans(m), state = a && a.rsvp ? a.rsvp : "none";
     const mug = s("image", { class: `seat-mug ${state}`, href: `img/pints/${state}@2x.png`, x: x - 18, y: 78, width: 36, height: 36 });
     svg.append(crestGuard(s("image", { href: crestSrc(m.class_key), x: x - 24, y: 14, width: 48, height: 48 }), m.class_key), mug,
       s("text", { class: "seat-name", x, y: 192, text: m.name }),
-      s("text", { class: `seat-ans ${state}`, x, y: 214, text: a && a.rsvp ? `${SAY[a.rsvp] || a.rsvp}${a.when ? `, ${WHEN[a.when] || a.when}` : ""}` : "no answer yet" }));
+      s("text", { class: `seat-ans ${state}`, x, y: 214, text: a && a.rsvp ? `${SAY[a.rsvp] || a.rsvp}${a.when ? `, ${WHEN[a.when] || a.when}` : ""}` : NO }));
   });
-  box.replaceChildren(h("h4", { class: "seats-cap", text: launchPast() ? `The table for launch night, ${launchEvent().when} (answers as they stood)` : launchWhen() ? `The table on launch night: ${launchWhen().replace(/^Launch: /, "")}` : "The table on launch night" }), svg);
+  box.replaceChildren(h("h4", { class: "seats-cap", text: past ? "The table this week (answers from the last 7 days)" : launchWhen() ? `The table on launch night: ${launchWhen().replace(/^Launch: /, "")}` : "The table on launch night" }), svg);
 }
 const signupsOk = (S) => !!(S && S.tallies && S.tallies.pack && S.tallies.meet && S.tallies.rsvp && S.options && Array.isArray(S.options.meet));
 async function reloadOpt() {
   const [su, tn] = await Promise.all([dataGet("signups").catch(() => null), dataGet("tonight").catch(() => null)]);
   if (!su && !tn) throw new Error("data still unavailable");
-  if (signupsOk(su)) D.signups = su; if (tn) D.tonight = tn;
+  if (signupsOk(su) && !(window.BoardWeek && BoardWeek.older(su, D.signups))) D.signups = su; if (tn) D.tonight = tn; /* never put an older sign-ups document over a newer one */
   for (const step of [renderTonight, renderTiles, renderDiscordSignups, buildSignupControls, renderBefore]) { try { step(); } catch (e) { console.error(step.name, e); } }
   KIT.emit("signups"); KIT.emit("tonight");
 }
 function renderDiscordSignups() {
   const S = D.signups, body = $("#dsu-body");
   if (!signupsOk(S)) { BF.fail(body, "sign-ups", reloadOpt); $("#dsu-stamp").textContent = ""; return; }
-  const T = S.tallies;
+  const T = S.tallies, w = wk(), past = launchPast(), NONE = { count: 0, names: [] };
+  { const sub = document.querySelector('#board [data-scene="signups"] .tile-sub'), tab = $("#tab-signups"); if (sub) sub.textContent = SUBTITLE.signups; if (tab) tab.title = SUBTITLE.signups; } /* the subtitles are set before the dates load */ /* RSVP and time slots: this week's answers (wk); pack and meeting point: the server's tallies, as they stood */
   const meName = (MEM.member() || {}).name;
   const mineFirst = (names) => names.map(cleanName).sort((a, b) => (b.toLowerCase() === String(meName).toLowerCase()) - (a.toLowerCase() === String(meName).toLowerCase()));
   const who = (n) => { const m = memberByName(cleanName(n)); return h("span", { class: "who" }, m ? crestMark(m) : emb("speech"), cleanName(n)); };
@@ -1548,10 +1564,10 @@ function renderDiscordSignups() {
     h("span", { class: "trow-n" }, h("b", { "data-n": slot.count, text: String(slot.count) }), h("span", { class: "pips", "aria-hidden": "true" }, Array.from({ length: Math.max(D.party.members.length, slot.count) }, (_, k) => h("i", { class: k < slot.count ? "on" : null, style: `--pi: ${k}` })))),
     h("span", { class: "trow-who" }, h("span", { text: `${label}:` }), ...(slot.count ? (extra ? [extra] : mineFirst(slot.names).map(who)) : ["nobody yet"])));
   const groups = [
-    ["Pack", "ticket", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
-    ["Meeting point", "pin", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
-    [launchPast() ? "Launch night, answers as they stood" : "Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k], null, k))],
-    ...(T.when ? [["When they get on", "clock", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
+    [past ? "Pack, at launch night (as it stood)" : "Pack", "ticket", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
+    [past ? "Meeting point, at launch night (as it stood)" : "Meeting point", "pin", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
+    [past ? "This week" : "Launch night", "voice", w.empty ? [...emptyWeekEls(w, "tally-note"), earlierLine(w, "tally-note")].filter(Boolean) : [...RSVP_KEYS.filter((k) => w.rsvp[k]).map((k) => row(w.rsvp[k], RSVP_SAY[k], null, k)), earlierLine(w, "tally-note")].filter(Boolean)],
+    ...(w.when && !w.empty ? [["When they get on", "clock", [row(w.when["6pm"] || NONE, past ? "6 PM ET" : "6 PM ET, at launch"), row(w.when["8pm"] || NONE, "Around 8 PM ET"), row(w.when.later || NONE, "Later than that")]]] : []),
   ];
   body.replaceChildren(...groups.map(([title, icon, rows], gi) => h("div", { class: "tally", "data-q": ["pack", "meet", "rsvp", "when"][gi] }, h("h4", {}, emb(icon), title), ...rows)));
   { const sn = BF.note("signups"); if (sn) body.append(sn); }
@@ -3508,8 +3524,8 @@ function renderTonight() {
   else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
   const ev = tonightNext(T);
   const idx = member ? P.members.indexOf(member) : -1, person = T.people.find((x) => x.member === idx);
-  const S = D.signups, entries = S && S.entries ? S.entries : [];
-  const mine = member ? entries.find((e) => cleanName(e.name).toLowerCase() === member.name.toLowerCase()) : null;
+  const w = wk(), entries = w ? w.current.filter((e) => e.rsvp) : []; /* this week's answers only (wk) */
+  const mine = weekMine(member);
   const L = T.links || {}, nowS = Date.now() / 1000;
   const pollOpen = !!L.poll && (!T.poll_closes || nowS < T.poll_closes);
   const steps = [];
@@ -3530,7 +3546,7 @@ function renderTonight() {
   box.replaceChildren(...[
     card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl))),
     card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: launchWhen() || T.launch + yourTime(T) }) : null, T.play ? h("p", { class: "tn-play", text: T.play }) : null),
-    card(T.cards[2], meetP(), mine ? line(T.labels.you, [T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null)].filter(Boolean));
+    card(launchPast() ? "This week" : T.cards[2], meetP(), mine ? line(T.labels.you, [T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), ...(!mine && !groups.length ? (w && w.empty ? emptyWeekEls(w, "tn-line") : [h("p", { text: T.labels.nobody })]) : []), earlierLine(w, "tn-line"))].filter(Boolean));
   const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
     h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
   act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1]), h("a", { class: "lib-btn tn-decide", href: "#decide", text: TITLES.decide })].filter(Boolean));
@@ -3703,7 +3719,8 @@ async function boot(mode, sdk) {
   try {
     const got = await Promise.all(DATA_P.need);
     DATA_NAMES.forEach((n, i) => { D[n] = got[i]; });
-    [D.signups, D.tonight] = await Promise.all(DATA_P.opt);
+    { const [su, tn] = await Promise.all(DATA_P.opt); D.tonight = tn; /* /state may have brought a newer sign-ups document while the bootstrap was slow: keep it */
+      if (!(signupsOk(D.signups) && window.BoardWeek && BoardWeek.older(su, D.signups))) D.signups = su; }
     if (!signupsOk(D.signups)) D.signups = null;
     splitPolls(); roles();
     try { performance.mark("board-data"); } catch (e) {}
@@ -3743,7 +3760,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
@@ -3788,6 +3805,7 @@ KIT.on("booted", () => {
       if (!ev || !ev.key) return;
       const handleData = (val) => {
         if (!val) return;
+        if (ev.key === "signups" && window.BoardWeek && !BoardWeek.accept(val, D.signups)) return; /* an older sign-ups document never replaces a newer one, and the same one is not rendered twice */
         D[ev.key] = val;
         if (ev.key === "party") { splitPolls(); roles(); renderHero(); renderTiles(); renderCards(); renderLedger(); renderTonight(); }
         else if (ev.key === "timeline") { renderHero(); renderTiles(); renderTimeline(); renderTonight(); }
