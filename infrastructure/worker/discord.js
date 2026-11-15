@@ -423,6 +423,7 @@ export async function recomputeSignupTallies(signupsDoc) {
   };
 
   for (const e of entries) {
+    if (!e || typeof e !== "object" || Array.isArray(e)) continue; // a null or non-object row is kept in the doc but never tallied
     const name = e.name || "Someone";
     if (e.pack && tallies.pack[e.pack]) {
       tallies.pack[e.pack].count++;

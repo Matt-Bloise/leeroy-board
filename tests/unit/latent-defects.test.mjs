@@ -6,7 +6,12 @@ import { applySignupChange, tallyEntries, renderSignupCard, renderBoardCard, cle
 import { rank, expandWords } from "../../vendor/rank-core.js";
 import * as workerRank from "../../infrastructure/worker/rank-core.js";
 import { upsertSignupEntry } from "../../infrastructure/worker/limits.js";
-import { composeLine } from "../../infrastructure/worker/board-lines.js";
+import { composeLine, diffRsvp, recordChanges } from "../../infrastructure/worker/board-lines.js";
+import { handleCardInteraction } from "../../infrastructure/worker/cards-handler.js";
+import { recomputeSignupTallies } from "../../infrastructure/worker/discord.js";
+import { cardMembers } from "../../infrastructure/worker/card-members.js";
+import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
+import { fakeD1 } from "./fake-d1.mjs";
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 const JUNK = [null, undefined, 5, "text", true, [], [1, 2]];
@@ -121,4 +126,100 @@ test("F-10 cleanName: a bare Discord invite is removed from a printed name; othe
   const card = renderSignupCard({ entries: [{ name: "Blue Owl discord.gg/abcdef", rsvp: "in" }] }).embeds[0];
   assert.equal(card.fields[0].value, "Blue Owl");
   assert.equal(composeLine({ k: { name: "discord.gg/abc Blue Owl", to: "in" } }), "From the board: Blue Owl is in.");
+});
+
+// F-1 (end to end): a null or non-object row in the sign-up doc crashed the tally recompute, the card click and the board-line diff.
+test("F-1 recomputeSignupTallies and diffRsvp: junk rows are skipped, real rows still count", async () => {
+  const doc = { entries: [...JUNK, { name: "Red Fox", rsvp: "in", pack: "yes", when: "8pm", meet: "vos" }] };
+  const out = await recomputeSignupTallies(doc);
+  assert.equal(out.tallies.rsvp.in.count, 1);
+  assert.equal(out.tallies.pack.yes.count, 1);
+  assert.equal(doc.entries.length, JUNK.length + 1, "junk rows are kept, not removed");
+  const before = { entries: [...JUNK, { name: "Red Fox", rsvp: "maybe" }] };
+  const after = { entries: [...JUNK, { name: "Red Fox", rsvp: "in" }] };
+  assert.deepEqual(diffRsvp(before, after).map((c) => [c.name, c.from, c.to]), [["Red Fox", "maybe", "in"]]);
+  assert.deepEqual(diffRsvp({ entries: JUNK }, { entries: JUNK }), []);
+});
+
+test("F-1 card click: a null row in the stored doc does not crash the click; the click lands on the member's row", async () => {
+  invalidateConfigCache();
+  const DB = fakeD1({ signups: { options: {}, entries: [null, 5, "x", [], { name: "Ada", rsvp: "maybe" }] }, cards: { signups: { channel: "100000000000000001", message: "200000000000000002" } } });
+  const deps = { origin: "https://api.test", recompute: async (d) => { await recomputeSignupTallies(d); }, insertIntent: async () => {}, purgeWorkerCache: async () => {}, broadcastToRoom: async () => {} };
+  const waits = [];
+  const env = { CARDS_ENABLED: "on", DB };
+  const r = await handleCardInteraction({ interaction: { type: 3, id: "300000000000000003", channel_id: "100000000000000001", data: { custom_id: "signup:rsvp:in" } }, env, ctx: { waitUntil: (p) => waits.push(p) }, member: { slug: "ada", name: "Ada" }, byName: "Ada", deps, now: NOW });
+  await Promise.all(waits);
+  assert.equal(r.data.flags, 64);
+  const doc = JSON.parse(DB.kv.get("signups"));
+  assert.equal(doc.entries.length, 5);
+  assert.equal(doc.entries.find((e) => e && e.name === "Ada").rsvp, "in");
+});
+
+// F-9 bypass: the URL strip ran before the markdown strip, so markdown characters inside the scheme hid it, and removing them left a live link.
+test("F-9 sanitiseWriteIn, cleanName and meet: a link split by markdown characters is removed", () => {
+  for (const raw of ["ht*tps://e.test/a", "ht[]tp://e.test", "h_t~t|ps://e.test/x", "see ht*tps://e.test/a now"]) {
+    assert.ok(!/https?:|e\.test/i.test(sanitiseWriteIn(raw)), `sanitise ${raw}`);
+    assert.ok(!/https?:|e\.test/i.test(cleanName(raw)), `name ${raw}`);
+    const card = renderSignupCard({ entries: [{ name: "Ada", rsvp: "in", meet: raw, when: raw }] }).embeds[0];
+    assert.ok(!/https?:|e\.test/i.test(JSON.stringify(card)), `card ${raw}`);
+  }
+  assert.equal(cleanName("see ht*tps://e.test/a now"), "see now");
+});
+
+// detailBits pushed an empty `when`, leaving a dangling " · " in the board card.
+test("board card: a when or meet that cleans to nothing leaves no dangling separator", () => {
+  const members = cardMembers({ members: [{ name: "Red Fox", class_key: "druid" }] });
+  const v = renderBoardCard({ members, entries: [{ slug: "red-fox", name: "Red Fox", rsvp: "in", when: "https://e.test/x", meet: "discord.gg/abc" }, { name: "Stranger", rsvp: "in", when: "https://e.test/x" }] }).embeds[0].fields[0].value;
+  assert.ok(!/ · (\n|$)/.test(v) && !/ ·  · /.test(v), JSON.stringify(v));
+  assert.match(v, /-# In$/m);
+});
+
+// Offered admin `when` options print unchanged, even when cleaning would change them.
+test("offered when options print unchanged in both cards", () => {
+  const options = { when: ["#1 slot", "9pm (late)"] };
+  const entries = [{ name: "Ada", rsvp: "in", when: "#1 slot" }, { name: "Bo", rsvp: "in", when: "9pm (late)" }];
+  const sign = renderSignupCard({ options, entries }).embeds[0].fields.find((f) => f.name === "Arriving").value;
+  assert.match(sign, /^#1 slot: Ada$/m);
+  assert.match(sign, /^9pm \(late\): Bo$/m);
+  const board = renderBoardCard({ options, entries }).embeds[0].fields[0].value;
+  assert.match(board, /Ada\*\*: In · #1 slot/);
+  assert.match(board, /Bo\*\*: In · 9pm \(late\)/);
+  const members = cardMembers({ members: [{ name: "Ada" }] });
+  assert.match(renderBoardCard({ options, members, entries: [entries[0]] }).embeds[0].fields[0].value, /In · #1 slot/);
+});
+
+// Object-property words are plain data in the class-emoji lookup, the line composer and the pending record.
+test("classKey constructor and friends: no inherited property prints; changes keyed __proto__ survive", () => {
+  const parsed = cardMembers({ members: [{ name: "Red Fox", class_key: "constructor" }] });
+  assert.equal(parsed[0].classKey, "");
+  const hand = [{ slug: "red-fox", name: "Red Fox", classKey: "constructor", classLabel: "x" }, { slug: "ada", name: "Ada", classKey: "toString", classLabel: "x" }];
+  const entries = [{ name: "Red Fox", rsvp: "in" }];
+  for (const text of [JSON.stringify(renderSignupCard({ members: hand, entries })), JSON.stringify(renderBoardCard({ members: hand, entries }))]) assert.ok(!/function|\[native/.test(text), text);
+  assert.equal(composeLine({ a: { name: "Ada", to: "constructor" }, b: { name: "Bo", to: "in" } }), "From the board: Bo is in.");
+  const p = recordChanges(null, [{ key: "__proto__", name: "Ada", from: null, to: "in" }, { key: "constructor", name: "Bo", from: null, to: "out" }], NOW);
+  assert.equal(Object.keys(p.changes).length, 2);
+  assert.equal(composeLine(p.changes), "From the board: Ada is in and Bo is out.");
+  assert.equal(recordChanges(p, [{ key: "constructor", name: "Bo", from: "out", to: null }], NOW + 1) !== null, true);
+});
+
+// Codex review (a): a member whose entry has an invalid rsvp is in no RSVP list, so they belong under "No answer yet".
+test("signup card: an invalid stored rsvp counts as no answer", () => {
+  const members = cardMembers({ members: [{ name: "Red Fox" }, { name: "Ada" }] });
+  const f = renderSignupCard({ members, entries: [{ slug: "red-fox", name: "Red Fox", rsvp: "constructor" }, { slug: "ada", name: "Ada", rsvp: "in" }] }).embeds[0].fields;
+  const quiet = f.find((x) => x.name.startsWith("No answer yet"));
+  assert.ok(quiet, JSON.stringify(f));
+  assert.equal(quiet.name, "No answer yet (1)");
+  assert.match(quiet.value, /Red Fox/);
+});
+
+// Codex review (b): a bare Discord invite in `when` or `meet` printed as a live invite.
+test("cards: a bare Discord invite in when or meet is removed in both card variants", () => {
+  const entries = [{ name: "Ada", rsvp: "in", when: "discord.gg/abcdef", meet: "inn discord.gg/abcdef" }, { name: "Bo", rsvp: "in", when: "9pm discord.com/invite/xyz" }];
+  const members = cardMembers({ members: [{ name: "Ada" }] });
+  for (const out of [renderSignupCard({ entries }), renderSignupCard({ members, entries }), renderBoardCard({ entries }), renderBoardCard({ members, entries })]) {
+    const text = JSON.stringify(out);
+    assert.ok(!/discord\.(gg|com)|\/invite/i.test(text), text);
+  }
+  const arr = renderSignupCard({ entries }).embeds[0].fields.find((f) => f.name === "Arriving").value;
+  assert.match(arr, /^9pm: Bo$/m);
 });
