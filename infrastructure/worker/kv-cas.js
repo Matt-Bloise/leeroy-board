@@ -55,8 +55,8 @@ export async function commitSheetWrite(env, { event, compute }, { tries = 8, now
     const list = [sheetsStmt];
     // 2. public projection, only if step 1 took effect (this attempt's timestamp is on the sheets row).
     if (pRow) list.push(env.DB.prepare(`UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'party' AND json = ? AND ${marker}`).bind(pText, at, pRow.json, nonce));
-    // 3. the event, only if step 1 took effect.
-    list.push(env.DB.prepare(
+    // 3. the event, only if step 1 took effect. compute may answer skipEvent (a write that changed nothing, e.g. a stale level): no history row.
+    if (!out.skipEvent) list.push(env.DB.prepare(
       "INSERT INTO sheet_events (slug, name, field, value_json, visible, source, created_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE " + marker
     ).bind(event.slug, event.name, event.field, event.valJson, event.visible ? 1 : 0, event.source, event.at, nonce));
     // Final statement: the nonce is on the sheets row only if step 1 took effect. Its row, not meta.changes, is the success signal.
