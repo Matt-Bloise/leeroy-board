@@ -75,3 +75,15 @@ test("recoverTarget writes nothing when no planted marker is present, and clears
   assert.ok(posts.length >= 9 && lines.length === 1);
   assert.equal(fields.goals.value, null);
 });
+
+test("a cheap recover job runs whenever the preview deployed, and every job that reads the preview needs it", () => {
+  const r = wf.jobs.recover;
+  assert.ok(r, "a recover job");
+  assert.match(r.if, /!cancelled\(\)/);
+  assert.match(r.if, /needs\.preview\.result == 'success'/);
+  assert.ok(!/api_needed/.test(r.if), "whatever api_needed says");
+  assert.ok(!r.steps.some((s) => /playwright|npm ci/i.test(`${s.run || ""} ${s.name || ""}`)), "no Playwright, no dependency install: node and the recover script only");
+  assert.match(runs("recover"), /npm run test:recover/);
+  for (const j of ["api", "browser", "layout", "visual-audit", "crawl"]) assert.ok(needs(j).includes("recover"), `${j} needs recover`);
+  assert.match(wf.jobs.crawl.if, /needs\.recover\.result == 'success'/);
+});

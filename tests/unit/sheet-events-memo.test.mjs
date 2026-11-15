@@ -118,3 +118,18 @@ test("the per-write memo is scoped to ONE write: a hide recorded between two wri
   assert.equal(f.race.visible, false);
   assert.equal(f.plan_zone.visible, false, "write 2 read the log again and saw the new hide (a module-global memo would still hold write 1's log)");
 });
+
+test("an erasure of a row that is not the newest leaves MAX(id) alone but not the memo: a fresh read and the memoised read agree", async () => {
+  const env = await makeEnv();
+  const add = (slug, field, visible) => env.DB.raw.prepare("INSERT INTO sheet_events (slug, name, field, value_json, visible, source, created_at) VALUES (?, ?, ?, NULL, ?, 'board', ?)").run(slug, BIRCH.name, field, visible ? 1 : 0, AT);
+  // Birch (no stored sheet) reads events by slug OR by the same normalised name: A = Birch's own slug hid race; B = another slug with the same name showed race afterwards; A then showed class (newest id)
+  add(BIRCH.slug, "race", false); add("birch-testwright-b", "race", true); add(BIRCH.slug, "class", true);
+  const fieldsOf = async () => (await (await get(env, "/api/state")).json()).party.find((s) => s.slug === BIRCH.slug).fields;
+  assert.ok((await fieldsOf()).race, "memoised: the later 'shown' wins, race is shown");
+  const maxBefore = env.DB.raw.prepare("SELECT MAX(id) AS m FROM sheet_events").get().m;
+  env.DB.raw.prepare("DELETE FROM sheet_events WHERE slug = ?").run("birch-testwright-b"); // the data-rights erase of B
+  assert.equal(env.DB.raw.prepare("SELECT MAX(id) AS m FROM sheet_events").get().m, maxBefore, "the newest id did not move");
+  const memoised = await fieldsOf();
+  assert.ok(!memoised.race, "the read after the erasure rescans: race is hidden, as a fresh isolate would say");
+  assert.equal(env.stats.scans, 2);
+});

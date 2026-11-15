@@ -295,3 +295,40 @@ test("a run that was killed after planting values is recovered at the next start
   assert.equal(report.restored, true);
   assert.deepEqual(report.hits, []);
 });
+// ---- GAME REFERENCE (the red of the crawl job at f5a26af6): the target's class word and class key appeared in GET /bootstrap and GET /library/news.json, plain and with the odd query.
+// Decision: not member-derived. /bootstrap carries the atlas place-mark index under `marks` (keys like "systems/class-trainers~trainers.<class>.capital", every class), and a library news item names
+// classes in its text and `touches` list. Those two are skipped for the class and class_key VALUE search only; everything else still runs.
+const TARGET_DOC = repoDoc("party").members.find((m) => m.name === TARGET.name);
+const WORD = TARGET_DOC.class_key;
+const gameMarks = { generated: AT, names: { "aerie-peak": "Aerie Peak" }, pages: { [`classes/${WORD}`]: ["orgrimmar"] }, facts: { [`systems/class-trainers~trainers.${WORD}.capital`]: ["orgrimmar"] }, aliases: {}, weak: [] };
+const withMarks = rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, marks: gameMarks }));
+const withNews = rewrite(/^\/api\/library\/news\.json(\?|$)/, () => ({ generated: AT, items: [{ title: "Invented hotfix list", snippet: `class fixes (${WORD}, mage, rogue)`, touches: [WORD, "mage"] }], updates: [] }));
+const chain = (...fs) => async (m, p, h, res, raw) => { let r = res; for (const f of fs) r = await f(m, p, h, r, raw); return r; };
+
+test("GREEN (game reference): the class word in /bootstrap `marks` and in a library news item is not a leak; routes, composites and the live socket are still read", async () => {
+  const { report, error, before, after } = await crawl({ repo: true, tamper: chain(withMarks, withNews) });
+  assert.equal(error, null, error && error.message);
+  assert.deepEqual(report.hits, [], `hits: ${report.hits}; routes: ${report.routes.filter((r) => r.hits.length).map((r) => r.path + "=" + r.hits).join(" ")}`);
+  assert.ok(report.routes.some((r) => r.path.startsWith("/bootstrap")), "/bootstrap was read");
+  assert.equal(report.restored, true);
+  assert.ok(same(before, after));
+});
+
+test("the same word is still a leak anywhere else in /bootstrap or a library document: a pass-through is red", async () => {
+  const cases = [
+    ["in /bootstrap outside `marks` (an unnamed list)", chain(withMarks, rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, at_the_table: [WORD] }))), "class_key"],
+    ["in a /bootstrap section other than marks that carries the class label", rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, stats: { ...(j.stats || {}), note: TARGET_DOC.class } })), "class"],
+    ["a private key inside `marks` (structural check still runs there)", rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, marks: { ...gameMarks, who: { name: TARGET.name, class_key: WORD } } })), "class_key"],
+  ];
+  for (const [what, tamper, want] of cases) {
+    const { report, error } = await crawl({ repo: true, tamper });
+    assert.equal(error, null, error && error.message);
+    assert.ok(report.hits.includes(want), `${what}: ${want} must be reported; hits: ${report.hits}`);
+  }
+});
+
+test("a projection pass-through is red with the game-reference skip in force: the stored party document in /bootstrap", async () => {
+  const { report, error } = await crawl({ repo: true, tamper: chain(withMarks, withNews, rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, party: repoDoc("party") }))) });
+  assert.equal(error, null, error && error.message);
+  assert.ok(report.hits.includes("class_key") || report.hits.includes("composite:party.settled") || report.hits.some((h) => h.startsWith("composite:party")), `hits: ${report.hits}`);
+});

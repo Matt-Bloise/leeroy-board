@@ -270,13 +270,13 @@ export class SheetLogUnreadableError extends Error {
 }
 
 // The log of hide/show events, read once per isolate and database while nothing changed. Every uncached read that has a party-document member without a stored sheet needs it, and an
-// unmemoised read scans the whole table each time. The key is MAX(id) (one rowid lookup), read BEFORE the log so a later event can only make the key older than the content, never newer:
-// the next read then rescans. Rows deleted by an erasure that leave the newest id alone stay in the memo until the next event; they can only hide more, never less. `last` memoises the
-// result per row (slug + name): the last visibility of each field.
+// unmemoised read scans the whole table each time. The key is MAX(id) plus COUNT(*) (one cheap statement), read BEFORE the log so a later event can only make the key older than the content, never newer:
+// the next read then rescans. An erasure that deletes a row other than the newest leaves MAX(id) alone but lowers COUNT(*), so it changes the key too, in every isolate (a memo that kept a deleted
+// row would say "shown" for a name another slug had hidden, while a fresh read says "hidden"). `last` memoises the result per row (slug + name): the last visibility of each field.
 const EVENT_LOGS = new WeakMap();
 async function sheetEventLog(env) {
-  const m = await env.DB.prepare("SELECT MAX(id) AS m FROM sheet_events").first();
-  const max = m && m.m !== undefined && m.m !== null ? m.m : null;
+  const m = await env.DB.prepare("SELECT MAX(id) AS m, COUNT(*) AS c FROM sheet_events").first();
+  const max = `${m && m.m !== undefined && m.m !== null ? m.m : ""}:${m && m.c !== undefined && m.c !== null ? m.c : ""}`;
   const hit = EVENT_LOGS.get(env.DB);
   if (hit && hit.max === max) return hit;
   const events = (await env.DB.prepare("SELECT slug, name, field, visible FROM sheet_events ORDER BY id ASC").all()).results || [];
@@ -1748,9 +1748,6 @@ const worker = {
             const item = { slug: member.slug, name: member.name, state: lState, at: now };
             if (idx >= 0) rows[idx] = item;
             else rows.push(item);
-            await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
-              .bind(JSON.stringify(rows), now)
-              .run();
             try {
               await recordSheetEventInD1(env, url.origin, {
                 slug: member.slug,
@@ -1764,6 +1761,10 @@ const worker = {
               if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
               throw e;
             }
+            // the sheet event first: a refused or unreadable events log (503/409/500) must leave NO launch row behind
+            await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
+              .bind(JSON.stringify(rows), now)
+              .run();
             await purgeWorkerCache(url.origin, ["/api/bootstrap", dataCachePath("launch")]);
             await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
           }

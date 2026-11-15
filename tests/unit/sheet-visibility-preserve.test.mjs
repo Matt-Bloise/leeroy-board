@@ -268,3 +268,23 @@ test("Discord /sheet refuses a field name that is not a sheet field: ephemeral r
   assert.equal(countOf(env, "intents"), before.intents, "no intent");
   assert.deepEqual(await anonymousLeaks(env), []);
 });
+test("a launch write whose sheet log cannot be read stores NO launch row, from the board's intent and from Discord /launch", async () => {
+  const env = await makeEnv();
+  const launchRow = () => env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'launch'").get();
+  const events = () => env.DB.raw.prepare("SELECT COUNT(*) AS n FROM sheet_events").get().n;
+  const intents = () => env.DB.raw.prepare("SELECT COUNT(*) AS n FROM intents").get().n;
+  const before = { launch: launchRow(), events: events(), intents: intents(), sent: env.sent.length };
+  const real = env.DB.prepare.bind(env.DB);
+  env.DB.prepare = (sql) => { if (/sheet_events/.test(sql) && /^\s*SELECT/i.test(sql)) throw new Error("D1_ERROR: sheet_events unreadable"); return real(sql); };
+  const res = await memberApi(env, "POST", "/intent", { kind: "launch", patch: { state: "in" } });
+  assert.ok([409, 500, 503].includes(res.status), `board intent refused (status ${res.status})`);
+  assert.deepEqual({ launch: launchRow(), events: events(), intents: intents(), sent: env.sent.length }, before, "board intent: nothing stored, nothing broadcast");
+  const realNow = Date.now;
+  Date.now = () => LAUNCH_EPOCH * 1000 - 3600000;
+  try { await discordLaunch(env, "queue").catch(() => {}); } finally { Date.now = realNow; }
+  assert.deepEqual({ launch: launchRow(), events: events(), intents: intents(), sent: env.sent.length }, before, "Discord /launch: nothing stored, nothing broadcast");
+  // and once the log is readable again both paths store the row together with its event
+  env.DB.prepare = real;
+  assert.equal((await memberApi(env, "POST", "/intent", { kind: "launch", patch: { state: "in" } })).status, 200);
+  assert.ok(launchRow() && events() === before.events + 1);
+});

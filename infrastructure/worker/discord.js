@@ -1122,9 +1122,6 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         const entry = { slug: member.slug, name: byName, state, at: now };
         if (idx >= 0) rows[idx] = entry;
         else rows.push(entry);
-        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
-          .bind(JSON.stringify(rows), now)
-          .run();
         await recordSheetEventInD1(env, origin, {
           slug: member.slug,
           name: byName,
@@ -1133,6 +1130,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           source: "discord",
           at: now,
         });
+        // the sheet event first: an unreadable events log must leave no launch row behind
+        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
+          .bind(JSON.stringify(rows), now)
+          .run();
         await insertIntent(env, {
           slug: member.slug,
           kind: "launch",
