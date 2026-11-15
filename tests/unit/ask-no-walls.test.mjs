@@ -639,12 +639,22 @@ test("21. gateway path (AI_GATEWAY_ID set): no 1 s floor and no direct run after
 
 test("22. the margin uses the delivery deadline: with ASK_DEADLINE_MS=8000 neither the Claude hop nor Workers AI is given time past the hard end (deadline minus a sixth, at most 4 s)", async () => {
   const hardEnd = 8000 - 8000 / 6;
-  const r = await fakeClockAsk({ extra: { ASK_DEADLINE_MS: "8000", ANTHROPIC_API_KEY: FAKE_KEY }, claudeCost: 3000, onAi: () => ({ response: WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } }) });
+  // A 500 from compose is retried once on the Haiku-class model (compose-model change), so Claude makes 2 sends here; each one still ends by the hard end.
+  const r = await fakeClockAsk({ extra: { ASK_DEADLINE_MS: "8000", ANTHROPIC_API_KEY: FAKE_KEY }, claudeCost: 1500, onAi: () => ({ response: WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } }) });
   assert.equal(r.row.status, "answered", r.row.model);
-  assert.equal(r.claude.length, 1);
-  assert.ok(r.claude[0].at + r.claude[0].ms <= hardEnd + 1, `Claude hop ends at ${r.claude[0].at + r.claude[0].ms}, hard end ${hardEnd}`);
+  assert.equal(r.claude.length, 2);
+  for (const c of r.claude) assert.ok(c.at + c.ms <= hardEnd + 1, `Claude send ends at ${c.at + c.ms}, hard end ${hardEnd}`);
   assert.equal(r.ai.length, 1);
   assert.ok(r.ai[0].at + r.ai[0].ms <= hardEnd + 1, `Workers AI ends at ${r.ai[0].at + r.ai[0].ms}, hard end ${hardEnd}`);
+});
+
+test("22b. the original slow-Claude scenario (each send burns 3 s of an 8 s deadline): no Claude send runs past the hard end and the ask is still answered", async () => {
+  const hardEnd = 8000 - 8000 / 6;
+  const r = await fakeClockAsk({ extra: { ASK_DEADLINE_MS: "8000", ANTHROPIC_API_KEY: FAKE_KEY }, claudeCost: 3000, onAi: () => ({ response: WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } }) });
+  assert.equal(r.row.status, "answered", r.row.model);
+  assert.ok(r.claude.length >= 1 && r.claude.length <= 2);
+  for (const c of r.claude) assert.ok(c.at + c.ms <= hardEnd + 1, `Claude send ends at ${c.at + c.ms}, hard end ${hardEnd}`);
+  for (const a of r.ai) assert.ok(a.at + a.ms <= hardEnd + 1, `Workers AI ends at ${a.at + a.ms}, hard end ${hardEnd}`);
 });
 
 test("23. more wall wording is caught and the earlier no-false-positive lines still pass", () => {
