@@ -48,6 +48,18 @@ test("C. a word that appears in the library fact text is not a key (any length);
   assert.ok(keys(researchMembersFor([{ slug: "q", name: "Quillon" }], lib)).includes("quillon"));
 });
 
+test("C. the exception is sheet-derived names only: 'Hunter Vale' stays a full-name key, its common-word first name is not, a roster first name that is a common word still is", () => {
+  const sheets = [{ slug: "hunter-vale", name: "Hunter Vale" }];
+  const m = researchMembersFor(sheets);
+  const map = buildNameMap(m, null, { genericAliases, nonce: "abcd" });
+  assert.ok(!/vale/i.test(tokenise("hunter vale rolled a need", map)), "the full name is tokenised");
+  assert.equal(tokenise("a hunter pulls", map), "a hunter pulls");
+  // a roster member's first name (injected) is never filtered, common word or not
+  const roster = [{ display: "Zedex", aliases: [], firstNames: ["Wren", "Mason"] }];
+  const map2 = buildNameMap(roster, null, { genericAliases, nonce: "abcd" });
+  assert.ok(!/wren|mason/i.test(tokenise("tell wren and Mason", map2)));
+});
+
 test("C. genericAliases is the single mechanism: every explicit entry is rejected, and ordinary handles are not", () => {
   for (const g of genericAliases) assert.ok(isGenericName(g, new Set()), g);
   for (const n of ["Quillon", "ZedEx", "Mirabel", "Grukthar"]) assert.ok(!isGenericName(n, new Set()), n);

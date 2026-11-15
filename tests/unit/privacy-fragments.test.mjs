@@ -92,3 +92,23 @@ test("tools/guard-collisions.mjs prints counts and game words only: no member na
   const leaked = real.flatMap((n) => [n, n.slice(0, 5), n.slice(-5)]).filter((s) => s.length >= 4 && !probes.has(s) && cli.includes(s));
   assert.equal(leaked.length, 0, "real names or fragments in CLI output (count)");
 });
+
+test("a reversed fragment that sits inside a game word (starter) does not trip; the reversed whole name still does", () => {
+  const members = [{ display: "Mooshetrat" }]; // last 5 letters reversed spell a piece of "starter"
+  assert.ok(scanUserText(["starter zone"], { members, genericAliases: [] }).length, "old behaviour: trips");
+  assert.equal(scanUserText(["starter zone"], rosterOf(members)).length, 0);
+  assert.ok(scanUserText(["tartehsoom"], rosterOf(members)).length, "the reversed whole name still blocks");
+  assert.ok(scanUserText(["Mooshetrat"], rosterOf(members)).length);
+});
+
+test("tools/guard-library-trips.mjs lists page ids with kind/layer/length only: no member name or fragment, and the real roster trips few pages", async () => {
+  const { libraryTrips, tripsReport } = await import("../../tools/guard-library-trips.mjs");
+  const base = RC.researchRoster();
+  const res = libraryTrips({ members: base.members, genericAliases: base.genericAliases, fragmentWords: RC.fragmentWords });
+  const text = tripsReport(res).toLowerCase();
+  const real = ROSTER_DATA.flatMap((r) => [r.display, ...(r.aliases || [])]).map((n) => n.toLowerCase().replace(/\s+/g, ""));
+  const idsOnly = text.replace(/^.*$/m, "").split("\n").map((l) => l.replace(/^[^:]*:/, "")).join("\n"); // drop the ids: only kind/layer/length remain
+  assert.equal(real.flatMap((n) => [n, n.slice(0, 5), n.slice(-5)]).filter((s) => s.length >= 4 && idsOnly.includes(s)).length, 0, "kind/layer/length text carries a name or fragment (count)");
+  assert.match(text, /display\/partial\/len\d+|^pages checked: \d+; tripping: 0$/m);
+  assert.ok(res.trips.length <= 6, `${res.trips.length} pages trip the strict guard`);
+});

@@ -222,7 +222,8 @@ function compileKey(raw, key, kind, member, stop = null) {
   e.plain = [...u];
   e.coll = [...new Set([...u].map(collapse))];
   if (key.length >= 7) e.partial = partialsOf(key, kind, stop);
-  e.rev = [key, ...e.partial].map(reverse);
+  // The reversed whole key always matches. A reversed fragment is a weak signal: with a stop list it is dropped when the reversed fragment sits inside a listed word ("starter").
+  e.rev = [key, ...e.partial.filter((f) => !(stop && stop.some((w) => w.includes(reverse(f)))))].map(reverse);
   return e;
 }
 
@@ -324,6 +325,15 @@ function structural(t, out, seg) {
   if (INVITE_RE.test(base)) out.push({ kind: "invite", seg });
 }
 
+// Diagnostics only (tools/guard-library-trips.mjs): which layer and which name kind matched, as NON-enumerable fields so leak objects compare and serialise as before.
+// Never carries a name or fragment: only the layer, the entry kind and the key length.
+function detail(rec, layer, e) {
+  Object.defineProperty(rec, "layer", { value: layer });
+  Object.defineProperty(rec, "ekind", { value: e.kind });
+  Object.defineProperty(rec, "keylen", { value: e.key.length });
+  return rec;
+}
+
 function scanSkeleton(text, R, kinds, out, seg) {
   const clean = text.replace(TOKEN_RE, " ");
   const sp = spaced(clean);
@@ -353,19 +363,20 @@ function scanSkeleton(text, R, kinds, out, seg) {
   for (const e of R.entries) {
     if (kinds && !kinds.has(e.kind)) continue;
     if (e.short) {
-      for (const n of e.shortNeedles) if (padded.includes(n)) { out.push({ kind: "name", seg, ref: e.member }); break; }
+      for (const n of e.shortNeedles) if (padded.includes(n)) { out.push(detail({ kind: "name", seg, ref: e.member }, "short", e)); break; }
       continue;
     }
     const vs = variants();
     let hit = null;
-    for (const n of e.plain) { for (const t of vs.plain) if (t.includes(n)) { hit = "name"; break; } if (hit) break; }
-    if (!hit) for (const n of e.coll) { for (const t of vs.coll) if (t.includes(n)) { hit = "name"; break; } if (hit) break; }
-    if (!hit) for (const n of e.partial) { for (const t of vs.plain) if (t.includes(n)) { hit = "partial"; break; } if (hit) break; }
+    let layer = "";
+    for (const n of e.plain) { for (const t of vs.plain) if (t.includes(n)) { hit = "name"; layer = "plain"; break; } if (hit) break; }
+    if (!hit) for (const n of e.coll) { for (const t of vs.coll) if (t.includes(n)) { hit = "name"; layer = "collapse"; break; } if (hit) break; }
+    if (!hit) for (const n of e.partial) { for (const t of vs.plain) if (t.includes(n)) { hit = "partial"; layer = "partial"; break; } if (hit) break; }
     if (!hit && e.rev) {
       // the name typed backwards (or shown backwards by a bidi override that was stripped)
-      for (const n of e.rev) if (sk.includes(n)) { hit = "name"; break; }
+      for (const n of e.rev) if (sk.includes(n)) { hit = "name"; layer = "reverse"; break; }
     }
-    if (hit) out.push({ kind: hit, seg, ref: e.member });
+    if (hit) out.push(detail({ kind: hit, seg, ref: e.member }, layer, e));
   }
 }
 

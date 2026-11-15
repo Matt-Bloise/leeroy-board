@@ -25,6 +25,8 @@ const COMMON_WORDS = new Set((
   "skinning leatherworking blacksmithing enchanting engineering alchemy herbalism mining tailoring fishing cooking first aid bandage smith smithing " +
   "retribution protection holy restoration feral elemental enhancement balance guardian discipline assassination combat subtlety arms fury beast marksmanship survival destruction affliction demonology arcane " +
   "stormwind orgrimmar ironforge darnassus undercity thunder bluff elwynn durotar barrens westfall duskwood stranglethorn tanaris ungoro winterspring silithus felwood ashenvale darkshore teldrassil dun morogh loch modan redridge badlands blasted swamp hinterlands plaguelands " +
+  "starter starters trainer trainers zone area camp camping pack packs price prices macro macros keybind keybinds setting settings addon addons patch beta launch " +
+  "hands hand offhand offhands spell spells wards ward " +
   "dagger mace robe cloak ring amulet trinket boots gloves helm belt bracers mount reputation talent spec level class race faction horde alliance"
 ).split(" ").filter(Boolean));
 export const GAME_WORDS = [...COMMON_WORDS];

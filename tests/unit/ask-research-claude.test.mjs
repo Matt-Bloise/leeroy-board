@@ -400,7 +400,7 @@ test("1. a structured sheet field with an obfuscated roster name stops Claude (b
     assert.ok(!anthText(r).toLowerCase().includes(name.toLowerCase()));
     assert.equal(r.wai.length >= 1 || r.anth.length >= 1, true);
   }
-  const hex = await ask(ABSTAIN_Q, { sheets: sheetOf({ professions: vis(Buffer.from(name).toString("hex")) }) });
+  const hex = await ask(ABSTAIN_Q, { sheets: sheetOf({ professions: vis(Buffer.from(name).toString("base64")) }) });
   assert.equal(hex.anth.length, 0, "a structured field the guard rejects means no Claude call");
   assert.match(hex.row.model, /guard:/);
   assert.match(hex.answer, /Workers answer first/);
@@ -907,7 +907,7 @@ test("A. a first name in a sheet field (first_name) is a key too, and a reply th
 });
 
 test("B. a name the tokeniser misses inside a LIBRARY fact stops Claude (strict guard covers library text); Workers AI answers", async () => {
-  const hex = Buffer.from(NAMES[2]).toString("hex");
+  const hex = Buffer.from(NAMES[2]).toString("base64");
   const facts = [{ key: "tanking.tonight", value: `Who tanks tonight is agreed in the party channel (ref ${hex}).` }];
   const r = await ask("who tanks tonight", { facts });
   assert.equal(r.anth.length, 0, "library text with a roster name in an encoding must not reach Claude");
@@ -916,7 +916,7 @@ test("B. a name the tokeniser misses inside a LIBRARY fact stops Claude (strict 
 });
 
 test("B. a name the tokeniser misses inside the PERSONA text stops Claude", async () => {
-  const hex = Buffer.from(NAMES[2]).toString("hex");
+  const hex = Buffer.from(NAMES[2]).toString("base64");
   const r = await ask("who tanks tonight", { persona: { system: `You are a dry guild veteran. Note ${hex}.` } });
   assert.equal(r.anth.length, 0, "persona text with a roster name in an encoding must not reach Claude");
   assert.match(r.row.model, /guard:/);
@@ -941,4 +941,37 @@ test("C. sheets named 'Light' and 'Tank' are not tokenisable names: 'light' in t
   assert.ok(/is light armor good for a rogue/.test(user), "the question is unchanged");
   const count = (t) => (t.match(/\{P\d+\./g) || []).length;
   assert.ok(count(user) <= count(base.anth[0].body.messages[0].content), "no extra tokens from Light or Tank");
+});
+
+// ---- PR 360 decisions ----------------------------------------------------------------------------------------------------------------------------------
+const BAD_LINE = /error|went wrong|unavailable|try again|couldn't|could not|can't answer|HTTP [0-9]|guard:|rate limit|limit|too many|busy|timed out|timeout|\bfailed\b/i;
+test("E1. a library page that trips the strict guard falls to Workers AI and the member gets a plain answer: no error string, no wall, row finished", async () => {
+  const hex = Buffer.from(NAMES[2]).toString("base64");
+  const facts = [{ key: "tanking.tonight", value: `Who tanks tonight is agreed in the party channel (ref ${hex}).` }];
+  const r = await ask("who tanks tonight", { facts });
+  assert.equal(r.anth.length, 0);
+  assert.match(r.row.model, /guard:/);
+  assert.match(r.answer, /Workers answer first/);
+  assert.doesNotMatch(r.answer, BAD_LINE);
+  assert.ok(r.row.status && r.row.status !== "thinking" && r.row.status !== "error", `status ${r.row.status}`);
+  const both = await ask("who tanks tonight", { facts, waiFail: true });
+  assert.equal(both.anth.length, 0);
+  assert.match(both.answer, /agreed in the party channel/, "library facts line, in voice");
+  assert.doesNotMatch(both.answer, BAD_LINE);
+  assert.ok(both.row.status && both.row.status !== "thinking" && both.row.status !== "error", `status ${both.row.status}`);
+});
+
+test("E2. a real member's first name that is a common word (Wren, Mason, Hunter) is tokenised and never in an outbound body, from the question, sheets and the asker; odd forms fall to Workers AI, not verbatim", async () => {
+  setFirstNameSource((m, i) => (i === 0 ? ["Wren"] : i === 1 ? ["Mason"] : i === 2 ? ["Hunter"] : []));
+  const sheets = sheetOf({ class: vis("paladin"), goals: vis("duo with Wren and Mason on friday, Hunter tanks") });
+  const r = await ask("what would Wren, Mason and Hunter say about the weather", { sheets });
+  assert.equal(r.anth.length, 1, r.row.model);
+  for (const w of ["Wren", "Mason", "Hunter"]) assert.ok(!new RegExp(w, "i").test(anthText(r)), `${w} reached Anthropic`);
+  const odd = await ask("what would W r e n and m-a-s-o-n and HUNTER say", { sheets });
+  const sent = anthText(odd) + bodiesText(odd.wai);
+  for (const w of ["Wren", "Mason", "Hunter", "W r e n", "m-a-s-o-n"]) assert.ok(!sent.includes(w), `${w} sent verbatim`);
+  const asker = await ask("what is my build", { by: "Wren", memberSlug: "nobody" });
+  assert.ok(!/wren/i.test(anthText(asker) + bodiesText(asker.wai)), "an asker called by a common-word first name");
+  const reply = await ask(ABSTAIN_Q, { claude: () => ({ status: 200, text: "**Wren should play whatever is fun.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed" }) });
+  assert.ok(!/Wren/.test(reply.answer), "a reply naming the first name is discarded");
 });
