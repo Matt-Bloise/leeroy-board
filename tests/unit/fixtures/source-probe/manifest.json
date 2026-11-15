@@ -1,0 +1,17 @@
+{
+ "comment": "Dry-run responses for tools/source-probe.sources.json. Keyed by exact URL. Bodies are fictional pages in this folder. Not a record of any real site.",
+ "responses": {
+  "https://news.blizzard.com/robots.txt": { "status": 200, "contentType": "text/plain", "file": "robots-open.txt" },
+  "https://news.blizzard.com/en-us/": { "status": 200, "contentType": "text/html; charset=utf-8", "file": "news-index.html" },
+  "https://news.blizzard.com/en-us/world-of-warcraft": { "status": 301, "location": "https://news.blizzard.com/en-us/world-of-warcraft/" },
+  "https://news.blizzard.com/en-us/world-of-warcraft/": { "status": 200, "contentType": "text/html; charset=utf-8", "file": "news-index.html" },
+  "https://us.forums.blizzard.com/robots.txt": { "status": 404, "contentType": "text/plain", "body": "not found" },
+  "https://us.forums.blizzard.com/en/wow/": { "status": 200, "contentType": "text/html", "file": "forum-spa.html" },
+  "https://www.wowhead.com/robots.txt": { "status": 200, "contentType": "text/plain", "file": "robots-open.txt" },
+  "https://www.wowhead.com/news": { "status": 200, "contentType": "text/html", "file": "wowhead-news.html" },
+  "https://www.wowhead.com/classic": { "status": 302, "location": "https://classic.example-other-host.test/" },
+  "https://www.icy-veins.com/robots.txt": { "status": 200, "contentType": "text/plain", "file": "robots-open.txt" },
+  "https://www.icy-veins.com/wow/": { "status": 200, "contentType": "text/html", "file": "guide-page.html" },
+  "https://www.method.gg/robots.txt": { "status": 200, "contentType": "text/plain", "file": "robots-closed.txt" }
+ }
+}
