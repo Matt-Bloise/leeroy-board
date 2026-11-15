@@ -82,7 +82,8 @@ export async function postChannelMessage(env, channelId, body, { timeoutMs = 200
     await res.arrayBuffer().catch(() => {});
     return { ok: res.ok, status: res.status };
   } catch {
-    return { ok: false, status: 0 };
+    // An aborted request may still have reached Discord: report it apart from a refusal.
+    return { ok: false, status: 0, ...(ctl && ctl.signal.aborted ? { timedOut: true } : {}) };
   } finally {
     if (timer) clearTimeout(timer);
   }

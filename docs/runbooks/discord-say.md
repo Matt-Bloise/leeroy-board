@@ -18,3 +18,9 @@
 3. In Discord, check that `/say` appears for an admin and not for a normal member.
 
 Until step 2 is done, `/say` does not exist in Discord. The handler is inert for everyone without Manage Server regardless.
+
+## Behaviours to know
+
+- If Discord does not answer within 2 seconds the reply says it was slow and that the post may have gone through. Check the channel before posting again: a retry is a new interaction and can post twice.
+- When the roster row has no `guildId` the server check is off: an admin of any server where the bot is installed can post into the roster channels, and the success reply says so. Set `guildId` in the `discord_roster` config row to close that.
+- Nothing records who posted what. The post appears in the channel as the bot; the admin who ran it is visible in Discord's own audit log only for the interaction, not in this app.

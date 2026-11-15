@@ -1807,8 +1807,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       const built = buildAnnounceBody({ text });
       if (!built.ok) return sayReply("Nothing to post: text is empty.");
       const posted = await postChannelMessage(env, channelId, built.body);
+      if (posted.timedOut) return sayReply("Discord was slow to answer. The post may have gone through: check the channel before posting again.");
       if (!posted.ok) return sayReply("Discord refused the post");
-      return sayReply(`Posted to ${channelKey}.`);
+      return sayReply(`Posted to ${channelKey}.${sayGate.gateOff ? `
+${GATE_OFF_NOTE}` : ""}`);
     }
 
     // 2s. `/ack`

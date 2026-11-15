@@ -156,7 +156,10 @@ test("a hung Discord request is cut short and answered inside 3 s", async () => 
   const hang = (url, init) => new Promise((_, rej) => { if (init && init.signal) init.signal.addEventListener("abort", () => rej(new Error("aborted"))); });
   const t0 = Date.now();
   const { result } = await withFetch(hang, () => say(makeEnv(), "32", "general", "hello"));
-  assert.equal(result.data.content, "Discord refused the post");
+  // CHANGED (Fable read): a timeout is not a refusal: the post may have landed, so the admin is told to check before retrying.
+  assert.match(result.data.content, /slow to answer/i);
+  assert.match(result.data.content, /check the channel/i);
+  assert.ok(!/refused/i.test(result.data.content));
   assert.ok(Date.now() - t0 < 2900, "answers inside Discord's 3 s");
 });
 
@@ -174,7 +177,14 @@ test("gateOff (roster has no guildId) behaves like /intents: admin bit still req
   assert.equal(denied.calls.length, 0);
   const posted = await withFetch(ok200, () => say(env, "32", "general", "hi", OTHER_GUILD));
   assert.equal(posted.calls.length, 1);
-  assert.equal(posted.result.data.content, "Posted to general.");
+  // CHANGED (Fable read): gateOff means any server admin can post into the roster channels, so the reply says so, as /intents does.
+  assert.ok(posted.result.data.content.startsWith("Posted to general."));
+  assert.match(posted.result.data.content, /Server check is off/);
+});
+
+test("with a guildId set the success reply carries no gate-off note", async () => {
+  const { result } = await withFetch(ok200, () => say(makeEnv(), "32", "general", "hi"));
+  assert.equal(result.data.content, "Posted to general.");
 });
 
 test("roster absent: admin passes the gate but has no channels (unknown channel, no post)", async () => {
