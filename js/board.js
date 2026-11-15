@@ -1499,10 +1499,20 @@ function startDiscordPresence(sdk) {
   discordPoll = setInterval(() => { if (!document.hidden) poll(); }, 15000);
   document.addEventListener("click", (e) => {
     const a = e.target.closest && e.target.closest("a[href]");
-    if (!a || !/^https?:/i.test(a.getAttribute("href"))) return;
+    if (!a) return;
+    const url = externalTarget(a);
+    if (!url) return;
     e.preventDefault();
-    sdk.commands.openExternalLink({ url: a.href }).catch((err) => warn("openExternalLink", err));
+    sdk.commands.openExternalLink({ url }).catch((err) => warn("openExternalLink", err));
   });
+}
+/* Inside the Activity a link must not navigate the frame ("Back" would lose frame_id and land on the gate card). Absolute http(s) links open outside.
+   The footer's own pages (/privacy/, /terms/, /landing/addon/) are relative; the Activity proxy maps its root to leeroy.party, so they open there. mailto and hash links stay. */
+function externalTarget(a) {
+  const raw = a.getAttribute("href") || "";
+  if (/^https?:/i.test(raw)) return a.href;
+  if (!a.closest("#legal-foot") || /^(?:mailto:|#)/i.test(raw)) return null;
+  try { const u = new URL(a.href); return /\.discordsays\.com$/i.test(u.hostname) ? `https://leeroy.party${u.pathname}${u.search}${u.hash}` : u.href; } catch (e) { return null; }
 }
 
 const RSVP_KEYS = ["in", "maybe", "late", "out"];
@@ -3757,9 +3767,15 @@ async function boot(mode, sdk) {
   if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = PRESENCE_WEB;
   (window.requestIdleCallback || ((f) => setTimeout(f, 800)))(startRoomLadder, { timeout: 2500 });
   if (typeof window.requestIdleCallback === "function") whenSettled(warmLater);
-  if (mode === "discord") startDiscordPresence(sdk);
+  bootDone = true;
+  if (mode === "discord") goDiscord(sdk);
+  else if (lateSdk) goDiscord(lateSdk); /* the SDK became ready while the board was still booting in preview mode */
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
+/* A slow sdk.ready() (past the 4 s preview start in index.html) upgrades a preview start to Discord mode exactly once. */
+let bootDone = false, lateSdk = null, discordOn = false;
+function goDiscord(sdk) { if (discordOn || !sdk) return; discordOn = true; startDiscordPresence(sdk); }
+function lateDiscord(sdk) { if (discordOn || !sdk) return; if (bootDone) goDiscord(sdk); else lateSdk = sdk; }
 Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
@@ -3825,5 +3841,5 @@ KIT.on("booted", () => {
 window.__boardKit = KIT;
 startWisps();
 let started = false;
-window.__board = Object.freeze({ fmt: { when: fmtWhen, rel: relWhen, rsvp: RSVP_SAY }, start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS, aim: { tx: LB.tx, ty: LB.ty, x: Math.round(LB.x), y: Math.round(LB.y), tilt: LB.tilt, frames: LB.frames, running: LB.running } }, wisps: { ...WS }, scene: SC.open, warm: { scenes: WARM.scenes, ms: Math.round(WARM.ms), done: WARM.done }, map: { running: !!(MC.raf || MC.timer), t: Math.round(MC.t), untangled: MC.untangled || 0, moved: MC.moved || 0 }, longtasks: LT.slice(), library: LIBUI.status() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus, room: () => ({ ...RS, room: RS.status ? RS.status() : null }) });
+window.__board = Object.freeze({ fmt: { when: fmtWhen, rel: relWhen, rsvp: RSVP_SAY }, start: (mode, sdk) => { if (started) { if (mode === "discord") lateDiscord(sdk); return; } started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS, aim: { tx: LB.tx, ty: LB.ty, x: Math.round(LB.x), y: Math.round(LB.y), tilt: LB.tilt, frames: LB.frames, running: LB.running } }, wisps: { ...WS }, scene: SC.open, warm: { scenes: WARM.scenes, ms: Math.round(WARM.ms), done: WARM.done }, map: { running: !!(MC.raf || MC.timer), t: Math.round(MC.t), untangled: MC.untangled || 0, moved: MC.moved || 0 }, longtasks: LT.slice(), library: LIBUI.status() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus, room: () => ({ ...RS, room: RS.status ? RS.status() : null }) });
 })();
