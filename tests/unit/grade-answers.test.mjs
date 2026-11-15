@@ -219,6 +219,10 @@ test("no golden fixture and not this test file contains a roster name, alias, id
   assert.deepEqual(scanTree(GOLDEN_DIR), []);
   assert.deepEqual(scanText(fs.readFileSync(fileURLToPath(import.meta.url), "utf8")), [], "the test file itself");
   assert.deepEqual(scanText(fs.readFileSync(path.join(HERE, "grade-answers-adversarial.test.mjs"), "utf8")), [], "the adversarial test file");
+  // The grader source is scanned too. Its generic game-role words (class and role names in its stop list) are the only allowed hits.
+  const ALLOWED_ROLE_WORDS = new Set(ROSTER_DATA.flatMap((r) => r.aliases || []).filter((a) => new RegExp("^(?:" + J("ma", "ge") + "|" + J("ta", "nk") + ")$", "i").test(a)).map((a) => `name:${a.toLowerCase()}`));
+  const graderHits = scanText(fs.readFileSync(path.join(HERE, "..", "..", "tools", "grade-answers.mjs"), "utf8")).filter((h) => !ALLOWED_ROLE_WORDS.has(h));
+  assert.deepEqual(graderHits, [], "the grader source");
 });
 
 test("the scan catches evasions: case, plural, possessive, glued, zero-width, lookalikes, escapes, separators, short aliases, canary forms, ids", () => {

@@ -1,4 +1,4 @@
-// Rule-based answer TRIPWIRE for the Leeroy golden set. It is not a gate. Deterministic: no network, no model, no clock.
+// Rule-based answer TRIPWIRE for the Leeroy golden set. It is not the gate; --tripwire (alias --gate) only fails the run when a rule fires. Deterministic: no network, no model, no clock.
 // It catches the obvious failures cheaply and offline; the real gate is grading by a second model family plus
 // answers read by hand. A pass here means "no rule fired", never "this answer is right".
 //
@@ -7,9 +7,9 @@
 //   classify(grade) -> "dead_end" | "invented" | "boundary" | "ok" | "rejected"
 //   normalizeText(text) -> NFKC, zero-width removed, curly quotes folded, common lookalike letters folded
 //
-// CLI: node tools/grade-answers.mjs answers.jsonl [--cases <golden dir>] [--gate] [--expect-count N]
+// CLI: node tools/grade-answers.mjs answers.jsonl [--cases <golden dir>] [--tripwire] [--expect-count N]
 //   Row: { id, caseId, answer }. The case supplies question, slice, reference and expect. Prints one JSON line per row and
-//   a summary line. --gate exits 1 on ANY problem: unusable input, a dead end, an invented specific, a rejected answer,
+//   a summary line. A pass means no rule fired, never that the answers are right. --tripwire (alias --gate) exits 1 on ANY problem: unusable input, a dead end, an invented specific, a rejected answer,
 //   or a class that differs from the case's expect. Fatal input problems print one clean line, never a stack trace.
 //
 // Method: normalise, split into sentences and clauses, type each clause (deflection, decline, filler, instruction-shaped,
@@ -33,7 +33,8 @@ const LOOKALIKE = {
   "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
 };
 export function normalizeText(input) {
-  let t = String(input);
+  let t;
+  t = String(input).replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x660)).replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x6f0));
   t = t.normalize("NFKD").replace(/[̀-ͯ]/g, "").normalize("NFKC");
   t = t.replace(/[​-‏‪-‮⁠-⁤﻿­]/g, "");
   t = t.replace(/[‘’‛′ʼ]/g, "'").replace(/[“”„″]/g, '"').replace(/[‐-―−]/g, "-");
@@ -71,7 +72,7 @@ const NAME_STOP = new Set(("classic forever wow world warcraft blizzard horde al
   "tailoring mining herbalism skinning alchemy blacksmithing enchanting engineering leatherworking fishing cooking frost fire holy arcane shadow pm am gold level reply note dm azeroth").split(" "));
 
 // ---------- clause typing ----------
-const CLAUSE = /;\s+|:\s+|,\s+(?=(?:but|though|and|then|so|just|instead|however|while|since|because|although|also|or|see|check|ask|try|look)\b)|\s+and\s+(?=(?:check|ask|see|try|look|visit)\b)|\s+(?:but|though|however|instead)\s+|\s+-{1,2}\s+/gi;
+const CLAUSE = /;\s+|:\s+|,\s+(?=(?:but|though|and|then|so|just|instead|however|while|since|because|although|also|or|see|check|ask|try|look|ignore|disregard|forget|override)\b)|\s+and\s+(?=(?:check|ask|see|try|look|visit)\b)|\s+(?:but|though|however|instead)\s+|\s+-{1,2}\s+/gi;
 
 const INJECTION = [
   /\b(?:grade|mark|score|rate|label|classify|treat|count|record|judge|assess|evaluate)\s+(?:this|it|the answer|this answer|my answer|this response|this reply|me)\b.{0,50}\b(?:as\s+)?(?:pass(?:ed)?|correct|good|ok(?:ay)?|valid|perfect|complete|not a dead|safe|satisf\w+|\d+\s*(?:\/|out of)\s*\d+)/i,
@@ -257,7 +258,7 @@ function properNames(sentence, allowInitialSingle) {
   const re = /\b[A-Z][A-Za-z']*(?:(?:[ -]|\s(?:of|the|de|du)\s)[A-Z][A-Za-z']*){0,5}\b/g; let m;
   while ((m = re.exec(sentence))) {
     const pos = m.index;
-    if (m[0].length > 1 && m[0] === m[0].toUpperCase() && !/[ -]/.test(m[0])) continue;
+    if (m[0].length > 1 && m[0] === m[0].toUpperCase()) continue;
     let ws = m[0].split(/[ -]/).filter(Boolean).map((w) => w.replace(/'s$/i, ""));
     const isStop = (w) => NAME_STOP.has(w.toLowerCase()) || ["of", "the", "de", "du"].includes(w.toLowerCase());
     const initial = pos === lead;
@@ -337,7 +338,7 @@ export function gradeAnswer(input) {
   const overlap = [...stems(rest)].filter((x) => qStems.has(x)).length;
   const ex = rest ? extractAll(rest) : { dates: [], clocks: [], numbers: [] };
   const directive = otherText.some((c) => DIRECTIVE.test(c.trim()));
-  const hasSubstance = ex.numbers.length > 0 || ex.dates.length > 0 || ex.clocks.length > 0 || /\d/.test(rest) || directive || HELP_MARK.test(rest) || overlap >= 2 || (restWords.length >= 8 && overlap >= 1);
+  const hasSubstance = ex.numbers.length > 0 || ex.dates.length > 0 || ex.clocks.length > 0 || directive || HELP_MARK.test(rest) || overlap >= 2 || (restWords.length >= 8 && overlap >= 1);
   const unexpectedDecline = declines > 0 && !allowBoundary;
   const deadEnd = !hasSubstance || unexpectedDecline;
   const boundary = declines > 0 && hasSubstance && allowBoundary;
@@ -372,7 +373,7 @@ export function gradeAnswer(input) {
       const sen = sentences[si]; const s = sen.s;
       const maskKinds = (skip) => { let o = s; sen.clauses.forEach((cl, ci) => { if (skip.includes(sen.types[ci])) o = maskSpan(o, cl[0], cl[1]); }); return o; };
       const sNum = maskKinds(["deflect", "filler", "decline"]);
-      const sName = maskKinds(["deflect", "filler", "decline", "inj"]);
+      const sName = maskKinds(["deflect", "filler", "decline"]);
       const e = extractAll(sNum);
       if (!e.dates.length && !e.clocks.length && !e.numbers.length && !/[A-Z]/.test(s)) continue;
       const spans = []; SOURCE_SPAN.lastIndex = 0; let sm;
@@ -460,16 +461,17 @@ function loadCases(dir) {
 export function runCli(argv, out = (s) => process.stdout.write(s), err = (s) => process.stderr.write(s)) {
   try {
     const args = argv.slice(2);
-    const gate = args.includes("--gate");
+    const strict = args.includes("--tripwire") || args.includes("--gate"); // --gate is an alias kept for scripts
     const opt = (name) => { const i = args.indexOf(name); if (i < 0) return undefined; const v = args[i + 1]; if (v === undefined || v.startsWith("--")) throw new CliError(`${name} needs a value`); return v; };
     const casesOpt = opt("--cases");
     const countOpt = opt("--expect-count");
     const file = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--cases" && args[i - 1] !== "--expect-count");
-    if (!file) throw new CliError("usage: node tools/grade-answers.mjs answers.jsonl [--cases dir] [--gate] [--expect-count N]");
+    if (!file) throw new CliError("usage: node tools/grade-answers.mjs answers.jsonl [--cases dir] [--tripwire] [--expect-count N]");
     let expectCount = null;
     if (countOpt !== undefined) { if (!/^\d+$/.test(countOpt) || +countOpt < 1) throw new CliError(`--expect-count must be a positive integer, got "${countOpt}"`); expectCount = +countOpt; }
     let content;
     try { content = fs.readFileSync(file, "utf8"); } catch { throw new CliError(`cannot read answers file: ${file}`); }
+    if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
     const rows = [];
     content.split(/\r?\n/).forEach((line, i) => {
       if (!line.trim()) return;
@@ -480,31 +482,38 @@ export function runCli(argv, out = (s) => process.stdout.write(s), err = (s) => 
     });
     if (!rows.length) throw new CliError("no answer rows in the file");
     const dir = casesOpt !== undefined ? casesOpt : path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tests", "unit", "fixtures", "golden");
-    const needCases = gate || casesOpt !== undefined || rows.some((r) => r.caseId !== undefined);
+    const needCases = strict || casesOpt !== undefined || rows.some((r) => r.caseId !== undefined);
     const cases = needCases ? loadCases(dir) : new Map();
-    if (gate && expectCount === null) expectCount = cases.size;
+    if (strict && expectCount === null) expectCount = cases.size;
     if (expectCount !== null && rows.length !== expectCount) throw new CliError(`expected ${expectCount} rows, got ${rows.length}`);
-    const sum = { total: 0, deadEnd: 0, boundary: 0, invented: 0, answerFirst: 0, ok: 0, mismatch: 0, rejected: 0 };
-    const lines = [];
+    const sum = { total: 0, deadEnd: 0, boundary: 0, invented: 0, answerFirst: 0, ok: 0, mismatch: 0, rejected: 0, flagged: 0 };
+    const lines = []; const seen = new Set();
     rows.forEach((row, i) => {
       const where = `row ${i + 1}${typeof row.id === "string" ? ` (${row.id})` : ""}`;
       let c = null;
       if (row.caseId !== undefined) { c = cases.get(row.caseId); if (!c) throw new CliError(`${where}: unknown caseId ${JSON.stringify(String(row.caseId)).slice(0, 40)}`); }
-      else if (gate) throw new CliError(`${where}: --gate needs a caseId on every row`);
-      if (gate && typeof row.answer !== "string") throw new CliError(`${where}: answer must be a string`);
-      const g = gradeAnswer({ question: row.question ?? c?.question, slice: row.slice ?? c?.slice, reference: row.reference ?? c?.reference, gathered: row.gathered, expect: row.expect ?? c?.expect, answer: row.answer });
-      const cls = classify(g); const exp = row.expect ?? c?.expect ?? null;
+      else if (strict) throw new CliError(`${where}: --tripwire needs a caseId on every row`);
+      if (strict) {
+        if (typeof row.answer !== "string") throw new CliError(`${where}: answer must be a string`);
+        if (seen.has(row.caseId)) throw new CliError(`${where}: caseId ${row.caseId} appears more than once`);
+        seen.add(row.caseId);
+      }
+      // In strict mode only the case file supplies question, slice, reference and expect: a row cannot set its own bar.
+      const src = strict ? {} : row;
+      const g = gradeAnswer({ question: src.question ?? c?.question, slice: src.slice ?? c?.slice, reference: src.reference ?? c?.reference, gathered: src.gathered, expect: src.expect ?? c?.expect, answer: row.answer });
+      const cls = classify(g); const exp = src.expect ?? c?.expect ?? null;
       const match = exp ? cls === exp : null;
-      sum.total++; if (g.deadEnd) sum.deadEnd++; if (g.boundary) sum.boundary++; if (g.invented) sum.invented++; if (g.answerFirst) sum.answerFirst++; if (cls === "ok") sum.ok++; if (g.rejected) sum.rejected++; if (match === false) sum.mismatch++;
+      sum.total++; if (g.deadEnd) sum.deadEnd++; if (g.boundary) sum.boundary++; if (g.invented) sum.invented++; if (g.answerFirst) sum.answerFirst++; if (cls === "ok") sum.ok++; if (g.rejected) sum.rejected++; if (match === false) sum.mismatch++; if (g.labels.includes("injection_flagged")) sum.flagged++;
       lines.push(JSON.stringify({ id: row.id, caseId: row.caseId, class: cls, expect: exp, match, ...g }));
     });
-    lines.push(JSON.stringify({ summary: true, ...sum }));
+    if (strict && seen.size !== cases.size) throw new CliError(`${cases.size - seen.size} case(s) have no answer row`);
+    const fail = strict && (sum.deadEnd > 0 || sum.invented > 0 || sum.mismatch > 0 || sum.rejected > 0 || sum.flagged > 0);
+    lines.push(JSON.stringify({ summary: true, tripwire: true, ...sum, note: "Rule-based tripwire: a pass means no rule fired, not that the answers are right. The real gate is second-family grading plus answers read by hand." }));
     out(lines.join("\n") + "\n");
-    return gate && (sum.deadEnd > 0 || sum.invented > 0 || sum.mismatch > 0 || sum.rejected > 0) ? 1 : 0;
+    return fail ? 1 : 0;
   } catch (e) {
     err(`grade-answers: error: ${e instanceof CliError ? e.message : "unexpected failure"}\n`);
     return 1;
   }
 }
-
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = runCli(process.argv);
