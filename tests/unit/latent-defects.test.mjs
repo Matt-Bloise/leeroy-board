@@ -223,3 +223,20 @@ test("cards: a bare Discord invite in when or meet is removed in both card varia
   const arr = renderSignupCard({ entries }).embeds[0].fields.find((f) => f.name === "Arriving").value;
   assert.match(arr, /^9pm: Bo$/m);
 });
+
+// recomputeSignupTallies read tallies.pack[e.pack] and friends without an own-property check:
+// "constructor" threw on .push, and "__proto__" reached Object.prototype.
+test("recomputeSignupTallies: object-property words in pack, meet, rsvp and when are ignored, not looked up on the prototype", async () => {
+  const WORDS = ["constructor", "__proto__", "toString", "valueOf", "hasOwnProperty"];
+  for (const w of WORDS) {
+    for (const field of ["pack", "meet", "rsvp", "when"]) {
+      const doc = { entries: [{ name: "Ada Quill", rsvp: "in", pack: "yes", when: "8pm", [field]: w }, { name: "Bo Fern", rsvp: "maybe", pack: "no", meet: "vos", when: "6pm" }] };
+      const out = await recomputeSignupTallies(doc);
+      assert.equal(Object.prototype.count, undefined, `${field}=${w} polluted Object.prototype`);
+      assert.equal(out.tallies.rsvp.maybe.count, 1, `${field}=${w}: other rows still count`);
+      assert.equal(out.tallies.meet["Valley of Strength"].count, 1);
+      if (field === "rsvp") assert.equal(out.tallies.rsvp.in.count, 0);
+      if (field === "meet") assert.equal(out.tallies.meet.other.count, 1, "an unknown meet is counted as elsewhere");
+    }
+  }
+});
