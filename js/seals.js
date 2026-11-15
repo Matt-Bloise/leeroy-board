@@ -322,14 +322,16 @@
     setTimeout(() => b.classList.remove("lift"), 620);
   }, true);
   const SH = { prev: {} };
+  const past = () => !!(K.launchPast && K.launchPast());
   const shelfCounts = () => {
-    const S = K.D && K.D.signups, rs = S && S.tallies && S.tallies.rsvp; if (!rs) return null;
+    const S = K.D && K.D.signups; let rs = S && S.tallies && S.tallies.rsvp; if (!rs) return null;
+    if (past() && K.week) { const w = K.week(); if (w) rs = w.rsvp; } /* after launch: this week's answers only (js/signups-week.js); before it, the server's tallies as before */
     const c = K.RSVP_KEYS.map((k) => [k, K.RSVP_SAY[k], rs[k] ? rs[k].count : 0, rs[k] ? rs[k].names.map(K.cleanName) : []]), said = c.reduce((n, x) => n + x[2], 0), ms = K.D.party.members;
     return [...c, ["none", "No answer", Math.max(0, ms.length - said), null]];
   };
   function shelf() {
     const body = $("#dsu-body"), items = shelfCounts(); if (!body || !items) return;
-    const B = window.BoardBrain, mine = B && B.mine ? B.mine() : null, old = $("#su-shelf"); if (old && old.parentNode) old.parentNode.removeChild(old); if (!body.parentNode) return;
+    const B = window.BoardBrain, mine0 = B && B.mine ? B.mine() : null, mine = K.weekOwn ? K.weekOwn(mine0) : mine0, old = $("#su-shelf"); if (old && old.parentNode) old.parentNode.removeChild(old); if (!body.parentNode) return;
     const who = h("p", { class: "sh-who", id: "sh-who", role: "status", "aria-live": "polite" });
     const list = (x) => (x[3] ? `${x[1]}: ${x[3].length ? x[3].join(", ") : "nobody yet"}.` : `${x[2]} of ${K.D.party.members.length} have not answered yet.`);
     const seals = items.map((x, i) => h("button", { class: `sh-seal${x[0] === "none" ? " none" : ""}${mine && mine.rsvp === x[0] ? " mine" : ""}${SH.prev[x[0]] != null && SH.prev[x[0]] !== x[2] ? " bump" : ""}`, type: "button", "data-k": x[0], "aria-pressed": "false", style: `--i:${i}`, "aria-label": `${x[1]}: ${x[2]}${mine && mine.rsvp === x[0] ? ", your answer" : ""}. Press to see who.`,
@@ -337,7 +339,7 @@
       h("span", { class: "sh-wax" }, x[0] === "none" ? null : h("img", { class: "sh-blob", src: `img/wax/${WAXC[x[0]]}.webp`, width: 256, height: 256, alt: "", loading: "lazy", decoding: "async", onerror: noArt }), h("img", { class: "sh-pint", src: `img/pints/${x[0]}.png`, srcset: `img/pints/${x[0]}.png 1x, img/pints/${x[0]}@2x.png 2x`, alt: "", width: 36, height: 36, loading: "lazy", decoding: "async", onerror: noArt }), h("span", { class: "sh-lit" })),
       h("b", { class: "sh-n", text: String(x[2]) }), h("span", { class: "sh-l", text: x[1] })));
     items.forEach((x) => { SH.prev[x[0]] = x[2]; });
-    const el = h("div", { class: "su-shelf", id: "su-shelf", role: "group", "aria-label": `Launch night so far: ${items.map((x) => `${x[1]} ${x[2]}`).join(", ")}` }, h("div", { class: "sh-row" }, seals), h("span", { class: "sh-plank", "aria-hidden": "true" }), who);
+    const el = h("div", { class: "su-shelf", id: "su-shelf", role: "group", "aria-label": `${past() ? "This week" : "Launch night so far"}: ${items.map((x) => `${x[1]} ${x[2]}`).join(", ")}` }, h("div", { class: "sh-row" }, seals), h("span", { class: "sh-plank", "aria-hidden": "true" }), who);
     body.parentNode.insertBefore(el, body);
     ready(el, "shelf");
     setTimeout(() => el.querySelectorAll(".bump").forEach((x) => x.classList.remove("bump")), 900);
@@ -353,7 +355,7 @@
   MECH.signups = { hint: "to stamp the shelf of counts again, then raise a mug below", press: ({ say: sy }) => {
     const items = shelfCounts(); if (!items) return;
     shelfSeals().forEach((x) => { x.classList.remove("bump"); void x.offsetWidth; x.classList.add("bump"); setTimeout(() => x.classList.remove("bump"), 900); });
-    sy(`Launch night: ${items.filter((x) => x[0] !== "none").map((x) => `${x[1]} ${x[2]}`).join(", ")}${items[items.length - 1][2] ? `, ${items[items.length - 1][2]} yet to answer` : ""}.`);
+    sy(`${past() ? "This week" : "Launch night"}: ${items.filter((x) => x[0] !== "none").map((x) => `${x[1]} ${x[2]}`).join(", ")}${items[items.length - 1][2] ? `, ${items[items.length - 1][2]} yet to answer` : ""}.`);
     const b = $("#dsu-act .su-st[aria-pressed=\"true\"]") || $("#dsu-act .su-st"); if (b) b.focus({ preventScroll: true });
   } };
 
