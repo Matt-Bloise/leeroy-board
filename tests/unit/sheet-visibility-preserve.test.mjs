@@ -47,7 +47,7 @@ const field = (env, f) => sheets(env).find((s) => s.slug === SLUG).fields[f];
 const lastEvent = (env, f) => env.DB.raw.prepare("SELECT visible, value_json FROM sheet_events WHERE slug = ? AND field = ? ORDER BY id DESC LIMIT 1").get(SLUG, f);
 
 // The member hides a field (the owner's explicit choice, as the board's sheet does it).
-const hide = (env, f, value) => quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: SLUG, name: NAME, field: f, value, visible: false, source: "board", at: AT }));
+const hide = (env, f, value) => quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: SLUG, name: NAME, field: f, value, visible: false, visibleGiven: true, source: "board", at: AT }));
 
 // The Discord /sheet command, signed as Discord sends it, by the member themself.
 async function discordSheet(env, f, value) {
