@@ -294,10 +294,36 @@ test("tokens carry a per-request nonce; forged or bare tokens never restore a na
   const out = tokenise(typed, m1);
   assert.ok(!/[{}]/.test(out), out);
   assert.equal(detokenise(out, m1), out, "escaped forms must not be restored");
-  assert.equal(detokenise(`{P2} {P1} {P1.wrong} {ID} { p 1 }`, m1), "someone someone someone someone someone");
+  // nonce tolerance: a wrong nonce on a P index that exists in THIS map restores that member's display; everything else stays "someone"
+  assert.equal(detokenise(`{P2} {P1} {ID} { p 1 }`, m1), "someone someone someone someone");
   assert.equal(detokenise(`${m1.tokenFor(0)} ${m1.tokenFor(1)}'s ${m1.special.ALL} ${m1.special.INVITE} ${m1.special.GUILD} ${m1.special.ID}`, m1), "Thornwick Mossbeard's everyone a link the server someone");
-  assert.equal(detokenise(m1.tokenFor(0), m2), "someone", "another request's token is not honoured");
   assert.equal(detokenise(m1.tokenFor(7), m1), "someone");
+});
+
+test("nonce tolerance: a P token with a mis-copied nonce restores the display of that index in THIS map", () => {
+  const m = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC, nonce: NONCE });
+  const wrong = (n, nonce) => `{P${n}.${nonce}}`;
+  assert.equal(detokenise(wrong(1, "702f"), m), "Thornwick", "wrong nonce, valid index");
+  assert.equal(detokenise(wrong(2, "a"), m), "Mossbeard", "1-char nonce");
+  assert.equal(detokenise(wrong(1, "abcd1234"), m), "Thornwick", "8-char nonce");
+  assert.equal(detokenise(wrong(1, "abcd12345"), m), "someone", "9-char nonce is malformed");
+  assert.equal(detokenise(wrong(1, ""), m), "someone");
+  assert.equal(detokenise(wrong(1, "a-b"), m), "someone", "non-alnum nonce is malformed");
+  assert.equal(detokenise(wrong(99, "702f"), m), "someone", "index not in this map");
+  assert.equal(detokenise(wrong(0, "702f"), m), "someone");
+  assert.equal(detokenise(wrong(1, NONCE), m), "Thornwick", "the right nonce still works");
+  assert.equal(detokenise("{P1} { P1.702f } {P1 .702f} {p1.702f} {ID.702f} {ALL.702f}", m), "someone someone someone someone someone someone", "bare, spaced, lowercase and non-P kinds with a wrong nonce stay someone");
+  assert.equal(detokenise(`${wrong(1, "702f")} and ${wrong(2, "zz")} but ${wrong(50, "q")}`, m), "Thornwick and Mossbeard but someone");
+  const other = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC });
+  assert.equal(detokenise(other.tokenFor(0), m), "Thornwick", "another request's token resolves by index only, never to anything outside this map");
+});
+
+test("nonce tolerance: a user-typed {P1.abcd} is escaped before tokenising and is never a model token", () => {
+  const m = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC, nonce: NONCE });
+  const out = tokenise("who is {P1.abcd} and {P2.k7f2} and { P1 . wxyz }?", m);
+  assert.ok(!/[{}]/.test(out), out);
+  assert.ok(out.includes("[P1.ABCD]"), out);
+  assert.equal(detokenise(out, m), out, "escaped text has no brace form to restore");
 });
 
 test("unknown asker gets a token and the neutral display, never the raw string", () => {
@@ -540,4 +566,14 @@ test("scan: new files and tests contain no values from the live roster", () => {
       assert.ok(!re.test(src), `${f} contains a roster value (length ${v.length})`);
     }
   }
+});
+
+test("detokenise is a single pass: a restored display is never re-resolved", () => {
+  const members = [{ display: "{P2.abcd}", aliases: [], firstNames: [], discordIds: [], characterNames: [] }, { display: "Mossbeard", aliases: [], firstNames: [], discordIds: [], characterNames: [] }];
+  const m = buildNameMap(members, null, { nonce: NONCE });
+  assert.equal(detokenise(`{P1.${NONCE}}`, m), "{P2.abcd}", "a display that looks like a token stays as the display");
+  assert.equal(detokenise("{P1.zzzz}", m), "{P2.abcd}", "same for a mis-copied nonce");
+  const f = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC, nonce: NONCE });
+  assert.equal(detokenise("{{P1.zzzz}}", f), "{Thornwick}", "nested braces: the inner group restores once, the outer braces stay");
+  assert.equal(detokenise("Wait for {P2.5} of the patch.", f), "Wait for Mossbeard of the patch.");
 });

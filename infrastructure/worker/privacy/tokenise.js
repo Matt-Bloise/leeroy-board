@@ -34,6 +34,9 @@ export const LONG_NAME_MIN = 7;
 
 const RESERVED = new Set(["id", "all", "guild", "invite", "everyone", "here", "someone"]);
 const SUFFIXES = new Set(["", "s", "es", "y", "ie", "ies"]);
+// A model sometimes mis-copies the per-request nonce ({P8.702f} for {P8.1n70}). Only the model can emit a brace token (user-typed ones are escaped to [P8.1N70]
+// before tokenising), and a restored DISPLAY name is allowed reply content, so a P token with ANY 1-8 alphanumeric nonce whose index exists in THIS map restores.
+const LOOSE_P_RE = /\{P([1-9]\d{0,3})\.[A-Za-z0-9]{1,8}\}/g;
 const USER_TOKEN_RE = /\{\s{0,3}(?:p\s{0,3}\d{1,4}|id|all|invite|guild)[^{}]{0,14}\}/gi;
 
 const INVITE_RE = /(?:https?:\/\/)?(?:www\.)?(?:discord\s{0,3}\.\s{0,3}gg|dsc\s{0,3}\.\s{0,3}gg|discord(?:app)?\s{0,3}\.\s{0,3}com\s{0,3}\/\s{0,3}invites?|discord\s{0,3}\.\s{0,3}me)\s{0,3}\/\s{0,3}[\w-]+/gi;
@@ -314,20 +317,45 @@ export function tokenise(text, map) {
 }
 
 /**
- * Restore DISPLAY names (never first/real names) for tokens issued by THIS map; anything that
- * looks like a token but is not (bare {P1}, wrong nonce, spaced forms) becomes "someone".
+ * Restore DISPLAY names (never first/real names) for tokens issued by THIS map. A {P<n>.<nonce>}
+ * with a wrong nonce still restores when index n exists in this map; anything else that looks like
+ * a token (bare {P1}, unknown index, spaced forms, other kinds with a wrong nonce) becomes "someone".
  */
 export function detokenise(text, map) {
   if (text == null) return "";
   const m = map && map.byToken ? map : buildNameMap([]);
-  m.tokRe.lastIndex = 0;
-  return String(text)
-    .replace(m.tokRe, (tokStr, kind) => {
+  return scanBraces(String(text), m, (cls, tokStr, kind, n) => {
+    if (cls === "exact") {
       if (kind === "ID") return "someone";
       if (kind === "ALL") return "everyone";
       if (kind === "INVITE") return "a link";
       if (kind === "GUILD") return "the server";
       return m.byToken.get(tokStr)?.display ?? "someone";
-    })
-    .replace(USER_TOKEN_RE, "someone");
+    }
+    if (cls === "loose") return m.byToken.get(`{P${n}.${m.nonce}}`)?.display ?? "someone";
+    return "someone"; // token-looking but not ours (bare, spaced, lowercase, unknown index, other kinds with a wrong nonce)
+  });
+}
+
+// ONE pass over the ORIGINAL text: each brace group is classified once and its replacement is never re-scanned, so a display name that itself looks like a token is
+// not resolved a second time. Classes: exact (this request's nonce), loose (a P token, any 1-8 alnum nonce, index in this map), foreign (any other token-looking group).
+const BRACE_GROUP_RE = /\{[^{}]{0,40}\}/g;
+const FOREIGN_ANCHORED_RE = new RegExp(`^(?:${USER_TOKEN_RE.source})$`, "i");
+const LOOSE_ANCHORED_RE = new RegExp(`^${LOOSE_P_RE.source}$`);
+function scanBraces(text, m, fn) {
+  const exactRe = new RegExp(`^${m.tokRe.source}$`);
+  return text.replace(BRACE_GROUP_RE, (g) => {
+    const e = exactRe.exec(g);
+    if (e) return fn("exact", g, e[1], null);
+    const l = LOOSE_ANCHORED_RE.exec(g);
+    if (l && m.byToken.has(`{P${l[1]}.${m.nonce}}`)) return fn("loose", g, null, l[1]);
+    if (l || FOREIGN_ANCHORED_RE.test(g)) return fn("foreign", g, null, null);
+    return g;
+  });
+}
+
+/** The text with this request's tokens (exact nonce, or a mis-copied nonce on an index in the map) removed: what is left must hold no token-looking text. */
+export function stripRestorableTokens(text, map) {
+  const m = map && map.byToken ? map : buildNameMap([]);
+  return scanBraces(String(text ?? ""), m, (cls, g) => (cls === "foreign" ? g : ""));
 }
