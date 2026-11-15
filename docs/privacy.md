@@ -39,7 +39,7 @@ So do not type anything private into a question. Two message actions work on som
 
 ## The device check
 
-The device check page (`/probe`) shows you what your browser reports before anything is sent. It is sent only if you press Send, together with your member key. It holds yes/no answers and small numbers about your screen, touch, motion and browser. It has no name, no Discord number and no free text. The board acknowledges it and does not store it.
+The device check page (`/#probe`) shows you what your browser reports before anything is sent. It is sent only if you press Send, together with your member key. It holds yes/no answers and small numbers about your screen, touch, motion and browser. It has no name, no Discord number and no free text. The board acknowledges it and does not store it.
 
 ## How long we keep it
 
