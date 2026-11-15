@@ -27,6 +27,7 @@
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
+import { mapPlanChoices, resolveMapPlan, MAP_PLAN_ALIASES } from "./map-plan.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
@@ -89,11 +90,6 @@ import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromMo
 
 export const GOLD = 0xffd100; // WoW UI Gold
 export const LAUNCH_UTC = Date.UTC(2026, 10, 4, 23, 0, 0); // Wed Nov 4 2026, 6:00 PM EST
-// Meeting points a /map route plan can chart (the two on the sign-up card), with the short names the board and old copy used.
-const MAP_PLAN_MEETS = [
-  { value: "valley-of-strength", name: "Valley of Strength", aliases: ["vos"] },
-  { value: "the-crossroads", name: "The Crossroads", aliases: ["crossroads", "xroads"] },
-];
 // /tooltip: "Verified in" is true only when the page's title or an alias contains the name asked for; a facts-only hit is "Mentioned on".
 function tooltipNamedBy(row, name) {
   const needle = String(name || "").trim().toLowerCase();
@@ -183,7 +179,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
     description: "Open a place, zone or route plan on the Living Board Azeroth Atlas",
     options: [
       { name: "place", description: "Place or zone slug (e.g. orgrimmar, crossroads, tirisfal-glades)", type: 3, required: false, autocomplete: true },
-      { name: "plan", description: "Meeting point for a route plan (valley-of-strength or the-crossroads)", type: 3, required: false, autocomplete: true },
+      { name: "plan", description: "Place to chart a route plan to (e.g. orgrimmar, the-crossroads, or a sign-up meeting point)", type: 3, required: false, autocomplete: true },
     ],
   },
   {
@@ -865,7 +861,9 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     }
 
     if (cmd === "map" && focused && focused.name === "plan") {
-      const planChoices = MAP_PLAN_MEETS.filter((m) => m.name.toLowerCase().includes(query) || m.value.includes(query) || m.aliases.some((a) => a.includes(query))).map((m) => ({ name: m.name, value: m.value }));
+      let signups = null;
+      try { const r = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first(); signups = r ? JSON.parse(r.json) : null; } catch { /* unreadable sign-ups: the routable places alone */ }
+      const planChoices = mapPlanChoices(signups).filter((m) => m.name.toLowerCase().includes(query) || m.value.includes(query) || Object.entries(MAP_PLAN_ALIASES).some(([a, v]) => v === m.value && a.includes(query))).slice(0, 25).map((m) => ({ name: m.name, value: m.value }));
       return new Response(JSON.stringify({ type: 8, data: { choices: planChoices } }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
@@ -1181,10 +1179,15 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     if (cmd === "map") {
       const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
       const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
-      const planMeet = plan ? MAP_PLAN_MEETS.find((m) => m.value === plan || m.aliases.includes(plan)) : null;
+      let planMeet = null;
+      if (plan) {
+        let signups = null;
+        try { const r = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first(); signups = r ? JSON.parse(r.json) : null; } catch { /* unreadable sign-ups: the routable places alone */ }
+        planMeet = resolveMapPlan(plan, signups);
+      }
       if (plan && !planMeet) {
         return new Response(
-          JSON.stringify({ type: 4, data: { content: `No route plan for "${plan}". Pick a meeting point: ${MAP_PLAN_MEETS.map((m) => `\`${m.value}\``).join(" or ")}.`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }),
+          JSON.stringify({ type: 4, data: { content: `No route plan for "${plan}". Pick a place from the \`plan\` list (e.g. \`orgrimmar\`, \`the-crossroads\`, \`valley-of-strength\`).`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
@@ -1990,13 +1993,17 @@ ${GATE_OFF_NOTE}` : ""}`,
     const nowMs = Date.now();
     if (parsed.action === "results") return ephemeral(`**${vote.title}**\n${tallyLines(vote).join("\n")}`);
     // A closed vote answers by updating the message itself, so the client's stale buttons turn disabled and "Closed." shows.
-    const closedUpdate = (v) => new Response(JSON.stringify({ type: 7, data: renderMessage(v, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
+    // If the stored vote cannot be rendered, fall back to the plain ephemeral "closed" answer.
+    const closedUpdate = (v) => {
+      try { return new Response(JSON.stringify({ type: 7, data: renderMessage(v, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } }); } catch { return ephemeral("That vote is closed. No new votes are counted."); }
+    };
     if (!isOpen(vote, nowMs)) return closedUpdate(vote);
     const discordId = String(user.id || "");
     if (!discordId) return ephemeral("I can't tell who you are, so I can't count that vote.");
     if (saltProblems(env, ["USER_SALT"]).length) return ephemeral("Voting is unavailable: the Worker is missing its USER_SALT secret.");
     const result = castVote(vote, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
-    if (!result.ok) return result.error === "closed" ? closedUpdate(vote) : ephemeral("That choice does not exist.");
+    // isOpen was checked above with the same nowMs, so castVote cannot report "closed" here.
+    if (!result.ok) return ephemeral("That choice does not exist.");
     await recordBallot(env.DB, vote.id, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
     const fresh = (await loadVote(env.DB, vote.id)) || result.vote; // re-read so the counts shown include ballots cast at the same moment
     await purgeWorkerCache(origin, ["/api/votes"]);

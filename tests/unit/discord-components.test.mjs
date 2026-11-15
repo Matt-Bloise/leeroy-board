@@ -324,27 +324,97 @@ test("/tooltip says Verified in only when the title or an alias matches; a facts
   assert.doesNotMatch(facts, /Verified/);
 });
 
-test("/map plan: a plan that is not a meeting point is refused with no link; real ones chart; place is unchanged", async () => {
-  const bad = await send(slash("map", [opt("plan", "no-such-place")]));
-  assert.equal(bad.type, 4);
-  assert.doesNotMatch(allText(bad), /charted|atlas\.plan\.no-such/i);
-  assert.equal(bad.data.components, undefined);
-  assert.equal(bad.data.flags, 64);
-  for (const ok of ["valley-of-strength", "the-crossroads"]) {
+const acMap = (focusedName, value) => ({ type: 4, id: nextId(), application_id: "400000000000000004", token: "t", channel_id: CH, member: who, data: { name: "map", options: [{ name: focusedName, type: 3, value, focused: true }] } });
+const planUrl = async (value, extraKv) => { const b = await send(slash("map", [opt("plan", value)]), extraKv); return b.data.components ? b.data.components[0].components[0].url : null; };
+
+test("MAP_PLAN_PLACES is exactly the set of places the Atlas can chart a plan to (recomputed from data/atlas)", async () => {
+  const { buildGraph, makePlan } = await import("../../atlas/routes.js");
+  const { MAP_PLAN_PLACES } = await import("../../infrastructure/worker/map-plan.js");
+  const read = (n) => JSON.parse(readFileSync(new URL(`../../data/atlas/${n}.json`, import.meta.url), "utf8"));
+  const places = read("places").places, graph = buildGraph(read("routes"));
+  const routable = places.filter((p) => makePlan(graph, { meet: p.id }).who.length > 0);
+  assert.deepEqual(MAP_PLAN_PLACES.map((p) => p.value).sort(), routable.map((p) => p.id).sort());
+  for (const r of routable) assert.equal(MAP_PLAN_PLACES.find((p) => p.value === r.id).name, r.name);
+});
+
+test("/map plan: any routable place and the configured meeting points chart; the rest is refused with no link", async () => {
+  for (const bad of ["no-such-place", "mulgore", "stormwind-keep", "x".repeat(60), "../../etc/passwd", "<script>alert(1)</script>", "@everyone", "a b; drop table"]) {
+    const body = await send(slash("map", [opt("plan", bad)]));
+    assert.equal(body.type, 4);
+    assert.doesNotMatch(allText(body), /charted|atlas\.plan\./i, bad);
+    assert.equal(body.data.components, undefined, bad);
+    assert.equal(body.data.flags, 64, bad);
+    assert.deepEqual(body.data.allowed_mentions, { parse: [] }, bad);
+    assert.match(body.data.content, /No route plan/);
+  }
+  // Every place the board can chart, not just the two on the sign-up card (the old autocomplete offered these).
+  for (const ok of ["valley-of-strength", "the-crossroads", "orgrimmar", "razor-hill", "brill", "bloodhoof-village", "undercity"]) {
     const body = await send(slash("map", [opt("plan", ok)]));
     const btn = body.data.components[0].components[0];
     assert.equal(btn.url, `${URL_}/#atlas.plan.${ok}`);
     assert.ok(btn.label.length <= 80);
     assertComponentsValid(body.data.components, `/map plan:${ok}`);
   }
+  // A custom meeting point an admin added to the sign-up card (fictional), slugged the way the board does (MEM.slug).
+  const custom = { signups: { options: { meet: ["Valley of Strength", "Fictional Fort #3", "The Crossroads"] }, entries: [] } };
+  assert.equal(await planUrl("fictional-fort-3", custom), `${URL_}/#atlas.plan.fictional-fort-3`);
+  assert.equal(await planUrl("fictional-fort-3"), null, "not offered when the admin has not configured it");
+  assert.equal(await planUrl("orgrimmar", custom), `${URL_}/#atlas.plan.orgrimmar`);
+  assert.equal(await planUrl("../fictional-fort-3", custom), null);
   const place = await send(slash("map", [opt("place", "orgrimmar")]));
   assert.equal(place.data.components[0].components[0].url, `${URL_}/#atlas.orgrimmar`);
 });
 
-test("/map autocomplete for plan offers meeting points, not the place list", async () => {
-  const ac = (focusedName, value) => ({ type: 4, id: nextId(), application_id: "400000000000000004", token: "t", channel_id: CH, member: who, data: { name: "map", options: [{ name: focusedName, type: 3, value, focused: true }] } });
-  const plan = await send(ac("plan", ""));
-  assert.deepEqual(plan.data.choices.map((c) => c.value).sort(), ["the-crossroads", "valley-of-strength"]);
-  const place = await send(ac("place", "mul"));
-  assert.deepEqual(place.data.choices.map((c) => c.value), ["mulgore", "bloodhoof-village"]);
+test("/map plan aliases vos, crossroads and xroads resolve to the meeting point they always meant", async () => {
+  for (const [alias, id] of [["vos", "valley-of-strength"], ["VoS", "valley-of-strength"], ["crossroads", "the-crossroads"], ["xroads", "the-crossroads"]]) {
+    const btn = (await send(slash("map", [opt("plan", alias)]))).data.components[0].components[0];
+    assert.equal(btn.url, `${URL_}/#atlas.plan.${id}`, alias);
+    assert.match(btn.label, new RegExp(id));
+  }
+});
+
+test("/map autocomplete for plan offers the routable set plus configured meeting points, not the place list", async () => {
+  const values = (await send(acMap("plan", ""))).data.choices.map((c) => c.value);
+  for (const v of ["orgrimmar", "razor-hill", "brill", "bloodhoof-village", "valley-of-strength", "the-crossroads"]) assert.ok(values.includes(v), v);
+  assert.ok(!values.includes("mulgore") && !values.includes("tirisfal-glades"), "a zone does not route");
+  assert.ok(values.length <= 25);
+  assert.deepEqual((await send(acMap("plan", "razor"))).data.choices.map((c) => c.value), ["razor-hill"]);
+  assert.deepEqual((await send(acMap("plan", "xroads"))).data.choices.map((c) => c.value), ["the-crossroads"]);
+  const custom = { signups: { options: { meet: ["Fictional Fort"] }, entries: [] } };
+  assert.deepEqual((await send(acMap("plan", "fictional"), custom)).data.choices.map((c) => c.value), ["fictional-fort"]);
+  assert.deepEqual((await send(acMap("place", "mul"))).data.choices.map((c) => c.value), ["mulgore", "bloodhoof-village"]);
+});
+
+test("launch-instant boundary: LAUNCH_UTC - 1 is still pre-launch, LAUNCH_UTC is post-launch (/tonight, /countdown, /help)", async () => {
+  const label = async (ms) => (await asAt(ms, () => send(slash("tonight")))).data.components[0].components[0].label;
+  assert.equal(await label(LAUNCH_UTC - 1), "Open Tonight on Board");
+  assert.equal(await label(LAUNCH_UTC), "Open the Board");
+  const cd = async (ms) => allText(await asAt(ms, () => send(slash("countdown"))));
+  assert.match(await cd(LAUNCH_UTC - 1), /Names open for pack buyers/);
+  assert.doesNotMatch(await cd(LAUNCH_UTC), /Names open|Name Reservation/);
+  const help = (ms) => asAt(ms, async () => (await (await call({ ...slash("help"), member: { user: who.user } }, mkEnv())).json()).data.content);
+  assert.match(await help(LAUNCH_UTC - 1), /your launch night/);
+  assert.doesNotMatch(await help(LAUNCH_UTC), /your launch night/);
+});
+
+test("/help: the staff line needs an admin of the roster server; a foreign-guild admin does not see it", async () => {
+  const HOME = "200000000000000001", FOREIGN = "999999999999999999";
+  const content = async (interaction) => (await (await call(interaction, mkEnv({ discord_roster: { guildId: HOME } }))).json()).data.content;
+  const admin = { user: who.user, permissions: "8" };
+  assert.match(await content({ ...slash("help"), guild_id: HOME, member: admin }), /\/intents/, "admin of the roster server sees it");
+  for (const [label, i] of [["foreign guild", { ...slash("help"), guild_id: FOREIGN, member: admin }], ["no guild", { ...slash("help"), guild_id: undefined, member: admin }], ["roster-server non-admin", { ...slash("help"), guild_id: HOME, member: { user: who.user } }]]) {
+    assert.doesNotMatch(await content(i), /\/intents|\/ack|\/answer|Mailbox/, label);
+  }
+});
+
+test("a closed vote whose stored document cannot be rendered answers with the plain ephemeral 'closed' reply", async () => {
+  const NOW = Date.UTC(2026, 10, 20, 12, 0, 0);
+  const corrupt = { id: VOTE_ID, title: "Which snack", choices: "not-a-list", closes_at: new Date(NOW - 60000).toISOString(), ballots: {} };
+  for (const id of [`vote:${VOTE_ID}:0`, `vote:${VOTE_ID}:1`]) {
+    const body = await asAt(NOW, () => send(button(id), { [`vote:${VOTE_ID}`]: corrupt }));
+    assert.equal(body.type, 4);
+    assert.equal(body.data.flags, 64);
+    assert.match(body.data.content, /That vote is closed/);
+    assert.doesNotMatch(body.data.content, /broke on my side/i);
+  }
 });
