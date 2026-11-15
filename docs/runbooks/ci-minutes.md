@@ -16,7 +16,7 @@ Every push runs only `scope`, `unit`, `stamps` and `report` (Preview Tests). Eve
 | :--- | :--- | :--- |
 | scope, unit, stamps, report | every push, draft or ready, same-repo PRs | `preview-tests.yml` |
 | preview environment (Worker, D1, Pages) | label `ci-full`, PR not docs-only | `pr-preview-cloudflare.yml` |
-| api | label `ci-full`, PR not docs-only | `preview-tests.yml` |
+| api | label `ci-full`, PR not docs-only, and `tools/api-scope.mjs` says "true" (Worker, API, schema, wrangler, `package*.json`, `.github`, `tools`, `data`, `docs/openapi.yaml` or API test paths change) | `preview-tests.yml` |
 | browser, layout | label `ci-full` AND `tools/ci-scope.mjs` says "full" (site, tools, `.github`, wrangler, `package*.json` change) | `preview-tests.yml` |
 | Lighthouse (informational) | nightly and "Run workflow", against production; no longer per PR | `nightly-production.yml` |
 | Semgrep | code PRs: at least one changed file outside `docs/`, `tests/`, root `*.md`, `.github/ISSUE_TEMPLATE/`; also weekly on master | `security.yml` |
@@ -73,7 +73,7 @@ Facts the gate relies on:
 
 ## Nightly (`nightly-production.yml`)
 
-- Schedule 06:00 UTC plus manual "Run workflow". Jobs: `degraded` (all 144 degraded-modes checks, Chromium, against `https://leeroy.party/`), `zap` (passive baseline against production, high-risk alerts fail the run), `notify`.
+- Schedule 06:00 UTC plus manual "Run workflow". Jobs: `degraded` (all 144 degraded-modes checks, Chromium, against `https://leeroy.party/`), `zap` (passive baseline against production, high-risk alerts fail the run), `lighthouse` (informational, never fails the night), `notify`.
 - The delays in degraded-modes are **Playwright route interception inside the browser** (`failReq`, `ctx.route`, `page.route` in `tests/browser/degraded-modes.mjs`), not server-side flags, so the suite works against production and changes nothing there. That is why it could move out of the per-PR run; the per-PR browser job keeps 3 conditions via `run.mjs` (`--only api-abort,api-500,no-js`). Set `DEGRADED_FULL=1` to run all of them in a PR locally.
 - Issue rule: the first failed night opens nothing and writes nothing; the previous finished run of the workflow is the memory. After two consecutive failed runs, `notify` searches for an open issue labelled `nightly`; it comments there if one exists, otherwise opens exactly one. It never closes the issue. Close it by hand when the nightly is green again.
 - GitHub runs scheduled workflows **only on the default branch** and **disables them after 60 days without repository activity**. If the nightly goes quiet, open the Actions tab, select "Nightly Production Checks" and re-enable it, then run it once. A merged PR counts as activity.

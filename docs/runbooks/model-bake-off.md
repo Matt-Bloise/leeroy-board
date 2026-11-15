@@ -15,10 +15,10 @@ Real questions stay on the owner's computer. Never commit them, never paste them
 
 ## 1. Switch the route on (Josh's deploy)
 
-The route is off by default. It answers 404 unless the Worker has `EVAL_ENABLED=true`, and it always needs `BOARD_ADMIN_TOKEN`.
+The route is off by default (`EVAL_ENABLED = "off"` in `infrastructure/wrangler.toml`). It answers 404 unless the Worker has `EVAL_ENABLED` set to `true`, `1` or `on`, and it always needs `BOARD_ADMIN_TOKEN`.
 
-1. Ask Josh to set `EVAL_ENABLED = "true"` in the Worker vars for the bake-off window and deploy.
-2. When the run is done, have him remove it (or set it to `false`) and deploy again. Confirm with the check below that the route is back to 404.
+1. Ask Josh to change `EVAL_ENABLED` from `"off"` to `"on"` in the Worker vars for the bake-off window and deploy.
+2. When the run is done, have him set it back to `"off"` and deploy again. Confirm with the check below that the route is back to 404.
 
 Check (does not print the token):
 
@@ -174,6 +174,6 @@ The bake-off changes nothing by itself. To adopt a result, send Josh the winning
 | Groq, Cerebras, GitHub Models, OpenRouter | `GROQ_MODEL_FAST`, `CEREBRAS_MODEL`, `GITHUB_MODEL_FAST`, `OPENROUTER_MODEL` respectively, plus `AI_PROVIDER` |
 | A prompt variant | The persona pack: `plain` means clearing or simplifying the pack, `examples-6` means adding examples to the pack (the pack is written with `PUT /api/persona`), `format-reminder` means adding the format contract text to the pack's rules |
 
-Model ids must be on the allow-list for the eval; the production variables accept any id, so keep them on the tested ones. After the deploy, ask one real question on production and read the answer once. Then remove `EVAL_ENABLED` (step 1). Rollback: set the variable back to its previous value (the Worker previous version is also available through `wrangler rollback`).
+Model ids must be on the allow-list for the eval; the production variables accept any id, so keep them on the tested ones. After the deploy, ask one real question on production and read the answer once. Then set `EVAL_ENABLED` back to `"off"` (step 1). Rollback: set the variable back to its previous value (the Worker previous version is also available through `wrangler rollback`).
 
 Do not paste results, ratings or questions into a PR. A PR may carry the decision (model id, variant, the number of ratings) and nothing else.

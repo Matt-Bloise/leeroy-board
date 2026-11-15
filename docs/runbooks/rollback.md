@@ -1,12 +1,12 @@
 # Runbook: rollback
 
-Scope: production at https://leeroy.party (Pages) and https://api.leeroy.party (Worker `leeroy-brain`, Durable Object `BoardRoom`, D1 `leeroy-board-db`). Names come from `infrastructure/wrangler.toml:1,8-10,19-23,26-28` and `.github/workflows/deploy-cloudflare.yml:19-20`.
+Scope: production at https://leeroy.party (Pages) and https://api.leeroy.party (Worker `leeroy-brain`, Durable Object `BoardRoom`, D1 `leeroy-board-db`). Names come from `infrastructure/wrangler.toml:1,8-10,26-28,33-36` and `.github/workflows/deploy-cloudflare.yml:34-35`.
 
-Last checked: 2026-11-02 (CLI claims below were confirmed on wrangler 3.114.17; the repo now pins 4.148.0, re-check `--help` output when you next use a command). Claims marked (docs) cite Cloudflare documentation read that day; (cli) means `npx wrangler <cmd> --help` on wrangler 3.114.17, the version `infrastructure/package.json:22` (`^3.109.0`) resolves to today; (unverified) means not confirmed.
+Last checked: 2026-11-02 (CLI claims below were confirmed on wrangler 3.114.17; the repo now pins 4.148.0, re-check `--help` output when you next use a command). Claims marked (docs) cite Cloudflare documentation read that day; (cli) means `npx wrangler <cmd> --help` on wrangler 3.114.17, the version the repo resolved to when this was checked; `infrastructure/package.json:22` now pins 4.148.0 exactly; (unverified) means not confirmed.
 
 ## What a deploy touches
 
-Every push to `master` runs one job (`deploy-cloudflare.yml:3-6,13`) that, in order: runs `schema.sql`, applies migrations, seeds only if `kv_state` is empty, deploys the Worker, syncs Worker secrets, deploys Pages, attaches domains (`deploy-cloudflare.yml:195-224,226-246,248-268,270-290,292-305`). The layers roll back independently. A Worker rollback does not undo Pages or D1, and a revert commit does not undo a database change.
+Every push to `master` runs the job `deploy-production` (`deploy-cloudflare.yml:3-6,22-26`) that, in order: ensures the D1 database exists, runs `schema.sql`, applies migrations, seeds only if `kv_state` is empty, deploys the Worker, syncs Worker secrets, deploys Pages, attaches domains, then runs the health check (`deploy-cloudflare.yml:219,277,289,317,348,376,398,413`). A second job, the production probe (`:440`), only reports and never rolls back. The layers roll back independently. A Worker rollback does not undo Pages or D1, and a revert commit does not undo a database change.
 
 Requirements for every command below: run from `infrastructure/` after `npm install`, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set in the shell (the same names the workflow uses, `deploy-cloudflare.yml:17-18`). Never paste token values into an issue, PR or log.
 
@@ -31,7 +31,7 @@ npx wrangler pages deployment list --project-name leeroy-board --environment pro
 
 The Cloudflare rollback page documents only the dashboard method; no `wrangler pages` rollback command was found (cli help lists none for `pages deployment`; the sub-commands were not exhaustively checked). A rollback pins an old build; the next push to `master` deploys a new one on top of it, so fix forward or revert before merging anything else (see section 4).
 
-Note: the deployed `js/brain.js` has the Worker URL stamped in at deploy time (`deploy-cloudflare.yml:280-286`). Production resolves to `https://api.leeroy.party` (`:239-245`), which is stable, so an old Pages build still talks to the current Worker. If the Worker API changed incompatibly, roll back both layers.
+Note: the deployed `js/brain.js` has the Worker URL stamped in at deploy time (`deploy-cloudflare.yml:384-392`). Production resolves to `https://api.leeroy.party` (`:335-337`), which is stable, so an old Pages build still talks to the current Worker. If the Worker API changed incompatibly, roll back both layers.
 
 ## 2. Worker and Durable Object
 
@@ -46,7 +46,7 @@ Dashboard (docs: https://developers.cloudflare.com/workers/configuration/version
 Limits (docs, same page):
 - Only the 100 most recent versions can be targeted.
 - Bindings and resources are not reverted. Old code that expects an older D1 shape may fail.
-- A rollback is refused if a Durable Object class lifecycle change (the `[[migrations]]` array) happened between the active version and the target. Today only one tag exists, `v1` (`wrangler.toml:31-33`), so this blocks nothing until a second tag is added.
+- A rollback is refused if a Durable Object class lifecycle change (the `[[migrations]]` array) happened between the active version and the target. Today only one tag exists, `v1` (`wrangler.toml:38-40`), so this blocks nothing until a second tag is added.
 - Secrets: the page does not say how they are handled (unverified). Check `npx wrangler secret list --name leeroy-brain` after a rollback.
 - A rollback leaves the next push to `master` free to redeploy the broken code. Pause deploys first if the bad code is still on `master` (`incident.md`, "Pause merges").
 
@@ -62,7 +62,7 @@ npx wrangler d1 time-travel restore leeroy-board-db --bookmark=<bookmark>
 ```
 Flags confirmed with `--help` (cli). Behavior (docs): in-flight queries are cancelled and clients get errors; the restore prints the previous bookmark, and restoring to that bookmark undoes the restore; bookmarks older than the retention window are invalid.
 
-Retention: the docs say Workers Paid plans restore up to 30 days back and Workers Free plans 7 days. Which plan this account is on is unverified (`wrangler.toml:18,25,35` describe free-tier limits but do not prove the plan). Plan on 7 days until the owner confirms the plan in the dashboard.
+Retention: the docs say Workers Paid plans restore up to 30 days back and Workers Free plans 7 days. Which plan this account is on is unverified (`wrangler.toml:13,20,21,32` describe free-tier limits but do not prove the plan). Plan on 7 days until the owner confirms the plan in the dashboard.
 
 Before any restore: note the current bookmark, and take an export as a second copy (cli): `npx wrangler d1 export leeroy-board-db --remote --output=../_scratch-backup.sql` (keep it out of the repo; see `backup-restore.md`). A restore also rewinds live edits made through the app since the target time (sign-ups, sheet events, ask history). The Durable Object holds no storage of its own (`infrastructure/README.md:14`).
 
@@ -70,7 +70,7 @@ Before any restore: note the current bookmark, and take an export as a second co
 
 1. `git revert -m 1 <merge-sha>` on a branch `revert/<topic>`; open a PR to `master` (`CONTRIBUTING.md:6-8`: one branch, one PR, risk rating, preview tests).
 2. A revert that touches only paths rated 0 to 5 merges after green preview tests; a revert touching `infrastructure/`, workflows, or `wrangler.toml` is rated 8 or higher and waits for a manual merge by the owner (`CONTRIBUTING.md:7`, `.github/pull_request_template.md:4`).
-3. The merge deploys the full pipeline again (`deploy-cloudflare.yml:3-6`). Allow the preview tests and the deploy to finish; the preview wait alone can take up to 12 minutes (`preview-tests.yml:51,67`).
+3. The merge deploys the full pipeline again (`deploy-cloudflare.yml:3-6`). Allow the preview tests and the deploy to finish; the preview wait alone can take up to 12 minutes (`preview-tests.yml:169,183`: 48 tries, 15 s apart).
 4. A revert never undoes data. If the bad commit changed D1 (a migration, a seed, a write path), also use section 3.
 
 If the reverted change added a migration file: reverting the file does not drop the table or column it created, and `wrangler d1 migrations apply` records applied names in D1 (unverified detail: the `d1_migrations` table). Write a new forward migration instead (`schema-source-of-truth.md`).

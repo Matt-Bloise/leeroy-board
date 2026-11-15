@@ -6,38 +6,38 @@ Last checked: 2026-11-02. Citations are `file:line` or marked (unverified).
 
 | File | Role | Evidence |
 | :--- | :--- | :--- |
-| `infrastructure/schema.sql` | "Unified baseline" of 17 tables and their indexes, every statement `CREATE ... IF NOT EXISTS` | `schema.sql:1-7,10,200-204` |
-| `infrastructure/migrations/0001_guest_rate_limits.sql` | One numbered migration: `guest_rate_limits` table and index, both `IF NOT EXISTS` | `migrations/0001_guest_rate_limits.sql:1-5` |
+| `infrastructure/schema.sql` | "Unified baseline" of 43 tables, 34 indexes and 1 trigger, every table and index `CREATE ... IF NOT EXISTS` (counts re-taken 2026-11-15) | `schema.sql:1-7,10,200-204` |
+| `infrastructure/migrations/0001_guest_rate_limits.sql` to `0010_vote_ballots.sql` | Ten numbered migrations (no `0007`, two files numbered `0008`; see `migrations/README.md`). Each creates objects that `schema.sql` also defines, `IF NOT EXISTS`; `0008_discord_events_legacy_tenant.sql` inserts a `tenants` row | `ls infrastructure/migrations`, `migrations/README.md:11-20` |
 | `infrastructure/migrations/README.md` | States the intent: a new database starts from `schema.sql` with zero migrations; later changes are numbered migrations | `migrations/README.md:5-6` |
 
-The same table, `guest_rate_limits`, is defined in both (`schema.sql:199-204` and `0001_guest_rate_limits.sql:2-5`). That is the only overlap today, and it contradicts the stated intent that `schema.sql` is the baseline and migrations are the later changes: the baseline already contains the first migration.
+Every table and index the migrations create is also defined in `schema.sql` (for example `guest_rate_limits` at `schema.sql:199-204` and `0001_guest_rate_limits.sql:2-5`). That contradicts the stated intent that `schema.sql` is the baseline and migrations are the later changes: the baseline already contains every migration so far.
 
-How CI uses them, in this order, on every production deploy and every PR preview (`deploy-cloudflare.yml:195-205`, `pr-preview-cloudflare.yml:204-214`):
+How CI uses them, in this order, on every production deploy and every PR preview (`deploy-cloudflare.yml:277-287`, `pr-preview-cloudflare.yml:325-335`):
 
 1. `wrangler d1 execute <db> --remote --file=./schema.sql`
 2. if any `migrations/*.sql` exists, `wrangler d1 migrations apply <db> --remote`
 3. seed only if `kv_state` is empty
 
-The migrations directory is wired in `wrangler.toml:23` (`migrations_dir = "migrations"`). Local equivalents are the `d1:schema:local` and `d1:migrate:local` scripts in `infrastructure/package.json:10-14`.
+The migrations directory is wired in `wrangler.toml:30` (`migrations_dir = "migrations"`). Local equivalents are the `d1:schema:local` and `d1:migrate:local` scripts in `infrastructure/package.json:10-14`.
 
 Consequence: because `schema.sql` is re-run on every deploy, it only ever creates missing objects; it never alters an existing table. `CREATE TABLE IF NOT EXISTS` on an existing table with a changed definition does nothing.
 
 ## Experiment: can a fresh database be built from each alone
 
-Run on 2026-11-02 with Node 22.23.2 `node:sqlite` (in-memory SQLite; `sqlite3` was not installed). This is plain SQLite, not D1: it does not exercise `wrangler`, the `d1_migrations` bookkeeping table, or D1-specific limits. Script was ad hoc and is not in the repository.
+First run on 2026-11-02 with Node 22.23.2 `node:sqlite`, re-run on 2026-11-15 with Node 22.23.4 against the 10 migrations now present (in-memory SQLite; `sqlite3` was not installed). This is plain SQLite, not D1: it does not exercise `wrangler`, the `d1_migrations` bookkeeping table, or D1-specific limits. Script was ad hoc and is not in the repository.
 
 | Build | Result | Objects (tables and indexes) |
 | :--- | :--- | ---: |
-| `0001` migration alone | Succeeds, but yields only `guest_rate_limits` and its index | 2 |
-| `schema.sql` alone | Succeeds | 34 (17 tables) |
-| `schema.sql`, then `0001` | Succeeds, identical object list to `schema.sql` alone | 34 |
-| `0001`, then `schema.sql` | Succeeds, identical object list | 34 |
+| All migrations alone, in filename order | Fails: `no such table: ask_turns` (a migration depends on a baseline table) | n/a |
+| `schema.sql` alone | Succeeds | 78 (43 tables, 34 indexes, 1 trigger) |
+| `schema.sql`, then all migrations | Succeeds, identical object counts to `schema.sql` alone | 78 |
+| All migrations (failing steps ignored), then `schema.sql` | Succeeds, identical object counts | 78 |
 
 Findings:
-- A fresh database can be built from `schema.sql` alone. It cannot be built from migrations alone: the migrations directory holds only one change, so 16 of the 17 tables would be missing. The migrations are not a full history.
-- The CI order (schema, then migrations) works today only because `0001` is idempotent and duplicates a baseline table.
+- A fresh database can be built from `schema.sql` alone. It cannot be built from migrations alone: the migrations are not a full history, and running them alone fails on a table only the baseline creates.
+- The CI order (schema, then migrations) works today only because every migration is idempotent and duplicates baseline objects.
 
-Hazard test, same method: a hypothetical edit that adds a column to a table in `schema.sql` and a migration `ALTER TABLE members ADD COLUMN note TEXT;`. Applying the schema and then the migration on a fresh database fails with `duplicate column name: note`. `ALTER TABLE ... ADD COLUMN` is not idempotent in SQLite. On a fresh preview database (`pr-preview-cloudflare.yml:204-214`), which is created from scratch for every PR, that PR's preview deploy would fail. On production the order is safe only if `schema.sql` is not also changed.
+Hazard test, same method: a hypothetical edit that adds a column to a table in `schema.sql` and a migration `ALTER TABLE members ADD COLUMN note TEXT;`. Applying the schema and then the migration on a fresh database fails with `duplicate column name: note`. `ALTER TABLE ... ADD COLUMN` is not idempotent in SQLite. On a fresh preview database (`pr-preview-cloudflare.yml:325-335`), which is created from scratch for every PR, that PR's preview deploy would fail. On production the order is safe only if `schema.sql` is not also changed.
 
 Not tested: running through real `wrangler d1` (needs a Cloudflare token); whether D1 rejects anything node:sqlite accepted (unverified).
 
@@ -46,7 +46,7 @@ Not tested: running through real `wrangler d1` (needs a Cloudflare token); wheth
 Until the model is changed, follow exactly one of these per schema change, and say which in the PR:
 
 1. New table or index: add it as `CREATE ... IF NOT EXISTS` in a new migration and also in `schema.sql`. Safe, because both are idempotent. This is what `0001` did.
-2. New column, dropped or renamed object, changed constraint, data fix: put it only in a new numbered migration (`0002_...sql`, created with `npm run d1:migrate:create -- <name>`, `infrastructure/README.md:121`). Do not edit `schema.sql` for that change. Never edit or renumber an applied migration; fix forward with the next number.
+2. New column, dropped or renamed object, changed constraint, data fix: put it only in a new numbered migration (`0002_...sql`, created with `npm run d1:migrate:create -- <name>`, `infrastructure/README.md:124`). Do not edit `schema.sql` for that change. Never edit or renumber an applied migration; fix forward with the next number.
 3. Every migration is reviewed as risk 8 to 10 (`.github/pull_request_template.md:4`), includes a test or a documented manual check (`CONTRIBUTING.md:11`), and states a rollback: Time Travel bookmark taken before merge (`rollback.md`, section 3). A revert commit does not undo applied SQL.
 4. Before merging, run the new migration on a scratch local database on top of a database built from `schema.sql` (`npm run d1:schema:local && npm run d1:migrate:local`). The PR preview does the same on a fresh remote database; read that step's log.
 5. Destructive statements (`DROP`, `DELETE`, `UPDATE` without a narrow `WHERE`) need a restore point noted in the PR body and the owner's manual merge.

@@ -6,27 +6,27 @@ Last checked: 2026-11-02. Citations are `file:line`, Cloudflare docs URLs, or ma
 
 | Data | Location | Source |
 | :--- | :--- | :--- |
-| Board documents (party, timeline, stats, signups, tonight, launch, decide, guided-atlas, marks, links) | D1 `kv_state`, seeded from `data/*.json` once, then edited live | `infrastructure/scripts/seed-d1.mjs:49-60`; `deploy-cloudflare.yml:219-224` |
-| Library pages and pre-built blobs | D1 `lib_pages`, `lib_blobs`, `lib_sources`, `lib_source_snapshots`, `wiki_proposals`, `fact_fixes` | `infrastructure/schema.sql:17-117`; seeded by `seed-d1.mjs:76-129` |
+| Board documents (party, timeline, stats, signups, tonight, launch, decide, guided-atlas, marks, links) | D1 `kv_state`, seeded from `data/*.json` once, then edited live | `infrastructure/scripts/seed-d1.mjs:65-91`; `deploy-cloudflare.yml:289-303` |
+| Library pages and pre-built blobs | D1 `lib_pages`, `lib_blobs`, `lib_sources`, `lib_source_snapshots`, `wiki_proposals`, `fact_fixes` | `infrastructure/schema.sql:17-117`; seeded by `seed-d1.mjs:93-145` |
 | Ask history, sheet events, dispatches, intents mailbox | D1 `ask_turns`, `sheet_events`, `dispatches`, `intents` | `schema.sql:88-140,188-197` |
 | Member key hashes, accounts, sessions, per-user settings | D1 `members`, `accounts`, `account_keys`, `sessions`, `user_state` | `schema.sql:143-185` |
 | Guest rate limit counters | D1 `guest_rate_limits` | `schema.sql:200-204` |
 | WebSocket room state | Durable Object `BoardRoom`, no storage of its own | `infrastructure/README.md:14` |
-| Static site | Git (`master`) and Cloudflare Pages deployments | `deploy-cloudflare.yml:270-290` |
+| Static site | Git (`master`) and Cloudflare Pages deployments | `deploy-cloudflare.yml:376-396` |
 | Worker code and config | Git (`infrastructure/`), Cloudflare Worker versions | `infrastructure/wrangler.toml` |
-| Secrets | GitHub Actions secrets and Worker secrets; names in `secrets.md` | `deploy-cloudflare.yml:248-268` |
+| Secrets | GitHub Actions secrets and Worker secrets; names in `secrets.md` | `deploy-cloudflare.yml:348-374` |
 
 ### `kv_state` rows: public documents versus private config
 
-`kv_state(key, json, updated_at)` mixes both (`schema.sql:10-14`). The Worker refuses to serve private keys from the public `GET /data/:name` and `/atlas/:name` routes (`infrastructure/worker/index.js:1150`, lists at `infrastructure/worker/config.js:98-99`).
+`kv_state(key, json, updated_at)` mixes both (`schema.sql:10-14`). The Worker refuses to serve private keys from the public `GET /data/:name` and `/atlas/:name` routes (`infrastructure/worker/index.js:1375-1379`, lists at `infrastructure/worker/config.js:116-117`).
 
-- Private, exact keys: `persona`, `name_map`, `discord_members`, `discord_roster`, `vocab`, `votes:index`, `feed_posts` (`config.js:98`).
-- Private, prefixes: `ai_budget:`, `vote:`, `votes:`, `feed_`, `private:`, `config:`, `secret` (`config.js:99`).
-- Public documents: every other key, for example `party`, `signups`, `launch`, plus `party_sheets` written by the Worker (`index.js:254,289`).
+- Private, exact keys: `persona`, `name_map`, `discord_members`, `discord_roster`, `ai_budget_caps`, `events_schedule`, `scheduled_events`, `vocab`, `votes:index`, `feed_posts`, `moments`, `moments_state`, `moments_shadow_state`, `moments_ledger`, `cards`, `cards_edit`, `board_lines_pending`, `noise` (`config.js:116`).
+- Private, prefixes: `ai_budget:`, `vote:`, `votes:`, `feed_`, `private:`, `config:`, `secret` (`config.js:117`).
+- Public documents: only the keys on the allow list in `infrastructure/worker/public-docs.js` (for example `party`, `signups`, `launch`), plus `party_sheets` written by the Worker (`index.js:240,303`). Any other key answers 404 on `GET /data/:name`.
 
-The private rows exist only in D1 and are not in git (`infrastructure/README.md:69`). They are the least recoverable data in the system: Time Travel and your own exports are the only copy.
+The private rows exist only in D1 and are not in git (`infrastructure/README.md:70`). They are the least recoverable data in the system: Time Travel and your own exports are the only copy.
 
-Stale text found: `infrastructure/README.md:62` says `GET /data/:name` has no allow-list; `index.js:1150` now has one. `PUT /data/:name` is admin-token gated (`index.js:1175-1177`), not member-key as the README route table says (`infrastructure/README.md:50`). Reported here, not changed.
+Stale text found: `infrastructure/README.md:63` says `PUT /data/:name` has no allow-list; `index.js:1413-1420` is admin-token gated and refuses every key not in the public-docs allow list. The README route table (`infrastructure/README.md:51`) still says member key for `PUT /data/:name`. Reported here, not changed.
 
 ## What is backed up, and what is not
 
@@ -63,7 +63,7 @@ npx wrangler d1 execute leeroy-board-db-drill --remote --command="SELECT name FR
 npx wrangler d1 delete leeroy-board-db-drill --skip-confirmation
 ```
 
-Pass criteria: the table list matches `schema.sql` (17 tables, see `schema-source-of-truth.md`); the `kv_state` row count equals production; every private key listed above is present. Record the date and result in a PR or issue. Delete the export afterward (it holds key hashes and sessions). Keep it out of the repository: `infrastructure/.gitignore:4` ignores only `.seed-bundle*.sql`, not `*.sql` in general.
+Pass criteria: the table list matches `schema.sql` (43 tables at last count; `grep -c "^CREATE TABLE" infrastructure/schema.sql`); the `kv_state` row count equals production; every private key listed above is present. Record the date and result in a PR or issue. Delete the export afterward (it holds key hashes and sessions). Keep it out of the repository: `infrastructure/.gitignore:4` ignores only `.seed-bundle*.sql`, not `*.sql` in general.
 
 Status: the drill was not executed while writing this document (it needs a Cloudflare token). The option names were checked with `--help`; that a D1 export re-imports cleanly through `d1 execute --file` is unverified. Run the drill once and amend this file with the result.
 
@@ -90,7 +90,7 @@ The drill with checksums, wipe and exact expected output is `docs/runbooks/resto
 
 ## After a bad migration
 
-Migrations run on every production deploy, after `schema.sql` (`deploy-cloudflare.yml:195-205`).
+Migrations run on every production deploy, after `schema.sql` (`deploy-cloudflare.yml:277-287`).
 
 1. Stop: pause the deploy workflow (`incident.md`, "Pause merges") so the failing step is not re-run by the next push.
 2. Read the failed step in the Actions run: which statement failed, whether it partially applied.

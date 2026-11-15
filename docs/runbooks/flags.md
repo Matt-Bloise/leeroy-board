@@ -39,7 +39,7 @@ Until `D1_FEED` exists the Worker treats it as off, which is today's behaviour; 
 
 ## Not yet on Flagship (still legacy `[vars]`)
 
-`WEB_LOGIN`, `DATA_RIGHTS`, `EVENTS_ENABLED`, `MOMENTS_ENABLED`, `MOMENTS_SHADOW`, `MOMENTS_DRY_RUN`, `CHARS_V1`, `BUILD_MODAL`, `BUILD_PROJECT`, `JOIN_PROMPT`, `ANSWER_UX`, `CARDS_ENABLED`, `CARDS_SHADOW`, `BOARD_LINES_ENABLED`, `SETUP_COMMAND`, `EVAL_ENABLED`, `REQUEST_GAUGE`. They are still flipped by editing `wrangler.toml` and deploying.
+`WEB_LOGIN`, `DATA_RIGHTS`, `EVENTS_ENABLED`, `MOMENTS_ENABLED`, `MOMENTS_SHADOW`, `MOMENTS_DRY_RUN`, `CHARS_V1`, `BUILD_MODAL`, `BUILD_PROJECT`, `JOIN_PROMPT`, `ANSWER_UX`, `CARDS_ENABLED`, `CARDS_SHADOW`, `BOARD_LINES_ENABLED`, `ASK_OPENER`, `SETUP_COMMAND`, `EVAL_ENABLED`, `REQUEST_GAUGE`. They are still flipped by editing `wrangler.toml` and deploying.
 
 ## Migrate another flag
 

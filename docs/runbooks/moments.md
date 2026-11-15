@@ -8,7 +8,7 @@ The Worker posts the launch-week Discord messages on a schedule, so nothing has 
 It held a list of timed moments and posted each one once, in order: `names-1h`, `names-0`, `launch-24h`, `launch-1h` (a countdown card edited in place every minute until T-0, then left as the final message), `launch-0` (the only moment that may ping people), `launch-10m`, `raids-1d`. A moment more than its late cutoff (default 30 minutes) overdue was skipped and logged, never posted late.
 
 ## How it works
-- Cron `* * * * *` (second of the five trigger slots Workers Free allows; the first is the 6-hourly sweep). `scheduled` routes by `controller.cron`: this trigger runs only moments, every other trigger runs the source sweep. PR previews strip all crons, so previews never post.
+- Cron `* * * * *` (second of the five trigger slots Workers Free allows; the first is the 6-hourly sweep). `scheduled` routes by `controller.cron`: this trigger runs moments (and, when `CARDS_ENABLED` is on, the card and board-line flush), every other trigger runs the source sweep. PR previews strip all crons, so previews never post.
 - Schedule: D1 `kv_state` key `moments` (an array). State: key `moments_state`, written only by the Worker. Both are private keys: never served by `GET /api/data/*`, never in the repo.
 - A post is **claimed** in `moments_state` (compare-and-swap on the row) before the Discord call and reconciled after, so two runs in the same minute cannot both post. The create call also carries a nonce with `enforce_nonce`, so Discord drops a repeat of an interrupted call.
 - Every message sets `allowed_mentions` to `{ "parse": [] }`. Only a moment with `allowPing: true` **and** the id `launch-0` may list users, and the config route refuses `allowPing` on any other id. Edits never ping.
@@ -37,7 +37,7 @@ Write it with the admin token (the real file stays on your machine, not in the r
 curl -sS -X PUT https://api.leeroy.party/api/config/moments -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" -H "Content-Type: application/json" --data @moments.local.json
 ```
 
-Changes reach the cron within about a minute (the config cache is 60 s). The row is capped at 20,000 bytes.
+Changes reach the cron within about a minute (the config cache is 60 s). The row is capped at 20,000 bytes, at most 50 moments, and `content` at 3500 characters.
 
 ## Check before turning on
 ```bash

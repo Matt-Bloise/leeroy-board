@@ -1,6 +1,6 @@
 # Runbook: restore drill (offline, with checksums)
 
-Last checked: 2026-11-03. Local only: nothing leaves the machine, no Cloudflare account, no secrets, no AI call, no Worker request on leeroy.party.
+Last checked: 2026-11-15 (the sqlite backend and `--expect` re-run; the wrangler backend not re-run). Local only: nothing leaves the machine, no Cloudflare account, no secrets, no AI call, no Worker request on leeroy.party.
 
 ## Purpose
 
@@ -40,10 +40,10 @@ Line 1 names the backend (`wrangler --local (real local D1)` or `sqlite (in-proc
 
 ```
 RESTORE DRILL (backend: wrangler --local (real local D1))
-1. source database: 40 tables from schema.sql, seeded with 465 fixture statements
-2. export: 35 tables exported, 5 never exported (account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens), 579 lines
+1. source database: 43 tables from schema.sql, seeded with 465 fixture statements
+2. export: 38 tables exported, 5 never exported (account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens), 588 lines
    no secret value in the export file (6 checked)
-3. checksums of the source: 35 tables, 464 rows
+3. checksums of the source: 38 tables, 464 rows
 4. wipe: the database is deleted
 5. restore: a fresh database is built from schema.sql and loaded from the export
 6. diff, table by table (rows and sha256 of the exported columns; source vs restored)
@@ -59,17 +59,17 @@ RESTORE DRILL (backend: wrangler --local (real local D1))
    ok   character_profiles     rows    1 ->    1   sha256 d2605a4ada78aaff == d2605a4ada78aaff
    ok   noise_ledger           rows    1 ->    1   sha256 c723059cfe4e6bc7 == c723059cfe4e6bc7
    ok   request_gauge          rows    2 ->    2   sha256 fa6be4c23ff9abc3 == fa6be4c23ff9abc3
-   ok   23 tables are empty in the fixtures (0 -> 0, nothing to compare, not tested): lib_pages, lib_blobs, lib_sources, lib_source_snapshots, wiki_proposals, fact_fixes, sheet_events, dispatches, accounts, identities, humans, human_members, tenant_config, memberships, thread_cursors, audit_log, groups, group_slots, signups_v2, entitlements, discord_events, answer_details, answer_feedback
+   ok   26 tables are empty in the fixtures (0 -> 0, nothing to compare, not tested): lib_pages, lib_blobs, lib_sources, lib_source_snapshots, wiki_proposals, fact_fixes, sheet_events, dispatches, accounts, identities, humans, human_members, tenant_config, memberships, thread_cursors, audit_log, groups, group_slots, signups_v2, entitlements, discord_events, answer_details, answer_feedback, ask_turn_askers, ask_turn_legacy, vote_ballots
    ok   account_keys           rows    0 ->    0   never exported: comes back empty (by design)
    ok   sessions               rows    1 ->    0   never exported: comes back empty (by design)
    ok   guest_rate_limits      rows    1 ->    0   never exported: comes back empty (by design)
    ok   sessions_v2            rows    1 ->    0   never exported: comes back empty (by design)
    ok   provider_tokens        rows    1 ->    0   never exported: comes back empty (by design)
 
-RESTORE DRILL PASSED: 35 tables, 464 rows, every count and checksum matches
+RESTORE DRILL PASSED: 38 tables, 464 rows, every count and checksum matches
 ```
 
-Measured on 3 November 2026: both backends produced this text byte for byte (`diff` of the two outputs was empty). The wrangler run took 100 seconds, the sqlite run under a second (0.2 s measured).
+Measured on 3 November 2026 (table counts above refreshed on 15 November 2026 from the sqlite backend, which matches `tests/fixtures/restore-drill.expected.txt`): both backends produced this text byte for byte (`diff` of the two outputs was empty). The wrangler run took 100 seconds, the sqlite run under a second (0.2 s measured).
 
 ## Reading it
 
@@ -96,5 +96,5 @@ After any schema change (a new table must show up in the report), before relying
 
 - **Production data.** It drills made-up fixtures. To prove a real backup, pull one with `tools/pull-export.mjs` and run `tools/restore-local.mjs` on it (`backup-restore.md`); that checks counts, not checksums, because there is no live source to compare to.
 - **D1 limits and speed.** A real restore of a large export into D1 can hit statement-size or time limits that local D1 does not. Unverified.
-- **Empty tables.** About two thirds of the tables hold no fixture row, so they are listed as "not tested". Their restore path is the same code as the tested tables, but a table-specific problem would not show.
+- **Empty tables.** About 60 percent of the tables (26 of 43) hold no fixture row, so they are listed as "not tested". Their restore path is the same code as the tested tables, but a table-specific problem would not show.
 - **Restoring into production.** Not covered, on purpose. Production restore is Time Travel (`backup-restore.md`).

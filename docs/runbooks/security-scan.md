@@ -6,10 +6,10 @@ Workflow: `.github/workflows/security.yml`. It is report only: no step can fail 
 
 | Scan | When | What | Output |
 | :--- | :--- | :--- | :--- |
-| Semgrep 1.183.0, rules `p/javascript` and `p/owasp-top-ten`, no login, metrics off | every non-fork PR, and weekly (Monday 05:17 UTC) on `master` | static analysis of the whole repo | artifact `security-semgrep` (SARIF), code scanning alerts under category `semgrep` |
+| Semgrep 1.183.0, rules `p/javascript` and `p/owasp-top-ten`, no login, metrics off | every non-fork PR that changes something outside `docs/**`, `tests/**`, root `*.md` and `.github/ISSUE_TEMPLATE/**` (`security.yml:16-20`), and weekly (Monday 05:17 UTC) on `master` | static analysis of the whole repo | artifact `security-semgrep` (SARIF), code scanning alerts under category `semgrep` |
 | OWASP ZAP baseline 2.16.0 (passive, no attack traffic) | PRs with the labels `security` and `ci-full` (non-draft, non-fork), and nightly against production (`nightly-production.yml`) | the Pages preview URL, found from the `<!-- cloudflare-pr-preview -->` comment that names the head sha, the same way `preview-tests.yml` does | artifact `security-zap` (`zap.html`, `zap.json`) |
 
-One comment, marked `<!-- security-scan -->`, is created on the first run and edited on every later push. Permissions are `contents: read`, `pull-requests: write`, `security-events: write`; no secrets are used. Fork PRs and draft PRs skip the scans that need a write token or a preview.
+Two comments are created on the first run and edited on every later push: the Semgrep one marked `<!-- security-scan -->` and the ZAP one marked `<!-- security-zap -->`. Permissions are `contents: read`, `pull-requests: write`, `security-events: write`; no secrets are used. Fork PRs and draft PRs skip the scans that need a write token or a preview.
 
 SARIF upload needs code scanning to be available for the repo. If it is not, that step fails quietly (`continue-on-error`) and the artifact still has the SARIF file.
 
