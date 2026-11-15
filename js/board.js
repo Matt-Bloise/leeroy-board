@@ -148,6 +148,9 @@ function startRoomLadder() {
 }
 const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, count: 600, digit: 240, close: 540, oak: "cubic-bezier(.2, .8, .2, 1)", fade: "cubic-bezier(.45, 0, .55, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+// A member can hide race, class, spec, professions and zone, so any of those can be absent from the public party document.
+const raceClass = (m) => [m && m.race, m && m.class].filter(Boolean).join(" ") || "Build hidden";
+const classOf = (m) => (m && m.class) || "Class hidden"; // the class alone; a member can hide it (a hidden value is absent from the public party document)
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
 /* party.n (data/client.json flags, default off): copy that said "five" says the real member count. Off, or with five members, every string is the old one. Scene ids and hashes (#five) never change.
@@ -275,7 +278,11 @@ const API = (() => {
     return API_OK.test(u.origin) ? u.origin : null;
   } catch (e) { return null; }
 })();
-const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r : fetch(url, opt)), () => fetch(url, opt)) : fetch(url, opt); };
+/* The five documents that carry member data. The static file of each is the WHOLE party, so when the API is set and does not answer 200 it is never read in the API's place:
+   the caller gets the failure and shows MEMBER_DOWN where the section was. Every other document keeps the static fallback. */
+const MEMBER_DOC_RE = /^data\/(party|decide|tonight|guided-atlas|client)\.json/;
+const MEMBER_DOWN = "This part of the board could not load. Try again in a moment.";
+const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; const closed = !!to && MEMBER_DOC_RE.test(url); return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok || closed ? r : fetch(url, opt)), (e) => (closed ? Promise.reject(e) : fetch(url, opt))) : fetch(url, opt); };
 const BF = (() => {
   const B = ((document.currentScript || {}).src || "").match(/[?&]v=([0-9a-f]+)/), stale = new Set(), file = (u) => String(u).split("?")[0], key = (u) => `bd:${B ? B[1] : "dev"}:${file(u)}`;
   /* boot: drop cached copies stamped by an older build (their key is never read again) */
@@ -294,14 +301,14 @@ const BF = (() => {
         return j;
       } catch (e) { err = e; } finally { clearTimeout(t); }
     }
-    if (!soft) { try { const c = localStorage.getItem(key(url)); if (c) { const j = JSON.parse(c); stale.add(file(url)); return j; } } catch (e) {} }
+    if (!soft && !MEMBER_DOC_RE.test(file(url))) { try { const c = localStorage.getItem(key(url)); if (c) { const j = JSON.parse(c); stale.add(file(url)); return j; } } catch (e) {} }
     throw err;
   };
   const note = (...names) => (names.some((n) => [...stale].some((f) => f.endsWith(`/${n}.json`))) ? h("p", { class: "stale-note", role: "status", text: "Showing the last saved copy." }) : null);
-  const fail = (box, what, retry, manual) => {
+  const fail = (box, what, retry, manual, plain) => {
     if (!box) return;
     const go = h("button", { type: "button", class: "retry-btn", text: "Try again" });
-    box.replaceChildren(h("p", { class: "data-fail", role: "status", text: `Could not load ${what}.` }), go);
+    box.replaceChildren(h("p", { class: "data-fail", role: "status", text: plain || `Could not load ${what}.` }), go);
     const run = () => { go.disabled = true; go.textContent = "Trying"; Promise.resolve().then(retry).catch(() => {}).then(() => { if (go.isConnected) { go.disabled = false; go.textContent = "Try again"; } }); };
     go.addEventListener("click", run);
     if (!manual) setTimeout(() => { if (go.isConnected && !go.disabled) run(); }, 10000);
@@ -309,8 +316,16 @@ const BF = (() => {
   return { json, note, fail, stale };
 })();
 window.BoardFetch = BF;
+/* The five member documents, wherever a brain base exists (leeroy.party, previews, the Activity, ?brain=): read from the Worker at BoardBrain.url("/data/<name>") ONLY, by the closed rule: a non-OK answer or a failed
+   fetch is the "could not load" line, never the static file of the same name (that file is the whole party). BoardBrain.url answers null for data/ on the legacy matt-bloise.github.io host and when there is no
+   base at all; those keep reading the static file (the legacy host is a frozen copy with no brain to ask), or the ?api= Worker through apiFetch. */
+const MEMBER_NAMES = ["party", "decide", "tonight", "client", "guided-atlas"];
+const memberUrl = (n) => { const b = window.BoardBrain; if (!MEMBER_NAMES.includes(n) || !b || typeof b.url !== "function") return null; try { return b.url(`/data/${n}`); } catch (e) { return null; } };
 const dataGet = (n) => {
-  const fallback = () => BF.json(`data/${n}.json`, { cache: "no-cache" });
+  const mu = memberUrl(n);
+  const fallback = () => (mu
+    ? BF.json(`data/${n}.json`, { cache: "no-store" }, (u, opt) => fetch(mu, { ...opt, mode: "cors", credentials: "omit" })) /* the logical name keys the retry and the (never read) saved copy; the request goes to the Worker */
+    : BF.json(`data/${n}.json`, { cache: "no-cache" }));
   if (n === "client") return fallback();
   const b = window.BoardBrain;
   if (b && typeof b.bootstrap === "function") return b.bootstrap().then((boot) => (boot && boot[n] != null ? boot[n] : fallback()));
@@ -320,10 +335,14 @@ const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n)), opt: ["signups", "toni
 DATA_P.need.forEach((p) => p.catch(() => {}));
 const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signups: new Map(), mine: {}, peers: [] };
 function memberByKey(key) { return (D.party && D.party.members.find((m) => m.class_key === key)) || null; }
+/* A document the Worker withheld because a member keeps part of their build private carries the one plain line in `withheld` (infrastructure/worker/public-party.js WITHHELD_LINE).
+   Every view that would have drawn a withheld section draws that line where the section was. */
+const wLine = (doc) => (doc && typeof doc.withheld === "string" ? doc.withheld : "");
+const wNote = (doc, cls) => { const t = wLine(doc); return t ? h("p", { class: `withheld-note ${cls || ""}`.trim(), role: "note", text: t }) : null; };
 function memberByName(name) { return (D.party && D.party.members.find((m) => m.name === name)) || null; }
 
 const GLYPH = { tank: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z", healer: "M12 5v14M5 12h14", damage: "M5 19L17 7M14 4h6v6M7 15l2 2M4 20l2-2" };
-const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", role: "img", "aria-label": role }, s("path", { d: GLYPH[role] || GLYPH.damage }));
+const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", role: "img", "aria-label": role || "role not shown" }, s("path", { d: GLYPH[role] || GLYPH.damage }));
 
 let clockTimer = null;
 function launchLine() {
@@ -497,11 +516,11 @@ function renderTiles() {
   const p = D.party, c = D.client, L = c.legacy, st = D.stats, S = D.signups;
   const count = (role) => p.members.filter((m) => (m.role_now || m.role) === role).length, later = p.members.filter((m) => m.role_from);
   fill("five",
-    h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${m.race} ${m.class}` }))))),
-    h("span", { class: "tile-viz list five-viz", ...(pnOn() ? { style: `--party-n: ${p.members.length}` } : {}) }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
+    h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${raceClass(m)}` }))))),
+    h("span", { class: "tile-viz list five-viz", ...(pnOn() ? { style: `--party-n: ${p.members.length}` } : {}) }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${raceClass(m)}` })))),
     h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many], i) => [i ? ", " : "", h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`)]),
       later.length ? ` (${andList(later.map((m) => `${count(m.role_from.role) === 1 ? "a second" : "a"} ${m.role_from.role} from ${m.role_from.level}`))}).` : ".", " ",
-      h("span", { class: "strip-2" }, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Still choosing a spec: ${andList(o)}.` : `All ${pnWord()} have picked a spec.`; })())));
+      h("span", { class: "strip-2" }, (() => { if (wLine(p)) return wLine(p); const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Still choosing a spec: ${andList(o)}.` : `All ${pnWord()} have picked a spec.`; })())));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
   fill("roads",
     h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), `\u00a0${ms.length}`])),
@@ -510,6 +529,7 @@ function renderTiles() {
   const races = Object.entries(c.racials);
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
+    wLine(c) ? h("span", { class: "tile-line", text: wLine(c) }) : null,
     races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line", "data-land": `racials.${MEM.slug(race)}` }, h("span", { class: "dots", "aria-hidden": "true" }, p.members.filter((m) => m.race === race).map((m) => crestMark(m, undefined, null))), " ", h("b", { text: race }), a ? ["\u00a0· ", h("span", { class: "rk-n", text: a.name })] : ""); }),
     changed ? h("span", { class: "tile-line", "data-land": "racials.changed", text: `${plural(changed, "race skill", "race skills")} changed since Oct 26` }) : null);
   fill("legacy",
@@ -517,13 +537,15 @@ function renderTiles() {
     h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
     h("span", { class: "tile-line", text: "How can you help? Who covers whom." }),
-    h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: `Buff links between the ${pnWord()}` }));
+    wLine(c) ? h("span", { class: "tile-line", text: wLine(c) }) : h("span", { class: "tile-viz" }, miniWheel()), wLine(c) ? null : h("span", { class: "viz-cap", text: `Buff links between the ${pnWord()}` }));
   const settled = [...p.settled, ...p.settled_extra];
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
   fill("ledger",
+    wLine(p) ? h("span", { class: "tile-line", text: wLine(p) }) : null,
     settled.length ? h("span", { class: "tile-line", "data-land": "ledger.settled" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
     (() => { /* the pending action: an open decision first, else a poll still taking votes; "nothing open" only when BOTH are empty */
       const first = stillOpen[0], poll = !first && p.polls[0];
+      if (wLine(p) && !first && !poll) return null; /* the line above stands in for "nothing is open": it would be a claim */
       return h("span", { class: "tile-line", ...(first ? { "data-land": "ledger.open-0" } : {}) }, h("b", { text: first ? "Needs a vote: " : poll ? "A poll is taking votes: " : "" }), first ? wholeClause(first.title, 70) : poll ? wholeClause(poll.title, 70) : "Nothing is open right now.");
     })(),
     h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
@@ -697,13 +719,13 @@ function miniSpark(vals) {
   return s("svg", { viewBox: `-4 -4 ${W + 8} ${H + 8}`, "aria-hidden": "true", preserveAspectRatio: "none" }, s("polyline", { class: "viz-line", points: pts }));
 }
 
-const roleWords = (m) => (m.role_from ? `${m.role_now || m.role} to ${m.role_from.level}, then ${m.role_from.role}` : m.role_now || m.role);
+const roleWords = (m) => (m.role_from ? `${m.role_now || m.role} to ${m.role_from.level}, then ${m.role_from.role}` : m.role_now || m.role || "not shown");
 function renderCards() {
   const wrap = $("#cards"); wrap.replaceChildren();
   const lvl = D.client.level;
   for (const m of D.party.members) {
     const spells = D.client.classes[m.class] || [];
-    const card = h("article", { class: "card", "data-k": m.class_key, "data-slug": MEM.slug(m.name), style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.race} ${m.class}` });
+    const card = h("article", { class: "card", "data-k": m.class_key, "data-slug": MEM.slug(m.name), style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${raceClass(m)}` });
     const flipBtn = (label) => h("button", { class: "flip", type: "button", "aria-pressed": "false", text: label, onclick: () => {
       const on = card.classList.toggle("flipped");
       sfx("flip", { delay: 120 });
@@ -711,18 +733,18 @@ function renderCards() {
       card.querySelector(".front").inert = on; card.querySelector(".back").inert = !on;
       (on ? card.querySelector(".back .flip") : card.querySelector(".front .flip")).focus({ preventScroll: true });
     } });
-    const profs = m.professions.map((p, pi) => h("span", {}, p.name, " ", h("span", { class: `chip stamp ${p.source}`, style: `--di: ${pi + 1}`, title: p.source === "board" ? "Written on the Party Board or in the group notes" : "Said in chat, not on the board yet" }, emb(p.source === "board" ? "seal" : "speech"), p.status ? `${SRC_WORD[p.source] || p.source}, ${p.status}` : SRC_WORD[p.source] || p.source)));
+    const profs = (m.professions || []).map((p, pi) => h("span", {}, p.name, " ", h("span", { class: `chip stamp ${p.source}`, style: `--di: ${pi + 1}`, title: p.source === "board" ? "Written on the Party Board or in the group notes" : "Said in chat, not on the board yet" }, emb(p.source === "board" ? "seal" : "speech"), p.status ? `${SRC_WORD[p.source] || p.source}, ${p.status}` : SRC_WORD[p.source] || p.source)));
     const front = h("div", { class: "face front" },
       ART.crest[m.class_key] ? crestImg(m.class_key) : null,
       h("div", { class: "who", text: m.name }),
-      h("div", { class: "what", text: `${m.race} ${m.class}` }),
-      h("div", { class: "spec", text: m.spec }),
+      h("div", { class: "what", text: `${raceClass(m)}` }),
+      h("div", { class: "spec", text: m.spec || "" }),
       h("dl", { "data-j": "g c e" },
         h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: roleWords(m) }))),
-        h("div", { "data-j": "c e" }, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), m.spec)))),
+        h("div", { "data-j": "c e" }, h("dt", { text: "Spec" }), h("dd", {}, (!m.spec ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not shown") : (m.spec_status || {}).status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), m.spec)))),
         h("div", {}, h("dt", { text: "Starts in" }), h("dd", { text: m.start_zone || "unknown" })),
         h("div", { "data-j": "c e" }, h("dt", { text: "Professions" }), h("dd", {}, profs.length ? profs : "none said yet"))),
-      flipBtn(`${m.class} spells at ${lvl}`));
+      flipBtn(m.class ? `${m.class} spells at ${lvl}` : `Spells at ${lvl}`));
     const list = h("ul", { class: "spells" }, spells.map((sp) => {
       const vals = sp.values.map((v) => fmtVal(v, sp.duration_ms) + (v.basis === "base" && !v.label.startsWith("%") ? " (starting value; may grow with level)" : v.level != null && v.level < lvl ? ` (rank caps at ${v.level})` : "")).join(" · ");
       const meta = [fmtCost(sp.cost), sp.cast_ms ? `${fmtMs(sp.cast_ms)} cast` : "instant", sp.cooldown ? `${fmtMs(sp.cooldown.ms)} cooldown` : null,
@@ -730,10 +752,10 @@ function renderCards() {
       return h("li", { class: "spell" }, h("div", { class: "spell-name" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null), vals ? h("div", { class: "spell-vals", text: vals }) : null, h("div", { class: "spell-meta", text: meta }));
     }));
     list.setAttribute("data-j", "e");
-    const names = h("ul", { class: "sp-names", "data-j": "g c", "aria-label": `${m.class} spells at ${lvl}` }, spells.map((sp, si) => h("li", {}, h("button", { type: "button", class: "sp-tt", "data-cls": m.class, "data-sp": si, "aria-expanded": "false", "aria-controls": "ttc" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null))));
+    const names = h("ul", { class: "sp-names", "data-j": "g c", "aria-label": `${m.class ? `${m.class} spells` : "Spells"} at ${lvl}` }, spells.map((sp, si) => h("li", {}, h("button", { type: "button", class: "sp-tt", "data-cls": m.class || "", "data-sp": si, "aria-expanded": "false", "aria-controls": "ttc" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null))));
     const back = h("div", { class: "face back" },
-      h("div", { class: "back-head" }, h("h3", { text: `${m.class} at ${lvl}` }), h("span", { class: "label", text: `client ${D.client.build}` })),
-      names, list, flipBtn(`Back to ${m.name}`));
+      h("div", { class: "back-head" }, h("h3", { text: m.class ? `${m.class} at ${lvl}` : `At ${lvl}` }), h("span", { class: "label", text: `client ${D.client.build}` })),
+      wLine(D.client) ? wNote(D.client, "spells-withheld") : names, wLine(D.client) ? null : list, flipBtn(`Back to ${m.name}`));
     back.inert = true;
     card.append(h("div", { class: "card-inner" }, front, back));
     wrap.append(card);
@@ -897,7 +919,7 @@ function renderMap() {
       const pin = s("g", { class: "map-pin", transform: `translate(${tx} ${ty})`, style: `--cc: ${classVar(m.class_key)}; --di: ${zi + i}` },
         s("path", { class: "pin-body", d: "M0 0c-7-8-15-16-15-26a15 15 0 1 1 30 0c0 10-8 18-15 26z" }),
         crestGuard(s("image", { href: crestSrc(m.class_key), x: -13, y: -39, width: 26, height: 26 }), m.class_key),
-        s("title", { text: `${m.name}, ${m.race} ${m.class}` }));
+        s("title", { text: `${m.name}, ${raceClass(m)}` }));
       g.append(pin);
       boxes.push({ x: tx - 15, y: ty - 42, w: 30, h: 42 });
       banners.push({ g, m, tx, ty, plate: plates[i], row: stagger ? i % 2 : 0 });
@@ -992,8 +1014,8 @@ function renderMap() {
   VF("pins", svg);
   KIT.emit("map", { svg, groups, lines, byZone, roads: ROADS, zones: ZONES, pick: (key) => { sticky = key; light(null); } });
   const meet = D.party.open.find((o) => /meeting point/i.test(o.title));
-  const names = Object.entries(byZone).map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`);
-  $("#map-lede").textContent = `${names.join("; ")}. The Undercity zeppelin and two roads all end in Orgrimmar.`;
+  const names = Object.entries(byZone).filter(([z]) => z && z !== "undefined").map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`); // a member who hides race or zone has no start_zone: no "in undefined"
+  $("#map-lede").textContent = `${names.length ? `${names.join("; ")}. ` : ""}The Undercity zeppelin and two roads all end in Orgrimmar.`;
   $("#map-caption").replaceChildren(...(meet ? meetLine(meet) : []));
 }
 
@@ -1023,6 +1045,7 @@ function raceRow(r, i) {
 const wideMQ = window.matchMedia("(min-width: 900px)");
 function renderRaces() {
   const wrap = $("#races"); wrap.replaceChildren();
+  if (wLine(D.client)) { wrap.append(wNote(D.client, "races-withheld")); return; }
   Object.entries(D.client.racials).forEach(([race, list], idx) => {
     const ms = D.party.members.filter((m) => m.race === race);
     wrap.append(h("details", { class: "slip race", "data-race": MEM.slug(race), open: wideMQ.matches || idx === 0 || JR() === "everything" },
@@ -1070,6 +1093,7 @@ function renderLegacy() {
 
 function renderWheel() {
   const wrap = $("#wheel"); wrap.replaceChildren();
+  if (wLine(D.client)) { wrap.append(wNote(D.client, "wheel-withheld")); return; }
   const keys = D.party.members.map((m) => m.class_key);
   const R = 112, pos = {};
   keys.forEach((k, i) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / keys.length; pos[k] = [Math.cos(a) * R, Math.sin(a) * R]; });
@@ -1090,7 +1114,7 @@ function renderWheel() {
   });
   const nodes = keys.map((k) => {
     const m = memberByKey(k), [x, y] = pos[k];
-    const g = s("g", { class: `wheel-node${ART.crest[k] ? " has-crest" : ""}`, tabindex: 0, role: "button", "aria-pressed": "false", "aria-label": `${m.name}, ${m.class}: show buffs`, style: `--nc: ${classVar(k)}`, "data-k": k, "data-x": x, "data-y": y },
+    const g = s("g", { class: `wheel-node${ART.crest[k] ? " has-crest" : ""}`, tabindex: 0, role: "button", "aria-pressed": "false", "aria-label": `${m.name}, ${classOf(m)}: show buffs`, style: `--nc: ${classVar(k)}`, "data-k": k, "data-x": x, "data-y": y },
       s("circle", { cx: x, cy: y, r: 26 }), ART.crest[k] ? crestSvg(k, x, y) : null, s("text", { x, y: y + 44, text: m.name }), s("text", { x, y: y + 60, style: "font-size:16.5px;fill:var(--l-text)", text: " " + m.class }));
     svg.append(g); return g;
   });
@@ -1135,6 +1159,7 @@ function buffWho(b, m) {
 }
 function renderBuffsDeep() {
   const box = $("#buffs-deep"), B = D.client && D.client.buffs; if (!box || !B) return;
+  if (wLine(D.client)) { box.replaceChildren(wNote(D.client, "buffs-withheld")); return; }
   try { const v = Number(localStorage.getItem("board-buff-level")); if (v >= 1 && v <= 60) BD.level = v; } catch (e) {}
   const P = D.party, me = MEM.member(), L = BD.level;
   const giverOf = (cls) => P.members.find((m) => m.class_key === cls);
@@ -1202,7 +1227,7 @@ function renderBuffsDeep() {
   });
   box.replaceChildren(...[
     h("h3", { id: "deep-h", text: me ? "For you" : "Who gives what" }),
-    me && !BD.pick ? h("div", { class: "deep-who", role: "group", "aria-label": "Whose buffs are shown" }, h("b", { class: "deep-me", text: `Showing ${me.name}, ${me.race} ${me.class}.` }), h("button", { type: "button", class: "lib-tool", id: "deep-change", onclick: () => { BD.pick = true; renderBuffsDeep(); const x = $("#buffs-deep .deep-who button"); if (x) x.focus({ preventScroll: true }); } }, "Change person"))
+    me && !BD.pick ? h("div", { class: "deep-who", role: "group", "aria-label": "Whose buffs are shown" }, h("b", { class: "deep-me", text: `Showing ${me.name}, ${raceClass(me)}.` }), h("button", { type: "button", class: "lib-tool", id: "deep-change", onclick: () => { BD.pick = true; renderBuffsDeep(); const x = $("#buffs-deep .deep-who button"); if (x) x.focus({ preventScroll: true }); } }, "Change person"))
       : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), h("span", { class: "deep-scope", text: "Only changes what this page shows you" }), D.party.members.map((m) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(!!me && me.name === m.name), style: `--cc: ${classVar(m.class_key)}`, onclick: () => { BD.pick = false; MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); const x = $("#deep-change"); if (x) x.focus({ preventScroll: true }); } }, crestMark(m), m.name))),
     h("div", { class: "deep-ctl" }, h("label", { for: "deep-level", class: "deep-l" }, "Level ", h("b", { id: "deep-l", text: String(L) })), slider, marks, six),
     h("p", { class: "deep-key", text: "Stamina adds health, Intellect adds mana, Spirit refills health and mana faster." }),
@@ -1278,11 +1303,12 @@ function renderLedger() {
     : "Settled things and open things. No poll is taking votes right now.";
   wrap.append(h("div", { class: "ledger-col" },
     h("h3", { "data-j": "c e", text: "Settled" }),
+    wLine(p) ? wNote(p, "settled-withheld") : null,
     h("ul", { "data-j": "c e" }, [...p.settled, ...p.settled_extra].map((x, i, all) => h("li", { class: "settled-li", style: `--di: ${i}`, ...(i === all.length - 1 ? { "data-land-to": "settled" } : {}) }, h("span", {}, seal(), x.text), srcTag(x.source))),
       p.play ? h("li", { class: "settled-li next-li", style: `--di: ${p.settled.length + p.settled_extra.length}` }, h("span", {}, seal(), p.play.text), srcTag(p.play.source)) : null),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
     ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.closes_epoch ? `Closes ${fmtWhen(q.closes_epoch)}.` : cardDates(q.text.replace(/\s*Add names in chat\.?/i, "")) }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `The ${q.title.toLowerCase()} poll in Discord` })))),
-    h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }),
+    h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }), wLine(p) ? wNote(p, "open-withheld") : null,
     h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}`, "data-land-to": `open-${i}`, "data-title": o.title },
       h("strong", { text: o.title }),
       h("span", { "data-j": "c e" }, ...openLine(o, link),
@@ -1354,7 +1380,7 @@ function buildSignupControls() {
       h("label", { for: `${q}-${v}`, text: label }))));
   }
   const sel = $("#as");
-  sel.replaceChildren(h("option", { value: "", text: "Not saying" }), ...D.party.members.map((m) => h("option", { value: m.name, text: `${m.name}, ${m.class}` })));
+  sel.replaceChildren(h("option", { value: "", text: "Not saying" }), ...D.party.members.map((m) => h("option", { value: m.name, text: `${m.name}, ${classOf(m)}` })));
   sel.addEventListener("change", () => { RT.mine.as = sel.value || null; try { localStorage.setItem("board-as", sel.value); } catch (e) {} save("as"); pushPresence(); });
   const other = $("#meet-place");
   let pause = 0;
@@ -3525,7 +3551,7 @@ function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.
 const FIRST_RUN = Object.freeze({ go: "Show me what is next", purpose: Object.freeze(["This is the party board for our World of Warcraft: Forever group.", "It tells you what to do next, shows who is playing what, and collects the group's votes.", "Whatever you post in Discord (forms, build threads, votes) shows up here.", "Pick who you are below, or just look around."]) });
 function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
-  const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) { if (box && P && !T) BF.fail(box, "the steps for tonight", reloadOpt); return; }
+  const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) { if (box && P && !T) BF.fail(box, "the steps for tonight", reloadOpt, 0, MEMBER_DOWN); return; }
   const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); renderBuffsDeep(); } catch (e) {} };
   if (!me) {
     const sel = { slug: null }, say = h("p", { class: "nx-say tn-first-say", id: "tn-first-say", role: "status", "aria-live": "polite" });
@@ -3537,7 +3563,7 @@ function renderTonight() {
       h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...names,
         h("div", { class: "tn-first-act", role: "group", "aria-label": "Next" }, show, look), say));
   }
-  else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
+  else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${raceClass(member)}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
   const ev = tonightNext(T);
   const idx = member ? P.members.indexOf(member) : -1, person = T.people.find((x) => x.member === idx);
   const w = wk(), entries = w ? w.current.filter((e) => e.rsvp) : []; /* this week's answers only (wk) */
@@ -3560,10 +3586,10 @@ function renderTonight() {
   const groups = RSVP_KEYS.map((k) => [T.labels[k] || RSVP_SAY[k], who(k)]).filter(([, n]) => n.length);
   const card = (title, ...kids) => h("section", { class: "tn-card", "aria-label": title }, h("h3", { text: title }), ...kids);
   box.replaceChildren(...[
-    card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl))),
+    card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl)), wNote(T, "tn-withheld")),
     card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: launchWhen() || T.launch + yourTime(T) }) : null, T.play ? h("p", { class: "tn-play", text: T.play }) : null),
     card(launchPast() ? "This week" : T.cards[2], meetP(), mine ? line(T.labels.you, [T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), ...(!mine && !groups.length ? (w && w.empty ? emptyWeekEls(w, "tn-line") : [h("p", { text: T.labels.nobody })]) : []), earlierLine(w, "tn-line"))].filter(Boolean));
-  const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
+  const gets = member && D.client && D.client.buffs && !wLine(D.client) ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
     h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
   act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1]), h("a", { class: "lib-btn tn-decide", href: "#decide", text: TITLES.decide })].filter(Boolean));
   const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();
@@ -3576,7 +3602,7 @@ function beforeItems(T, P, member, mine) {
   const open = (rx) => P.open.find((o) => rx.test(o.title)), nowS = Date.now() / 1000, L = T.links || {};
   const ev = (k) => T.events.find((e) => e.key === k), names = ev("names_open"), launch = ev("launch");
   const dt = (epoch) => fmtWhen(epoch), out = [];
-  if (member) out.push({ id: "build", text: `Your build on the board: ${member.race} ${member.class}, ${member.spec}.`, more: `As the group has it (${(member.spec_status && member.spec_status.status) || "listed"}).` });
+  if (member) out.push({ id: "build", text: `Your build on the board: ${raceClass(member)}${member.spec ? `, ${member.spec}` : ""}.`, more: `As the group has it (${(member.spec_status && member.spec_status.status) || "listed"}).` });
   if (T.poll_closes) out.push({ id: "guild", text: `Guild name: the poll ${nowS < T.poll_closes ? "closes" : "closed"} ${dt(T.poll_closes)}.`, href: L.poll, more: nowS < T.poll_closes ? "Names can also be added in chat." : "", stamp: T.poll_closes });
   if (member) {
     const po = open(/profession/i) || {}, pr = member.professions || [], und = pr.some((p) => p.status === "undecided"), gap = (po.text || "").match(/Gap: ([A-Za-z]+)/);
@@ -3743,11 +3769,14 @@ async function boot(mode, sdk) {
   } catch (e) {
     setClockLabel("The data files did not load", "");
     const again = () => dataGet("party").then(() => location.reload());
-    BF.fail($("#footer"), "the board's data", again, 1);
+    BF.fail($("#footer"), "the board's data", again, 1, MEMBER_DOWN);
     $("#footer").append(h("small", { text: `Could not read the board's data: ${e.message}.` }));
     document.querySelectorAll(".tile-body").forEach((b) => b.replaceChildren(h("span", { class: "tile-line", text: "Not loaded." })));
-    [...document.querySelectorAll(".panel")].filter((pn) => pn.id !== "panel-library").forEach((pn) => { const bx = h("div", { class: "data-box data-down" }); pn.insertBefore(bx, pn.firstChild); BF.fail(bx, "this scene's data", again, 1); });
+    [...document.querySelectorAll(".panel")].filter((pn) => pn.id !== "panel-library").forEach((pn) => { const bx = h("div", { class: "data-box data-down" }); pn.insertBefore(bx, pn.firstChild); BF.fail(bx, "this scene's data", again, 1, MEMBER_DOWN); });
     route();
+    /* Discord mode does not wait for the member documents: with them down (closed rule), presence and the footer-link interception still start. */
+    bootDone = true;
+    if (mode === "discord") goDiscord(sdk); else if (lateSdk) goDiscord(lateSdk);
     return;
   }
   if (mode === "discord" && sdk) { const tok = launchToken(sdk.customId); if (tok) { try { history.replaceState(null, "", `${location.pathname}${location.search}#${tok}`); } catch (e) {} } }
@@ -3782,7 +3811,7 @@ async function boot(mode, sdk) {
 let bootDone = false, lateSdk = null, discordOn = false;
 function goDiscord(sdk) { if (discordOn || !sdk) return; discordOn = true; startDiscordPresence(sdk); if (bootDone) KIT.emit("signups"); } /* a late upgrade re-renders the sign-ups hint so the Activity wording shows */
 function lateDiscord(sdk) { if (discordOn || !sdk) return; if (bootDone) goDiscord(sdk); else lateSdk = sdk; }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { raceClass, classOf, pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
