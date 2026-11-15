@@ -105,20 +105,27 @@ test("document writes: the public allow list and the deny list never overlap, an
 });
 
 // ---------------------------------------------------------------- sheet-privacy.js: hidden-field handling
-test("publicParty: only an explicit visible:false hides a field (kills `!f.visible`)", () => {
-  const out = publicParty([{ slug: "a", fields: { race: { value: "x" }, class: { value: "y", visible: true }, goals: { value: "z", visible: false }, level: { value: 1, visible: 0 }, plan_zone: { value: "q", visible: null } } }]);
-  assert.deepEqual(Object.keys(out[0].fields).sort(), ["class", "level", "plan_zone", "race"]);
+test("publicParty fails closed: only an explicit visible:true shows a field; missing, falsy and non-boolean flags are hidden", () => {
+  const out = publicParty([{ slug: "a", fields: { race: { value: "x" }, class: { value: "y", visible: true }, goals: { value: "z", visible: false }, level: { value: 1, visible: 0 }, launch_state: { value: "q", visible: "true" }, professions: { value: "p", visible: null } } }]);
+  assert.deepEqual(Object.keys(out[0].fields), ["class"]);
+});
+
+test("publicParty: a field name the code has never heard of is hidden unless it says visible:true", () => {
+  const out = publicParty([{ slug: "a", fields: { future_field: { value: "x" }, other_field: { value: "y", visible: false }, shown_field: { value: "z", visible: true } } }]);
+  assert.deepEqual(Object.keys(out[0].fields), ["shown_field"]);
 });
 
 test("partyForMember: with no owner slug every sheet is stripped, including a slug-less sheet (kills the dropped ownerSlug guard)", () => {
-  const sheet = { name: "Member A", fields: { goals: { value: "secret", visible: false }, race: { value: "r" } } }; // no slug at all
+  const sheet = { name: "Member A", fields: { goals: { value: "secret", visible: false }, level: { value: 5, visible: true } } }; // no slug at all
   for (const owner of [undefined, null, ""]) {
     const out = partyForMember([sheet], owner);
     assert.equal(out[0].fields.goals, undefined, `owner ${JSON.stringify(owner)}`);
-    assert.equal(out[0].fields.race.value, "r");
+    assert.equal(out[0].fields.level.value, 5);
   }
   const mine = partyForMember([{ slug: "a", fields: { goals: { value: "s", visible: false } } }], "a");
   assert.equal(mine[0].fields.goals.value, "s", "the owner still sees their own hidden field");
+  const other = partyForMember([{ slug: "a", fields: { goals: { value: "s", visible: false } } }], "b");
+  assert.equal(other[0].fields.goals, undefined, "another member does not");
 });
 
 // ---------------------------------------------------------------- cors.js
