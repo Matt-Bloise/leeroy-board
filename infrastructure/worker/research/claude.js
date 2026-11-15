@@ -20,7 +20,7 @@ import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
 import { researchMembers, researchMembersFor, genericAliases } from "../privacy/roster-config.js";
 import { RESEARCH_MAX_TOKENS } from "./rules.js";
-import { prepareRealPrompt, guardSecretsInBody, cleanRealReply, scanSecrets } from "./real-names.js";
+import { prepareRealPrompt, guardSecretsInBody, cleanRealReply, scanSecrets, defangPings } from "./real-names.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 2000000;
 export const CLAUDE_TIMEOUT_MS = 9000; // one budget for the first call and the model-id retry together; Workers AI keeps its own 12s after it, inside the 24s ask deadline
@@ -269,7 +269,7 @@ const notBilled = (e) => Boolean(e) && (GUARD_CODES.includes(e.code) || (Number(
 // hardEndAt: absolute epoch ms the whole Claude hop must end by (the ask's start + its deadline - margin, from ai-models.js); the reservation writes count inside it.
 // real: { system, user } when RESEARCH_NAMES is "real" (research/real-names.js): the prompt is sent with real names, no name guard and no tokenising; only the always-on
 // protections run (host allow-list, secrets and ids, pings, fencing). Without it (tokenised mode) priv drives everything exactly as before, plus the same always-on protections.
-export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date(), hardEndAt = null, real = null }) {
+export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date(), hardEndAt = null, real = null }) { // real: { system, user, friend: [the asker's own typed text] }
   if (!anthropicAvailable(env)) return { reason: null };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
   let sendSystem;
@@ -278,7 +278,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   let roster = null;
   if (real) {
     try {
-      ({ system: sendSystem, user: sendUser } = prepareRealPrompt(real, env));
+      ({ system: sendSystem, user: sendUser } = prepareRealPrompt(real, env, [], { friend: real.friend || [] }));
     } catch (e) { return { reason: guardReason(e) }; }
     if (sendSystem.length + sendUser.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
     cleanReply = (raw) => cleanRealReply(raw, env);
@@ -290,8 +290,8 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
       for (const seg of priv.partySegments) guardUserText([seg], priv.roster);
     } catch (e) { return { reason: guardReason(e) }; }
     if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
-    sendSystem = priv.system;
-    sendUser = priv.user;
+    sendSystem = defangPings(priv.system); // pings with trailing characters ("@everyonelol") pass the name guard, so they are defanged here in tokenised mode too
+    sendUser = defangPings(priv.user);
     roster = priv.roster;
     cleanReply = (raw) => (scanSecrets(raw, env, { ids: false }).length ? null : priv.clean(raw)); // a secret in the reply stops it in both modes
   }

@@ -32,7 +32,7 @@ import { assertAnthropicUrl, namesAreReal } from "./research/real-names.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_LENGTH_OVERRIDE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { findAskerTurns, renderTurns, PRIOR_TURNS_RULE } from "./research/turns.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
-import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER, DEGRADED_NOTE, DEGRADED_ANSWER, DEGRADED_SUFFIX } from "./research/provider.js";
+import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER, degradedLines, DEGRADED_SUFFIX } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
 import { memberLine, researchTimeoutMs, guestLibraryOnly, hardEndMs } from "./research/no-wall.js";
 import { sheetsHideAnything, WITHHELD_LINE } from "./public-party.js";
@@ -1304,7 +1304,7 @@ export async function answerWithAi({
     const priorTurns = research ? await findAskerTurns(env, { intentId, share: Boolean(share) }) : [];
     // RESEARCH_NAMES (research code only): "real" sends the Claude hop the real names and the asker's turns untokenised; "tokenised" is the earlier behaviour. Guests never reach Claude.
     const namesReal = research && namesAreReal(env);
-    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research, priorTurns, researchReal: namesReal });
+    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research, priorTurns, researchReal: namesReal && memberNoWall }); // real only for a member: a guest's Workers AI prompt always takes the tokenised, dropping path
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
     // Research mode: names become per-request tokens before any model sees the prompt (research/claude.js). Workers AI gets the same tokenised prompt; with the flag off these are the
     // untouched prompts. If tokenising fails Claude is skipped and Workers AI (inside Cloudflare) takes the prompt as it is.
@@ -1389,12 +1389,14 @@ export async function answerWithAi({
         const hardEnd = t0 + hardEndMs(askDeadlineMs(env));
         const viaClaude = hardEnd - Date.now() < 2500
           ? { reason: "claude:no-time" }
-          : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, real: namesReal ? { system: systemPrompt, user: userPrompt } : null, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
+          : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, real: namesReal ? { system: systemPrompt, user: userPrompt, friend: [question, previousQuestion, by, ...(Array.isArray(priorTurns) ? priorTurns.flatMap((t) => [t.q, t.a]) : [])] } : null, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
         if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
       // A member's friend text never reaches Workers AI (or any other provider) under ASK_RESEARCH: no Claude answer means the honest degraded line below.
       if (!rawAnswer && research && memberNoWall) throw new Error("research: Claude gave no answer");
+      // A guest whose prompt could not be tokenised gets library facts only: the raw prompt (real names) never goes to Workers AI.
+      if (!rawAnswer && research && !memberNoWall && !(priv && priv.ok)) throw new Error("research: the prompt could not be tokenised");
       if (!rawAnswer) {
       const deadlineMs = askDeadlineMs(env);
       const waiMs = research ? researchTimeoutMs(Date.now() - t0, ASK_CHOSEN_TIMEOUT_MS, deadlineMs) : ASK_CHOSEN_TIMEOUT_MS;
@@ -1436,15 +1438,16 @@ export async function answerWithAi({
         // An honest in-voice line, plus the library's own facts when the question matches the library. The row is marked +degraded so it is never silent.
         degraded = true;
         fallbackNote = "";
+        const lines = degradedLines(researchNote);
         const facts = hits && hits.length > 0
           ? hits.slice(0, 3).map((h) => `${h.value} [${h.page}~${h.key}]`)
           : ranked.length > 0 ? ranked.slice(0, 3).map((p) => { const t = (p.facts || [])[0]; return t ? `${t.value} [${p.id}~${t.key}]` : `${p.blurb || p.title} [${p.id}]`; }) : [];
         if (facts.length) {
           const pages = hits && hits.length > 0 ? hits.slice(0, 3).map((h) => h.page) : ranked.slice(0, 3).map((p) => p.id);
-          rawAnswer = `${facts.join(" ")}\n${DEGRADED_NOTE}\n-# Sources: ${[...new Set(pages)].join(", ")}`;
+          rawAnswer = `${facts.join(" ")}\n${lines.note}\n-# Sources: ${[...new Set(pages)].join(", ")}`;
           model = "degraded-library-facts";
         } else {
-          rawAnswer = DEGRADED_ANSWER;
+          rawAnswer = lines.answer;
           model = "degraded-honest-line";
         }
         provider = "library";

@@ -88,7 +88,9 @@ const degraded = (r, why) => {
 // ---- the setting ---------------------------------------------------------------------------------------------------------------------------------
 test("RESEARCH_NAMES: 'real' only when set to real; unset or anything else is tokenised (fails toward privacy)", () => {
   assert.equal(researchNames({ RESEARCH_NAMES: "real" }), "real");
-  assert.equal(researchNames({ RESEARCH_NAMES: " REAL " }), "real");
+  // CHANGED (Fable fix 4): the value must be exactly "real"; a padded or upper-case value reads tokenised.
+  assert.equal(researchNames({ RESEARCH_NAMES: " REAL " }), "tokenised");
+  assert.equal(researchNames({ RESEARCH_NAMES: " real " }), "tokenised");
   for (const v of [undefined, "", "tokenised", "tokenized", "maybe", 1, null]) assert.equal(researchNames({ RESEARCH_NAMES: v }), "tokenised", String(v));
   assert.equal(researchNames(undefined), "tokenised");
   assert.equal(namesAreReal({ RESEARCH_NAMES: "real" }), true);
@@ -224,10 +226,12 @@ for (const names of ["real", "tokenised"]) {
       assert.ok(!r.logs.join("\n").includes(FAKE_KEY));
     }
   });
-  test(`(b) ${names}: a secret in a sheet field, a sign-up or the tonight title also stops the send`, async () => {
+  test(`(b) ${names}: a secret in a sheet field or the tonight title: tokenised stops the send; real (CHANGED, Fable fix 2) redacts it and the ask goes on`, async () => {
     const withField = await ask(ABSTAIN_Q, { names, sheets: [{ slug: "red-fox", name: "Red Fox", fields: { class: f("paladin"), goals: f(`token ${TOKEN}`) }, updated: "x" }] });
     const withTitle = await ask(ABSTAIN_Q, { names, state: { tonight: { title: `Raid, key ${FAKE_KEY}` } } });
-    for (const r of [withTitle, ...(names === "real" ? [withField] : [])]) { assert.equal(r.anth.length, 0); degraded(r, "secret in party data"); }
+    if (names === "real") {
+      for (const r of [withTitle, withField]) { assert.equal(r.anth.length, 1, r.row.model); assert.ok(!r.anth[0].raw.includes(FAKE_KEY) && !r.anth[0].raw.includes(TOKEN)); assert.ok(!r.row.model.endsWith(DEGRADED_SUFFIX)); }
+    } else for (const r of [withTitle]) { assert.equal(r.anth.length, 0); degraded(r, "secret in party data"); }
   });
   test(`(b) ${names}: long digit ids are never sent (redacted or stopped), and the body scan fails closed on a leftover`, async () => {
     const r = await ask("who is 123456789012345678 and 98765432109876543210", { names });
@@ -262,7 +266,9 @@ test("(b) unit: scanSecrets names the kind, never the value; ids are redacted; e
   assert.deepEqual(scanSecrets("a 123456789012345678 b", env, { ids: false }), []);
   assert.deepEqual(scanSecrets("monthly 20000000 tokens", env), [], "the monthly cap number is not a secret");
   assert.equal(redactIds("a 123456789012345678 b 12345 c"), "a [id] b 12345 c");
-  assert.throws(() => prepareRealPrompt({ system: "s", user: `k ${FAKE_KEY}` }, {}), (e) => e.code === "OUTBOUND_SECRET" && !/sk-ant/.test(e.message));
+  // CHANGED (Fable fix 2): a secret in the asker's own text (friend) still throws; elsewhere in the prompt it is redacted.
+  assert.throws(() => prepareRealPrompt({ system: "s", user: `k ${FAKE_KEY}` }, {}, [], { friend: [`k ${FAKE_KEY}`] }), (e) => e.code === "OUTBOUND_SECRET" && !/sk-ant/.test(e.message));
+  assert.ok(!prepareRealPrompt({ system: "s", user: `k ${FAKE_KEY}` }, {}).user.includes(FAKE_KEY));
   assert.equal(cleanRealReply("fine", {}), "fine");
   assert.equal(cleanRealReply("   ", {}), null);
 });
