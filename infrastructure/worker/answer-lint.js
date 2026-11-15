@@ -62,6 +62,116 @@ function checkSources(text) {
   return { present: true, masked: links.length > 0 && leftover === "", items: links.length };
 }
 
+// ---- research-mode lint (ASK_RESEARCH on) -------------------------------------------------------------------------------------
+// Pure and deterministic like lintAnswer. Checks the shape the research rules ask for (research/rules.js), not the truth of the content:
+//   one sources line holding exactly one confidence word (confirmed | likely | unconfirmed), a body that is not banter alone (a banter line is a single
+//   italic line), at most one banter line, and no refusal wording. -> { failures: [], pass }
+const CONFIDENCE_RE = /\b(?:unconfirmed|confirmed|likely)\b/gi;
+const BANTER_LINE_RE = /^\s*(?:(?<!\*)\*(?!\*)[^*\n]+\*|_[^_\n]+_)\s*$/;
+// Strong refusal wording (a refusal wherever it stands) and weak wording (a pointer such as "check Wowhead", a refusal only when nothing else is said).
+const STRONG_REFUSAL_RE = /does not (?:cover|have) that yet|doesn'?t confirm that figure|not published yet|won'?t guess|ask (?:someone|somebody|a party member|the party|an? officers?|the officers?|anyone)\b|(?:cannot|can'?t|can not) (?:answer|help with|confirm) (?:that|this)|nothing on this question/i;
+const WEAK_REFUSAL_RE = /(?:check|try|see|consult|look at) (?:wowhead|google|the wiki|the forums|blizzard|the official)/i;
+const REFUSAL_OPENER_RE = /^(?:no idea|i (?:do not|don'?t) know|sorry|unfortunately,? i|i(?: am|'m) (?:unable|not able)|as an ai|i (?:cannot|can'?t|can not|couldn'?t|could not) (?:answer|help|provide|find|confirm)|i (?:have|has) no (?:information|details|data|idea))\b/i;
+// The generic rule needs the ASSISTANT or its KNOWLEDGE SOURCE as the subject: "I cannot / am unable / have no information ...", "the library / the available material /
+// my notes does not have / contains no ...", "no information is available". A negation about the game ("a hunter cannot use wands", "you can't respec for free") is an answer.
+const GENERIC_REFUSAL_RE = /^(?:i|we)\b[^.!?]*?\b(?:cannot|can'?t|can not|am unable|are unable|unable to|have no|has no|do not have|don'?t have|could not|couldn'?t)\b|\b(?:the |my |our )?(?:library|available (?:material|information|sources?|data)|sources?|notes|knowledge|data|material)\b[^.!?]*?\b(?:does not|doesn'?t|do not|don'?t|contains? no|has no|have no|cannot|can'?t|is not available|not available)\b|^no (?:relevant )?(?:information|details|data)\b|\bno (?:relevant )?(?:information|details|data) (?:is |are )?(?:available|provided|found)\b/i;
+const INTERJECTION_RE = /^(?:oh|ah+|ha+h*|heh|hah|well|aww?|ooh|hmm+|ahem|ugh|lol)\b/i;
+const REPORTING_RE = /\b(?:says?|said|reads?|shows?|states?|tooltip|label|quote[sd]?|reads as|written)\b/i;
+const OUTAGE_RE = /out of reach right now|^try me again in a bit\b/i;
+const SETTLE_RE = /would settle it/i;
+// Sentence split that also breaks after a closing * _ " ) ] ("**Frost.** Check Wowhead." is two sentences). A line over 5000 characters is not split (bounds the regex).
+export const splitSentenceText = (line) => { const s = String(line || ""); return s.length > 5000 ? [s] : s.split(/(?<=[.!?][*_"')\]]*)\s+/); };
+// Digit, or a capitalised word after the first (not "I"): something concrete is being said.
+const hasConcrete = (s) => /\d/.test(s) || s.split(/\s+/).slice(1).some((w) => /^[A-Z][a-z]/.test(w) && w !== "I");
+// "strong" | "weak" | null. A sentence IS a refusal when it opens with a refusal opener, or holds strong refusal wording and is short (18 words or fewer), or
+// quotes/reports that wording and ENDS with it (nothing after it but two words: "The tooltip says the library does not cover that yet."), or says it cannot
+// / has no information and carries no concrete content (no digit, no capitalised word after the first). "the tooltip says not published yet, so use the shield build"
+// is advice and stays; a long sentence that merely contains the wording is kept.
+export function refusalKind(sentence) {
+  const plain = String(sentence || "").replace(/[*_`>#]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!plain) return null;
+  const words = plain.split(" ");
+  if (REFUSAL_OPENER_RE.test(plain)) return "strong";
+  const m = STRONG_REFUSAL_RE.exec(plain);
+  if (m) {
+    const before = plain.slice(0, m.index);
+    const after = plain.slice(m.index + m[0].length).split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
+    const guarded = (before.match(/["“”]/g) || []).length % 2 === 1 || REPORTING_RE.test(before);
+    if (guarded ? after <= 2 : words.length <= 18) return "strong";
+    return null;
+  }
+  if (WEAK_REFUSAL_RE.test(plain) && words.length <= 12) return "weak";
+  if (words.length <= 30 && GENERIC_REFUSAL_RE.test(plain) && !hasConcrete(plain)) return "strong";
+  return null;
+}
+// For a refusal sentence that has more in it than the refusal ("Blizzard has not published yet the numbers, so treat Frost as the safe pick."): the clauses that are not
+// themselves refusals, joined and re-capitalised, or "" when nothing is left. null when the sentence is not a refusal at all.
+export function refusalRemainder(sentence) {
+  const s = String(sentence || "").trim();
+  if (refusalKind(s) === null) return null;
+  const clauses = s.split(/,\s+(?=(?:so|but|and|then|however|though|still)\b)|;\s+/i);
+  if (clauses.length < 2) return "";
+  const keep = clauses.filter((c) => refusalKind(c) === null && hasSubstance(c)).map((c) => c.replace(/^(?:so|but|and|then|however|though|still)\s+/i, "").trim());
+  if (!keep.length) return "";
+  const out = keep.join(", ");
+  const text = out.charAt(0).toUpperCase() + out.slice(1);
+  return /[.!?*_"')\]]$/.test(text) ? text : `${text}.`;
+}
+export const isRefusalSentence = (s) => refusalKind(s) !== null;
+export const hasSubstance = (text) => /[A-Za-z]{3,}/.test(String(text || "").replace(/https?:\/\/\S+/gi, " "));
+// Lines (trimmed, non-empty, footers already removed) -> { content, banter }. Banter is the trailing run of whole-italic lines, and only when other content comes before it:
+// a body that is italic from start to end is an answer ("_Go to Blackrock Depths._"), its first line is content.
+export function splitBanter(lines) {
+  const ls = lines.filter((l) => l && l.trim());
+  let k = ls.length;
+  while (k > 0 && BANTER_LINE_RE.test(ls[k - 1])) k--;
+  if (k === ls.length) return { content: ls, banter: [] };
+  if (k === 0) {
+    // Italic from start to end is an answer ("_Go to Blackrock Depths._"), unless it is an interjection with nothing concrete in it ("*Oh, you sweet summer child.*").
+    const first = ls[0].replace(/^[\s*_]+|[\s*_]+$/g, "");
+    if (INTERJECTION_RE.test(first) && !hasConcrete(first)) return { content: [], banter: ls };
+    return { content: ls.slice(0, 1), banter: ls.slice(1) };
+  }
+  return { content: ls.slice(0, k), banter: ls.slice(k) };
+}
+// Sentences that say something: not a refusal, not only "what would settle it", not only the outage note, not a bare address.
+export function contentSentences(lines) {
+  const out = [];
+  for (const line of lines) for (const s of splitSentenceText(line.replace(/^\s*(?:[-*•]\s+)/, ""))) {
+    if (!hasSubstance(s) || SETTLE_RE.test(s) || OUTAGE_RE.test(s)) continue;
+    if (!isRefusalSentence(s) || refusalRemainder(s)) out.push(s);
+  }
+  return out;
+}
+export function lintResearchAnswer(answer) {
+  const text = typeof answer === "string" ? answer : "";
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const sourceLines = lines.filter((l) => SOURCES_LINE_RE.test(l));
+  const footerish = (l) => /^-#/.test(l) || /^Sources?\s*:/i.test(l);
+  const body = lines.filter((l) => !footerish(l));
+  const { content, banter } = splitBanter(body);
+  const said = contentSentences(content);
+  // Library-backed: a library link, or a Sources line that is nothing but page ids ("classes/tanking, professions/mining"); "wowhead/classic guides" and "and/or" are words, not ids.
+  const libraryBacked = sourceLines.some((l) => {
+    if (/\]\(<?[^)]*#library\./.test(l)) return true;
+    const toks = l.replace(/^\s*-#\s*Sources?\s*:/i, "").replace(CONFIDENCE_RE, " ").split(/[\s,;·|]+/).filter(Boolean);
+    return toks.length > 0 && toks.every((t) => /^[a-z0-9_-]+\/[a-z0-9_.-]+$/i.test(t) && !/^(?:and|or|w|n|b|s)\/[a-z]{1,3}$/i.test(t));
+  });
+  const failures = [];
+  if (!text.trim()) failures.push("empty");
+  if (sourceLines.length === 0) failures.push("no_sources_line");
+  else if (sourceLines.length > 1) failures.push("multiple_sources_lines");
+  const conf = sourceLines.flatMap((l) => l.match(CONFIDENCE_RE) || []);
+  if (sourceLines.length && conf.length === 0 && !libraryBacked) failures.push("no_confidence_word");
+  if (conf.length > 1) failures.push("two_confidence_words");
+  if (lines.filter((l) => /^-#\s*Confidence\s*:/i.test(l)).length) failures.push("second_confidence_footer");
+  if (text.trim() && said.length === 0) failures.push("no_answer");
+  if (banter.length > 1) failures.push("multiple_banter");
+  if (body.some((l) => splitSentenceText(l).some((s) => refusalKind(s) === "strong")) || (said.length === 0 && body.some((l) => splitSentenceText(l).some(isRefusalSentence)))) failures.push("refusal");
+  if (said.length === 0 && body.some((l) => OUTAGE_RE.test(l))) failures.push("outage_line");
+  return { failures, pass: failures.length === 0, confidenceWords: conf.map((w) => w.toLowerCase()), banterLines: banter.length };
+}
+
 export function lintAnswer(answer, ctx = {}) {
   const text = typeof answer === "string" ? answer : "";
   const c = ctx && typeof ctx === "object" ? ctx : {};
