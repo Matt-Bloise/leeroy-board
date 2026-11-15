@@ -3,7 +3,7 @@
 // runtime from bot-data.js (never copied here, never printed). Run: node --test tests/unit/ask-research-claude.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { answerWithAi, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
@@ -11,9 +11,12 @@ import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { ROSTER_DATA } from "../../infrastructure/worker/bot-data.js";
 import { scanBody, CANARY } from "../../infrastructure/worker/privacy/outbound-guard.js";
 import { researchRoster, setFirstNameSource, genericAliases } from "../../infrastructure/worker/privacy/roster-config.js";
+import { resetResearchClaudeForTests, privacyBudget, classifyField, STRUCTURED_FIELDS, FREE_TEXT_FIELDS, prepareResearchPrivacy } from "../../infrastructure/worker/research/claude.js";
+import { buildNameMap, tokenise } from "../../infrastructure/worker/privacy/tokenise.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const FAKE_KEY = "sk-ant-FAKE-TEST-0000";
+const DEFAULT_BUDGET_MS = privacyBudget.ms;
 const realFetch = globalThis.fetch;
 let anth = []; // every request to an Anthropic URL: { model, body, headers }
 let others = []; // every other fetch URL
@@ -29,6 +32,7 @@ globalThis.fetch = async (url, init) => {
     const r = claudeAnswer(body, anth.length);
     if (r.throws) throw r.throws;
     const usage = r.usage === undefined ? { input_tokens: 111, output_tokens: 22 } : r.usage;
+    if (r.errBody) return new Response(JSON.stringify(r.errBody), { status: r.status, headers: { "content-type": "application/json" } });
     return new Response(JSON.stringify({ content: r.text === undefined ? [] : [{ type: "text", text: r.text }], ...(usage ? { usage } : {}) }), { status: r.status, headers: { "content-type": "application/json" } });
   }
   others.push(u);
@@ -36,7 +40,7 @@ globalThis.fetch = async (url, init) => {
 };
 const fakeAi = { run: async (_m, inputs) => { wai.push(inputs); if (waiThrows) throw new Error("workers ai down"); return { response: waiAnswer(inputs), usage: { prompt_tokens: 5, completion_tokens: 5 } }; } };
 test.after(() => { globalThis.fetch = realFetch; });
-test.beforeEach(() => { resetKeyCacheForTests(); setFirstNameSource(null); });
+test.beforeEach(() => { resetKeyCacheForTests(); setFirstNameSource(null); resetResearchClaudeForTests(); privacyBudget.ms = 1000; }); // cold JIT in a test run can exceed the real 8 ms budget; the CPU test sets its own
 
 const f = (value) => ({ value, visible: true, source: "board", at: "2026-11-01T00:00:00.000Z" });
 const SHEETS = [{ slug: "red-fox", name: "Red Fox", fields: { class: f("paladin"), race: f("human"), level: f(12) }, updated: "x" }];
@@ -47,11 +51,12 @@ const month = () => new Date().toISOString().slice(0, 7).replace("-", "");
 const bodiesText = (list) => list.map((b) => JSON.stringify(b)).join("\n=====\n");
 
 let n = 0;
-async function ask(question, { by = "Red Fox", memberSlug = "red-fox", research = true, key = true, deep = false, env: envPatch = null, db = null, claude = null, wai: waiFn = null, waiFail = false, provider = "groq", isMember = true } = {}) {
+async function ask(question, { by = "Red Fox", memberSlug = "red-fox", research = true, key = true, deep = false, env: envPatch = null, db = null, claude = null, wai: waiFn = null, waiFail = false, provider = "groq", isMember = true, sheets = null, state = null } = {}) {
   invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache();
   const DB = db || schemaDb();
   DB.raw.prepare("INSERT OR REPLACE INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES (?, ?, ?, ?, '[]', ?, '2026-11-01T00:00:00Z')").run(TANK_PAGE.id, TANK_PAGE.category, TANK_PAGE.title, TANK_PAGE.blurb, JSON.stringify(TANK_PAGE.facts));
-  DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify(SHEETS));
+  DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify(sheets || SHEETS));
+  for (const [k, v] of Object.entries(state || {})) DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(k, JSON.stringify(v));
   const env = { DB, AI: fakeAi, GROQ_API_KEY: "test-key-not-real", GEMINI_API_KEY: "test-gemini-not-real", ...(key ? { ANTHROPIC_API_KEY: FAKE_KEY } : {}), ...(research ? { ASK_RESEARCH: "on" } : {}), BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) } };
   if (envPatch) envPatch(env);
   const id = `cw${++n}`;
@@ -69,7 +74,7 @@ async function ask(question, { by = "Red Fox", memberSlug = "red-fox", research 
 
 test("order: Claude answers first, with the research model, 700 tokens, no cache, and Workers AI is not called", async () => {
   const r = await ask(ABSTAIN_Q);
-  assert.equal(r.anth.length, 1);
+  assert.equal(r.anth.length, 1, r.row.model);
   assert.equal(r.wai.length, 0);
   assert.equal(r.anth[0].model, "claude-haiku-5-5");
   assert.equal(r.anth[0].body.max_tokens, 700);
@@ -120,14 +125,15 @@ test("both down: library facts with the honest line, and still no other provider
 });
 
 test("model id: a 404 on the new id retries once with the 4.5 fallback id", async () => {
-  const r = await ask(ABSTAIN_Q, { claude: (body) => (body.model === "claude-haiku-5-5" ? { status: 404 } : { status: 200, text: "**Fallback model answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
+  const NF = (m) => ({ status: 404, errBody: { type: "error", error: { type: "not_found_error", message: `model: ${m}` } } });
+  const r = await ask(ABSTAIN_Q, { claude: (body) => (body.model === "claude-haiku-5-5" ? NF(body.model) : { status: 200, text: "**Fallback model answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
   assert.deepEqual(r.anth.map((a) => a.model), ["claude-haiku-5-5", "claude-haiku-4-5-20251001"]);
   assert.match(r.answer, /Fallback model answer/);
   assert.equal(r.wai.length, 0);
-  const both = await ask(ABSTAIN_Q, { deep: true, claude: () => ({ status: 404 }) });
+  const both = await ask(ABSTAIN_Q, { deep: true, claude: (b) => NF(b.model) });
   assert.deepEqual(both.anth.map((a) => a.model), ["claude-sonnet-5-5", "claude-sonnet-4-5-20250929"], "exactly one retry");
   assert.equal(both.wai.length, 1);
-  const custom = await ask(ABSTAIN_Q, { env: (e) => { e.RESEARCH_CLAUDE_MODEL_FAST = "model-x"; e.RESEARCH_CLAUDE_FALLBACK_FAST = "model-y"; }, claude: (b) => (b.model === "model-x" ? { status: 400 } : { status: 200, text: "**Ok answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
+  const custom = await ask(ABSTAIN_Q, { env: (e) => { e.RESEARCH_CLAUDE_MODEL_FAST = "model-x"; e.RESEARCH_CLAUDE_FALLBACK_FAST = "model-y"; }, claude: (b) => (b.model === "model-x" ? { status: 400, errBody: { type: "error", error: { type: "invalid_request_error", message: "model: model-x does not exist" } } } : { status: 200, text: "**Ok answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
   assert.deepEqual(custom.anth.map((a) => a.model), ["model-x", "model-y"]);
 });
 
@@ -328,4 +334,201 @@ test("docs: secrets.md no longer says every deploy re-puts the key; flags.md doc
   assert.ok(!/every deploy/i.test(secrets.split("\n").filter((l) => /ANTHROPIC_API_KEY/.test(l)).join("\n")));
   assert.match(secrets, /non-empty/i);
   for (const k of ["RESEARCH_CLAUDE_MONTHLY_TOKENS", "RESEARCH_CLAUDE_MODEL_FAST", "claude_tokens_", "guard:"]) assert.ok(flags.includes(k), k);
+});
+
+// ======================= round 2 (Fable attack on 584ba402) =======================
+const noSpace = (x) => x.replace(/\s+/g, "");
+const vis = (value) => ({ value, visible: true, source: "board", at: "2026-11-01T00:00:00.000Z" });
+const sheetOf = (fields, extra = {}) => [{ slug: "red-fox", name: "Red Fox", fields, updated: "x", ...extra }];
+const anthText = (r) => bodiesText(r.anth.map((a) => a.body));
+const OKTEXT = "**Fallback ok.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed";
+
+test("1. a structured sheet field with an obfuscated roster name stops Claude (b64, hex, reversed, xx-wrapped); nothing reaches Anthropic verbatim", async () => {
+  const name = NAMES[2];
+  for (const v of [Buffer.from(name).toString("base64"), Buffer.from(name).toString("hex"), [...name.toLowerCase()].reverse().join(""), `mining with xx${noSpace(name)}xx`]) {
+    const r = await ask(ABSTAIN_Q, { sheets: sheetOf({ class: vis("paladin"), professions: vis(v) }) });
+    assert.ok(!anthText(r).includes(v), `field ${v.slice(0, 6)} reached Anthropic verbatim`);
+    assert.ok(!anthText(r).toLowerCase().includes(name.toLowerCase()));
+    assert.equal(r.wai.length >= 1 || r.anth.length >= 1, true);
+  }
+  const hex = await ask(ABSTAIN_Q, { sheets: sheetOf({ professions: vis(Buffer.from(name).toString("hex")) }) });
+  assert.equal(hex.anth.length, 0, "a structured field the guard rejects means no Claude call");
+  assert.match(hex.row.model, /guard:/);
+  assert.match(hex.answer, /Workers answer first/);
+});
+
+test("1. the tonight title and sign-up keys and values are guarded: an obfuscated name there stops Claude", async () => {
+  const hex = Buffer.from(NAMES[0]).toString("hex");
+  for (const state of [{ tonight: { title: `raid ${hex}` } }, { signups: { roster: { [hex]: "yes" } } }, { signups: { roster: { someone: `note ${hex}` } } }]) {
+    const r = await ask(ABSTAIN_Q, { state });
+    assert.equal(r.anth.length, 0, JSON.stringify(state).slice(0, 30));
+    assert.equal(r.wai.length >= 1, true);
+  }
+});
+
+test("2. free-text fields (goals, plan_zone, unknown ones) reach Claude only when they pass the guard; structured fields are sent", async () => {
+  const hex = Buffer.from(NAMES[1]).toString("hex");
+  const ok = await ask("what should I do about my build", { sheets: sheetOf({ class: vis("paladin"), goals: vis("farm the barrens at dawn"), plan_zone: vis("Durotar") }) });
+  assert.equal(ok.anth.length, 1);
+  assert.ok(anthText(ok).includes("paladin"));
+  assert.ok(anthText(ok).includes("farm the barrens at dawn"), "a clean free-text field is sent");
+  const bad = await ask("what should I do about my build", { sheets: sheetOf({ class: vis("paladin"), goals: vis(`meet ${hex} soon`), plan_zone: vis("Durotar") }) });
+  assert.equal(bad.anth.length, 1, "a dropped free-text field does not stop Claude");
+  assert.ok(!anthText(bad).includes(hex), "the free-text field that fails the guard is not sent at all");
+  assert.ok(anthText(bad).includes("paladin") && anthText(bad).includes("Durotar"));
+  assert.ok(!bodiesText(bad.wai).includes(hex), "nor to Workers AI");
+});
+
+test("2. names outside the five-member roster: sheet names, slugs and character names are tokenised by construction", async () => {
+  const sheets = [
+    ...sheetOf({ class: vis("paladin"), goals: vis("my main is Grukthar Bonechewer and I like it"), main: vis("Grukthar Bonechewer") }),
+    { slug: "zed-ex", name: "Examplemage Zedford", fields: { class: vis("rogue"), professions: vis("mining"), goals: vis("help Examplemage Zedford level") }, updated: "x" },
+  ];
+  const r = await ask("what should I do about my build and my party", { sheets });
+  assert.equal(r.anth.length, 1);
+  const t = anthText(r);
+  for (const leak of ["Grukthar", "Bonechewer", "Examplemage", "Zedford", "zed-ex"]) assert.ok(!t.includes(leak), `${leak} reached Anthropic`);
+  assert.ok(!bodiesText(r.wai).includes("Zedford"));
+  const reply = await ask("what should I do about my party", { sheets, claude: (b) => ({ status: 200, text: `**${(b.messages[0].content.match(/(\{P\d+\.[a-z0-9]+\}): class rogue/) || [])[1]} is ready.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed` }) });
+  assert.match(reply.answer, /Examplemage Zedford/, "the token comes back as that member's display name");
+});
+
+test("2. the structured vs free-text field table is in flags.md and matches the code (fictional field list)", () => {
+  const flags = readFileSync(new URL("../../docs/runbooks/flags.md", import.meta.url), "utf8");
+  for (const k of [...STRUCTURED_FIELDS, ...FREE_TEXT_FIELDS]) assert.ok(flags.includes(`\`${k}\``), k);
+  assert.equal(classifyField("class"), "structured");
+  assert.equal(classifyField("goals"), "free");
+  assert.equal(classifyField("hobby_notes"), "free", "an unknown field is free-text: the safe default");
+  assert.equal(classifyField("level"), "structured");
+});
+
+test("3. the cap counts all four usage fields, clamps each call, and treats bad usage as an estimated maximum", async () => {
+  const key = `claude_tokens_${month()}`;
+  const run = async (usage) => { const db = schemaDb(); await ask(ABSTAIN_Q, { db, claude: () => ({ status: 200, usage }) }); const row = db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key); return row ? Number(row.json) : null; };
+  assert.equal(await run({ input_tokens: 3, output_tokens: 2, cache_creation_input_tokens: 5000, cache_read_input_tokens: 4000 }), 9005);
+  assert.equal(await run({ input_tokens: 10, output_tokens: 5 }), 15);
+  assert.equal(await run({ input_tokens: 1e15, output_tokens: 1 }), 200001, "clamped per field, never months of budget in one call");
+  for (const bad of [{ input_tokens: -5, output_tokens: 2 }, { input_tokens: "abc", output_tokens: 2 }, { input_tokens: 1e308, output_tokens: 1 }, null]) {
+    const v = await run(bad);
+    assert.ok(v >= 700 && v < 100000 || (bad && bad.input_tokens === 1e308 && v === 200001), `bad usage ${JSON.stringify(bad)} counted ${v}`);
+  }
+});
+
+test("3. the research call carries no cache_control; the legacy flag-off call still does", async () => {
+  const r = await ask(ABSTAIN_Q);
+  assert.ok(!r.anth[0].raw.includes("cache_control"));
+  const off = await ask("who tanks tonight", { research: false, provider: "claude" });
+  assert.ok(off.anth[0].raw.includes("cache_control"));
+});
+
+test("4. the model fallback retries only on a model-not-found signal, never on credit, auth or rate errors, and sends once per attempt", async () => {
+  const e = (status, type, message) => ({ status, errBody: { type: "error", error: { type, message } } });
+  for (const c of [e(400, "invalid_request_error", "Your credit balance is too low to access the API"), e(401, "authentication_error", "invalid x-api-key"), e(403, "permission_error", "nope"), e(429, "rate_limit_error", "slow down"), e(404, "not_found_error", "the requested resource was not found"), { status: 404 }, { status: 400 }]) {
+    const r = await ask(ABSTAIN_Q, { claude: () => c });
+    assert.equal(r.anth.length, 1, `${c.status} ${c.errBody ? c.errBody.error.type : "no body"} must not retry`);
+    assert.equal(r.wai.length >= 1, true);
+  }
+  const miss = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-haiku-5-5" ? e(404, "not_found_error", "model: claude-haiku-5-5") : { status: 200, text: OKTEXT }) });
+  assert.deepEqual(miss.anth.map((a) => a.model), ["claude-haiku-5-5", "claude-haiku-4-5-20251001"]);
+  const bad400 = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-haiku-5-5" ? e(400, "invalid_request_error", "model: claude-haiku-5-5 does not exist") : { status: 200, text: OKTEXT }) });
+  assert.equal(bad400.anth.length, 2);
+  const gw = await ask(ABSTAIN_Q, { env: (x) => { x.CLOUDFLARE_ACCOUNT_ID = "acct"; x.AI_GATEWAY_ID = "gw"; }, claude: () => ({ status: 500 }) });
+  assert.equal(gw.anth.length, 1, "one send per attempt: no gateway-then-direct double hop");
+  assert.match(gw.anth[0].url, /gateway\.ai\.cloudflare\.com/);
+  assert.equal(gw.wai.length >= 1, true);
+});
+
+test("5. the cap gate reserves before the call: 20 concurrent asks at cap minus 100 make one send, and the counter ends near the cap", async () => {
+  const db = schemaDb();
+  const key = `claude_tokens_${month()}`;
+  await ask(ABSTAIN_Q, { db }); // seeds library, sheets, schema
+  db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, '900', 'x')").run(key);
+  anth = []; wai = []; waiThrows = false;
+  claudeAnswer = () => ({ status: 200, text: OKTEXT });
+  const ids = Array.from({ length: 20 }, (_, i) => {
+    const id = `cc${++n}x${i}`;
+    db.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, 'Red Fox', ?, 'groq', 'thinking', 1, 'x')").run(id, ABSTAIN_Q);
+    return id;
+  });
+  const env = { DB: db, AI: fakeAi, ANTHROPIC_API_KEY: FAKE_KEY, ASK_RESEARCH: "on", RESEARCH_CLAUDE_MONTHLY_TOKENS: "1000", BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) } };
+  const e0 = console.error, w0 = console.warn; console.error = () => {}; console.warn = () => {};
+  try { await Promise.all(ids.map((id) => answerWithAi({ env, origin: "https://worker.test", intentId: id, by: "Red Fox", memberSlug: "red-fox", question: ABSTAIN_Q, provider: "groq", share: true, journey: "curious", isMember: true }))); } finally { console.error = e0; console.warn = w0; }
+  assert.equal(anth.length, 1, "exactly one send past the gate");
+  const used = Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json);
+  assert.ok(used >= 1000 && used <= 1100, `counter ${used}`);
+});
+
+test("5. a counter write failure stops Claude for a while (spend must not go unrecorded)", async () => {
+  const db = schemaDb();
+  const real = db.prepare;
+  let failWrites = true;
+  db.prepare = (sql) => {
+    const s = real(sql);
+    const bind = s.bind;
+    s.bind = (...a) => (failWrites && /^\s*UPDATE/i.test(sql) && a.some((x) => String(x).startsWith("claude_tokens_")) ? { first: async () => { throw new Error("d1"); }, all: async () => { throw new Error("d1"); }, run: async () => { throw new Error("d1"); } } : bind(...a));
+    return s;
+  };
+  const first = await ask(ABSTAIN_Q, { db });
+  assert.equal(first.anth.length, 1);
+  failWrites = false;
+  const second = await ask(ABSTAIN_Q, { db });
+  assert.equal(second.anth.length, 0, "paused after a failed counter write");
+  assert.equal(second.wai.length, 1);
+  resetResearchClaudeForTests();
+  assert.equal((await ask(ABSTAIN_Q, { db })).anth.length, 1, "the pause is in memory and ends");
+});
+
+test("6. an unknown asker named like a common word does not garble the prompt: only the asker label becomes a token", async () => {
+  const counts = [];
+  for (const by of ["Zorpling", "The", "Library", "Party"]) {
+    const r = await ask("tell me about the weather and the party and the library", { by, memberSlug: "nobody" });
+    assert.equal(r.anth.length, 1, by);
+    const user = r.anth[0].body.messages[0].content;
+    assert.match(user, /Asker: \{P\d+\.[a-z0-9]+\} \(/, by);
+    assert.match(user, /Question from \{P\d+\.[a-z0-9]+\} \(journey/, by);
+    counts.push((user.match(/\bthe\b/gi) || []).length + (r.anth[0].body.system[0].text.match(/\bthe\b/gi) || []).length);
+  }
+  assert.equal(new Set(counts).size, 1, `the word "the" must be unchanged whatever the asker is called: ${counts}`);
+});
+
+test("minor. the CPU budget guard skips Claude when tokenise+guards exceed the budget; the map is cached per roster and only the nonce changes", async () => {
+  privacyBudget.ms = 0;
+  const r = await ask(ABSTAIN_Q);
+  assert.equal(r.anth.length, 0);
+  assert.equal(r.wai.length, 1);
+  assert.match(r.row.model, /cpu:budget/);
+  assert.ok(!bodiesText(r.wai).toLowerCase().includes(NAMES[0].toLowerCase()), "Workers AI still gets the tokenised prompt");
+  assert.equal(DEFAULT_BUDGET_MS, 8, "the shipped budget is 8 ms");
+  const a =prepareResearchPrivacy({ systemPrompt: `hi ${NAMES[0]}`, userPrompt: `u ${NAMES[1]}`, question: "q", by: "Zed", party: null });
+  const b = prepareResearchPrivacy({ systemPrompt: `hi ${NAMES[0]}`, userPrompt: `u ${NAMES[1]}`, question: "q", by: "Zed", party: null });
+  assert.notEqual(a.map.nonce, b.map.nonce);
+  assert.equal(a.system.replace(a.map.nonce, "N"), b.system.replace(b.map.nonce, "N"));
+  const fresh = buildNameMap(a.roster.members, null, { genericAliases, nonce: a.map.nonce });
+  assert.equal(tokenise(`hi ${NAMES[0]} and ${NAMES[3]}`, a.map), tokenise(`hi ${NAMES[0]} and ${NAMES[3]}`, fresh), "the cached map tokenises exactly like a freshly built one");
+});
+
+test("minor. build-time check: the library pages contain no roster key (the cheap guard plus whole-word keys)", () => {
+  const roster = researchRoster();
+  const keys = ROSTER_DATA.flatMap((r) => [r.display, ...r.aliases]).filter((k) => !genericAliases.includes(k.toLowerCase()));
+  const dir = new URL("../../data/library/", import.meta.url);
+  const esc = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const hits = [];
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith(".json") || f === "search.json") continue; // search.json is the client's search index (a long numeric hash in it is not prompt text); every page file is checked
+    const text = readFileSync(new URL(f, dir), "utf8");
+    if (scanBody({ t: text }, roster).length) hits.push(`${f}: guard`);
+    for (const k of keys) if (new RegExp(`(?<![\\p{L}\\p{N}])${esc(k)}(?![\\p{L}\\p{N}])`, "iu").test(text)) hits.push(`${f}: key`);
+  }
+  assert.deepEqual(hits, []);
+});
+
+test("minor. stale 'Workers AI only' wording is gone from the ASK_RESEARCH comment and provider.js header; flags.md fixes the over-count claim", () => {
+  const toml = readFileSync(new URL("../../infrastructure/wrangler.toml", import.meta.url), "utf8");
+  const line = toml.split("\n").find((l) => l.startsWith("ASK_RESEARCH ="));
+  assert.ok(!/Workers AI only/i.test(line));
+  const prov = readFileSync(new URL("../../infrastructure/worker/research/provider.js", import.meta.url), "utf8");
+  assert.ok(!/model call goes to the Workers AI binding and nowhere else/.test(prov));
+  const flags = readFileSync(new URL("../../docs/runbooks/flags.md", import.meta.url), "utf8");
+  assert.ok(!/so it over-counts/.test(flags));
+  for (const k of ["cache_creation_input_tokens", "cpu:budget", "8 ms"]) assert.ok(flags.includes(k), k);
 });

@@ -451,7 +451,7 @@ test("round 3 (12): the outage line carries no Sources/confidence tag; the wrang
   assert.ok(!/-# Sources/.test(r.answer), r.answer);
   const toml = readFileSync(new URL("../../infrastructure/wrangler.toml", import.meta.url), "utf8");
   const line = toml.split("\n").find((l) => l.startsWith("ASK_RESEARCH"));
-  assert.match(line, /Workers AI only/);
+  assert.match(line, /Claude first.*then Workers AI, then library facts/); // W-wire: the comment was "Workers AI only" until Claude became the first hop
   assert.ok(!/stub handles nothing/.test(line));
 });
 

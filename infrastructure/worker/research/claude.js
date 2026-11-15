@@ -1,22 +1,39 @@
 // /ask research mode (ASK_RESEARCH on): the Claude hop. Provider order is Claude -> Workers AI -> library facts; no other provider ever sees friend text.
 //
-// Every outside call happens only after (1) the whole prompt is tokenised (privacy/tokenise.js: names become per-request tokens), (2) the strict guard passes over
-// the friend-controlled segments (question, previous turn, asker) and (3) the cheap guard passes over the final request body. Any guard hit, any error, an
-// unavailable key, a spent monthly token budget or a counter that cannot be read means: no Claude call, Workers AI (Cloudflare-internal) answers the same
-// tokenised prompt. Never a wall, never a refusal. Reasons are short fixed codes (claude:*, guard:*, tokenise:*), never values.
+// Every outside call happens only after (1) the whole prompt is tokenised (privacy/tokenise.js: names become per-request tokens; the name list is the roster PLUS
+// every name on the party sheets, so a sixth member or a character name is a key too), (2) the strict guard passes over EVERY friend-writable segment (question,
+// previous turn, structured sheet fields, sign-up keys and values, the tonight title; free-text sheet fields are sent only if they pass, else dropped) and
+// (3) the cheap guard passes over the final request body. Any guard hit, any error, an unavailable key, a spent monthly token budget, a counter that cannot be
+// read or written, or a privacy step over its CPU budget means: no Claude call, Workers AI (Cloudflare-internal) answers the same tokenised prompt. Never a wall,
+// never a refusal. Reasons are short fixed codes (claude:*, guard:*, tokenise:*, cpu:*), never values.
 //
-// Spend guard: tokens (input + output, from the response usage block) are added to the D1 row kv_state key claude_tokens_YYYYMM (UTC month) with one atomic
-// upsert. RESEARCH_CLAUDE_MONTHLY_TOKENS (default 2,000,000) is the bound; at or over it Claude is skipped and one alert row per month is written
-// (alert:claude-cap:YYYYMM, no names, no text). Prices are NOT modelled in code: the token cap is the bound (docs/runbooks/flags.md has the worst-case arithmetic).
+// Spend guard: an estimate is RESERVED atomically in D1 (kv_state key claude_tokens_YYYYMM, UTC month) before the call, then reconciled to the real usage
+// (all four usage fields, clamped). RESEARCH_CLAUDE_MONTHLY_TOKENS (default 2,000,000) is the bound; when the reserve fails Claude is skipped and one alert row per
+// month is written (alert:claude-cap:YYYYMM, no names, no text). A counter write that fails pauses Claude for 10 minutes (module memory). Prices are NOT modelled
+// in code: the token cap is the bound (docs/runbooks/flags.md has the worst-case arithmetic).
 import { anthropicAvailable } from "../ai-keys.js";
+import { stripFence } from "../prompt-fence.js";
 import { buildNameMap, tokenise, detokenise } from "../privacy/tokenise.js";
+import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
-import { researchRoster, genericAliases } from "../privacy/roster-config.js";
+import { researchMembers, researchMembersFor, genericAliases } from "../privacy/roster-config.js";
 import { RESEARCH_MAX_TOKENS } from "./rules.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 2000000;
 export const CLAUDE_TIMEOUT_MS = 9000; // one budget for the first call and the model-id retry together; Workers AI keeps its own 12s after it, inside the 24s ask deadline
+export const PAUSE_MS = 10 * 60 * 1000;
+export const USAGE_CLAMP = 200000; // per usage field, per call
 const RETRY_MIN_MS = 2500;
+const MAX_PROMPT_CHARS = 60000; // CPU proxy that does not depend on a clock (Workers freezes timers during pure compute)
+// Wall-clock budget for tokenise + guards per ask (measured with performance.now; in a Worker the clock may not advance during compute, so MAX_PROMPT_CHARS is the backstop).
+export const privacyBudget = { ms: 8 };
+
+// Sheet fields shown to the model (ask-build.js FIELD_ORDER). STRUCTURED values are short enumerated game data; FREE_TEXT is whatever the member typed.
+// Any field not listed is free-text (the safe default). Free-text fields are sent only when they pass the strict guard; a structured field that fails stops Claude.
+export const STRUCTURED_FIELDS = ["class", "race", "spec_path", "spec_at_40", "level", "role", "professions", "launch_state"];
+export const FREE_TEXT_FIELDS = ["plan_zone", "goals"];
+export const classifyField = (k) => (STRUCTURED_FIELDS.includes(k) ? "structured" : "free");
+
 const MODELS = {
   fast: ["RESEARCH_CLAUDE_MODEL_FAST", "claude-haiku-5-5", "RESEARCH_CLAUDE_FALLBACK_FAST", "claude-haiku-4-5-20251001"],
   deep: ["RESEARCH_CLAUDE_MODEL_DEEP", "claude-sonnet-5-5", "RESEARCH_CLAUDE_FALLBACK_DEEP", "claude-sonnet-4-5-20250929"],
@@ -41,29 +58,127 @@ export const monthTag = (now = new Date()) => now.toISOString().slice(0, 7).repl
 export const counterKey = (now) => `claude_tokens_${monthTag(now)}`;
 export const alertKey = (now) => `alert:claude-cap:${monthTag(now)}`;
 
-// Tokens used this month. Throws when the row cannot be read or is not a number: the caller skips Claude.
-export async function readTokensUsed(env, now = new Date()) {
-  const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(counterKey(now)).first();
-  if (!row) return 0;
-  const n = Number(row.json);
-  if (!Number.isFinite(n) || n < 0) throw new Error("claude token counter is not a number");
-  return n;
+// ---- spend guard ------------------------------------------------------------------------------------------------------------------------------------
+let pausedUntil = 0;
+const pauseClaude = () => { pausedUntil = Date.now() + PAUSE_MS; };
+export function resetResearchClaudeForTests() { pausedUntil = 0; ctxCache.clear(); }
+
+// Counts all four usage fields (cache writes and reads are billed), each clamped to [0, USAGE_CLAMP]. A missing block, NaN, a non-number or a negative means the
+// estimate (assume the worst we sent), never zero.
+const USAGE_FIELDS = ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"];
+export function usageTokens(usage, estimate) {
+  if (!usage || typeof usage !== "object") return estimate;
+  let sum = 0;
+  let seen = 0;
+  for (const k of USAGE_FIELDS) {
+    const raw = usage[k];
+    if (raw === undefined || raw === null) continue;
+    if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) return estimate;
+    sum += Math.min(raw, USAGE_CLAMP);
+    seen++;
+  }
+  return seen && sum > 0 ? Math.ceil(sum) : estimate; // a real response always used some input; 0 total is not believable
 }
 
-// One atomic statement: no read-modify-write window between concurrent asks.
-export async function addTokensUsed(env, tokens, now = new Date()) {
-  const n = Math.max(0, Math.floor(Number(tokens) || 0));
-  if (!n) return;
-  await env.DB.prepare(
-    "INSERT INTO kv_state (key, json, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET json = CAST(CAST(json AS INTEGER) + CAST(?2 AS INTEGER) AS TEXT), updated_at = ?3"
-  ).bind(counterKey(now), String(n), now.toISOString()).run();
-}
+// One atomic statement: add the estimate only while the month is under the cap (and the stored value is a plain integer). Rows come back only on success.
+const RESERVE_SQL =
+  "INSERT INTO kv_state (key, json, updated_at) SELECT ?1, CAST(CAST(?2 AS INTEGER) AS TEXT), ?3 WHERE ?4 > 0 " +
+  "ON CONFLICT(key) DO UPDATE SET json = CAST(CAST(json AS INTEGER) + CAST(?2 AS INTEGER) AS TEXT), updated_at = ?3 WHERE CAST(json AS INTEGER) < ?4 AND json NOT GLOB '*[^0-9]*' RETURNING json";
+const ADJUST_SQL = "UPDATE kv_state SET json = CAST(CAST(MAX(0, CAST(json AS INTEGER) + CAST(?2 AS INTEGER)) AS INTEGER) AS TEXT), updated_at = ?3 WHERE key = ?1";
 
-async function alertOnce(env, cap, used, now = new Date()) {
+export async function reserveTokens(env, estimate, cap, now = new Date()) {
+  const res = await env.DB.prepare(RESERVE_SQL).bind(counterKey(now), Math.max(1, Math.floor(estimate)), now.toISOString(), cap).all();
+  return Boolean(res && Array.isArray(res.results) && res.results.length === 1);
+}
+async function adjustTokens(env, delta, now = new Date()) {
+  if (!delta) return;
+  await env.DB.prepare(ADJUST_SQL).bind(counterKey(now), Math.trunc(delta), now.toISOString()).run();
+}
+async function alertOnce(env, cap, now = new Date()) {
   try {
     await env.DB.prepare("INSERT OR IGNORE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
-      .bind(alertKey(now), JSON.stringify({ kind: "claude-monthly-token-cap", month: monthTag(now), cap, used }), now.toISOString()).run();
+      .bind(alertKey(now), JSON.stringify({ kind: "claude-monthly-token-cap", month: monthTag(now), cap }), now.toISOString()).run();
   } catch {}
+}
+
+// ---- name map: compiled once per roster+party, only the nonce changes per request ----------------------------------------------------------------
+const ctxCache = new Map();
+function contextFor(members) {
+  const key = JSON.stringify(members);
+  let c = ctxCache.get(key);
+  if (!c) {
+    const roster = { members, genericAliases: [...genericAliases] };
+    const template = buildNameMap(members, null, { genericAliases, nonce: "tmpl" });
+    c = { roster, template };
+    if (ctxCache.size >= 8) ctxCache.clear();
+    ctxCache.set(key, c);
+  }
+  return c;
+}
+function makeNonce() {
+  const bytes = new Uint8Array(3);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 4);
+}
+function cloneMap(t, nonce) {
+  const re = (s) => (typeof s === "string" ? s.split(".tmpl}").join(`.${nonce}}`) : s);
+  const esc = nonce.replace(/[^a-z0-9]/gi, "");
+  return {
+    entries: t.entries.map((e) => ({ ...e, token: re(e.token) })),
+    names: new Map([...t.names].map(([k, v]) => [k, re(v)])),
+    byToken: new Map([...t.byToken].map(([k, v]) => [re(k), { ...v }])),
+    ids: new Map([...t.ids].map(([k, v]) => [k, re(v)])),
+    nonce,
+    special: Object.fromEntries(Object.entries(t.special).map(([k, v]) => [k, re(v)])),
+    tokenFor: (i) => `{P${i + 1}.${nonce}}`,
+    askerToken: null,
+    splitRe: new RegExp(`(\\{(?:P\\d+|ID|ALL|INVITE|GUILD)\\.${esc}\\})`),
+    tokRe: new RegExp(`\\{(P\\d+|ID|ALL|INVITE|GUILD)\\.${esc}\\}`, "g"),
+  };
+}
+
+// ---- the party document: names, guarded segments, free-text filter --------------------------------------------------------------------------------
+const fieldString = (f) => {
+  const v = f && typeof f === "object" && !Array.isArray(f) && "value" in f ? f.value : f;
+  if (v === null || v === undefined || v === "") return "";
+  return Array.isArray(v) ? v.join(", ") : typeof v === "object" ? JSON.stringify(v) : String(v);
+};
+const strings = (v, out = []) => {
+  if (typeof v === "string") out.push(v);
+  else if (v && typeof v === "object") for (const x of Object.values(v)) strings(x, out);
+  return out;
+};
+
+// Called by buildAnswerInputs in research mode, BEFORE the prompt blocks are rendered. Returns the sheets to render (free-text fields that fail the guard removed),
+// the member list for the name map, and `mandatory`: raw strings that must pass the guard before Claude is called. Never throws: { failed: true } means skip Claude.
+export function researchParty(sheets, stateMap) {
+  try {
+    const list = Array.isArray(sheets) ? sheets : [];
+    const members = researchMembersFor(list);
+    const ctx = contextFor(members);
+    const passes = (text) => { try { guardUserText([tokenise(text, ctx.template)], ctx.roster); return true; } catch { return false; } };
+    const mandatory = [];
+    let dropped = 0;
+    const out = list.map((s) => {
+      if (!s || typeof s !== "object" || !s.fields || typeof s.fields !== "object") return s;
+      const fields = {};
+      for (const [k, f] of Object.entries(s.fields)) {
+        const text = fieldString(f);
+        if (!text) { fields[k] = f; continue; }
+        if (classifyField(k) === "structured") { mandatory.push(text); fields[k] = f; }
+        else if (passes(text)) fields[k] = f;
+        else dropped++;
+      }
+      return { ...s, fields };
+    });
+    const signups = stateMap && stateMap.signups && stateMap.signups.roster;
+    if (signups && typeof signups === "object") for (const [k, v] of Object.entries(signups)) mandatory.push(k, ...strings(v));
+    const tonight = stateMap && stateMap.tonight;
+    if (tonight) mandatory.push(...strings(tonight));
+    return { members, sheets: out, mandatory: mandatory.filter((x) => typeof x === "string" && x), dropped };
+  } catch {
+    return { failed: true, sheets, mandatory: [], dropped: 0 };
+  }
 }
 
 // ---- tokenised prompt -----------------------------------------------------------------------------------------------------------------------------
@@ -71,31 +186,44 @@ const SAFE_ASKER = /^[\p{L}\p{N} _.'-]{1,32}$/u;
 const LEFTOVER_TOKEN = /\{\s{0,3}(?:p\s{0,3}\d|id\b|all\b|invite\b|guild\b)/i;
 
 // Builds the per-request name map and the tokenised prompts. Never throws: { ok:false, reason } means "do not call Claude; Workers AI uses the prompts as they are".
-export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, by }) {
+// An asker who is a known member is tokenised like any name. An unknown asker is tokenised BY CONSTRUCTION: only the two labels the code writes ("Asker: X (" and
+// "Question from X (journey") become a token; the asker string is never a key over the rest of the prompt (an asker called "The" must not turn every "the" into a token).
+export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, by, party }) {
   try {
-    const roster = researchRoster();
+    if (party && party.failed) return { ok: false, reason: "tokenise:error" };
+    const members = party && party.members ? party.members : researchMembers();
+    const ctx = contextFor(members); // compiled once per isolate and roster; not part of the per-ask budget
+    const t0 = performance.now();
+    const map = cloneMap(ctx.template, makeNonce());
     const askerRaw = String(by ?? "").trim();
-    const asker = askerRaw && askerRaw.toLowerCase() !== "visitor" ? askerRaw : null;
-    const map = buildNameMap(roster.members, asker, { genericAliases });
-    // An asker who is not on the roster still gets their own typed name back in the reply (their own text returning to them); the token itself carries no name.
-    if (map.askerToken && map.askerToken === map.tokenFor(roster.members.length) && SAFE_ASKER.test(askerRaw)) map.byToken.set(map.askerToken, { display: askerRaw });
-    const segments = [tokenise(question, map)];
-    if (previousQuestion) segments.push(tokenise(previousQuestion, map));
-    if (asker) segments.push(tokenise(asker, map));
+    const userSegments = [tokenise(question, map)];
+    if (previousQuestion) userSegments.push(tokenise(previousQuestion, map));
+    if (askerRaw && askerRaw.toLowerCase() !== "visitor") userSegments.push(tokenise(askerRaw, map)); // the asker string is guarded like any typed text (never used as a key)
+    const partySegments = (party && party.mandatory ? party.mandatory : []).map((t) => tokenise(t, map));
+    const system = tokenise(systemPrompt, map);
+    let user = tokenise(userPrompt, map);
+    if (askerRaw && askerRaw.toLowerCase() !== "visitor" && !ctx.template.names.has(skeleton(askerRaw))) {
+      // The swap runs AFTER tokenising (a token typed into the input would be escaped by tokenise), on the two label lines only.
+      const label = tokenise(stripFence(askerRaw, { oneLine: true }), map);
+      const tok = map.tokenFor(members.length);
+      map.byToken.set(tok, { display: SAFE_ASKER.test(askerRaw) ? askerRaw : "someone" });
+      if (label) user = user.split(`Asker: ${label} (`).join(`Asker: ${tok} (`).split(`Question from ${label} (journey`).join(`Question from ${tok} (journey`);
+    }
     return {
       ok: true,
       map,
-      roster,
-      asker,
-      system: tokenise(systemPrompt, map),
-      user: tokenise(userPrompt, map),
-      segments,
+      roster: ctx.roster,
+      system,
+      user,
+      userSegments,
+      partySegments,
+      ms: performance.now() - t0,
       // Raw model reply -> display-name text, or null when it must be discarded (a name we never send, or a token that is not ours).
       clean(raw) {
         const text = String(raw ?? "");
         if (!text.trim()) return null;
         try {
-          if (replyLeaksIdentity(text, roster)) return null;
+          if (replyLeaksIdentity(text, ctx.roster)) return null;
         } catch { return null; }
         map.tokRe.lastIndex = 0;
         if (LEFTOVER_TOKEN.test(text.replace(map.tokRe, ""))) return null;
@@ -119,22 +247,35 @@ const failReason = (e) => {
   const m = /HTTP (\d{3})/.exec(String((e && e.message) || ""));
   return m ? `claude:http-${m[1]}` : "claude:error";
 };
-const isModelMissing = (e) => /HTTP (?:404|400)\b/.test(String((e && e.message) || ""));
+// Billed or possibly billed: keep the reservation. Known not billed (a guard stop, a 4xx that is not a rate limit): give it back.
+const notBilled = (e) => Boolean(e) && (e.code === "OUTBOUND_IDENTIFIER_LEAK" || e.code === "OUTBOUND_GUARD_CONFIG" || (Number(e.status) >= 400 && Number(e.status) < 500 && Number(e.status) !== 429 && Number(e.status) !== 408));
 
 // Returns { answer, model, provider: "claude" } or { reason } (reason may be null: silent skip, e.g. no key configured).
 // call: callAnthropicClaude from ai-models.js (injected: this file must not import it back).
 export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date() }) {
   if (!anthropicAvailable(env)) return { reason: null };
+  if (Date.now() < pausedUntil) return { reason: "claude:paused" };
   if (!priv || !priv.ok) return { reason: (priv && priv.reason) || "tokenise:error" };
+  const g0 = performance.now();
+  try {
+    guardUserText(priv.userSegments, priv.roster);
+    for (const seg of priv.partySegments) guardUserText([seg], priv.roster);
+  } catch (e) { return { reason: guardReason(e) }; }
+  if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
+
   const at = now();
   const cap = monthlyTokenCap(env);
-  let used;
-  try { used = await readTokensUsed(env, at); } catch { return { reason: "claude:counter-error" }; }
-  if (used >= cap) {
-    await alertOnce(env, cap, used, at);
-    return { reason: "claude:cap" };
+  const estimate = Math.ceil((priv.system.length + priv.user.length) / 3) + RESEARCH_MAX_TOKENS;
+  try {
+    if (!(await reserveTokens(env, estimate, cap, at))) {
+      await alertOnce(env, cap, at);
+      return { reason: "claude:cap" };
+    }
+  } catch {
+    pauseClaude(); // a counter that cannot be written must not let spend go unrecorded
+    return { reason: "claude:counter-error" };
   }
-  try { guardUserText(priv.segments, priv.roster, priv.asker ? { asker: priv.asker } : {}); } catch (e) { return { reason: guardReason(e) }; }
+  const settle = async (delta) => { try { await adjustTokens(env, delta, at); } catch { pauseClaude(); } };
 
   const { primary, fallback } = researchClaudeModels(env, deep);
   const deadlineAt = Date.now() + CLAUDE_TIMEOUT_MS;
@@ -145,17 +286,15 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
     try {
       res = await attempt(primary);
     } catch (e) {
-      if (e && e.code === "OUTBOUND_IDENTIFIER_LEAK") throw e;
-      if (!(isModelMissing(e) && fallback && fallback !== primary && deadlineAt - Date.now() >= RETRY_MIN_MS)) throw e;
-      res = await attempt(fallback); // one retry, and only for a model-not-found style answer
+      if (!(e && e.modelMissing === true && fallback && fallback !== primary && deadlineAt - Date.now() >= RETRY_MIN_MS)) throw e;
+      res = await attempt(fallback); // one retry, and only for a model-not-found answer (never credit, auth or rate errors)
     }
   } catch (e) {
+    if (notBilled(e)) await settle(-estimate);
     if (e && (e.code === "OUTBOUND_IDENTIFIER_LEAK" || e.code === "OUTBOUND_GUARD_CONFIG")) return { reason: guardReason(e) };
     return { reason: failReason(e) };
   }
-  const u = res.usage || {};
-  const spent = (Number(u.input_tokens) || 0) + (Number(u.output_tokens) || 0) || Math.ceil((priv.system.length + priv.user.length) / 3) + RESEARCH_MAX_TOKENS; // no usage block: assume the worst we sent
-  try { await addTokensUsed(env, spent, at); } catch { console.warn("[research] claude token counter write failed"); }
+  await settle(usageTokens(res.usage, estimate) - estimate);
   const text = priv.clean(res.answer);
   if (text === null) return { reason: "claude:reply-flagged" };
   return { answer: text, model: res.model, provider: "claude" };

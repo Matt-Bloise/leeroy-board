@@ -1,6 +1,7 @@
-// /ask research mode: provider forcing. Every /ask prompt carries group context (PARTY_STATE names, YOUR_BUILD, PARTY_BUILDS), and the only outside key the Worker holds
-// is a free-tier Gemini key whose terms allow product-improvement use. So with ASK_RESEARCH on, the model call goes to the Workers AI binding and nowhere else: not the
-// asker's chosen provider, and not as a fallback hop. One helper so later work items (W5 budget, W6a name aliasing) reuse the same rule.
+// /ask research mode: provider forcing. Every /ask prompt carries group context (PARTY_STATE names, YOUR_BUILD, PARTY_BUILDS), and the outside keys the Worker holds include a
+// free-tier Gemini key whose terms allow product-improvement use. So with ASK_RESEARCH on, the chosen provider is always the Workers AI binding (never the asker's choice, never
+// a fallback hop to Gemini or any other provider). The one outside hop is Claude, tried first in research/claude.js, and only after tokenising and the outbound guards; when it
+// is skipped or fails, Workers AI (inside Cloudflare) answers. One helper so every work item reuses the same rule.
 import { researchEnabled } from "./index.js";
 
 export const RESEARCH_PROVIDER = "workers-ai";

@@ -30,7 +30,7 @@ import { researchEnabled, researchAnswer } from "./research/index.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
-import { prepareResearchPrivacy, tryResearchClaude } from "./research/claude.js";
+import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -389,6 +389,7 @@ export async function fetchWithGatewayFallback({
   metadata = null,
   deadlineAt = null,
   allowDirectFallback = true, // false only for Anthropic BYOK: the key lives in the gateway, so a direct request would be unauthenticated
+  singleHop = false, // research mode: one send per attempt (the gateway if configured, else direct), never a gateway send followed by a direct one
 }) {
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
   const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN)) || ""; // never the account-wide deploy token
@@ -421,11 +422,11 @@ export async function fetchWithGatewayFallback({
       // If gateway returns success (2xx), return immediately
       if (resp.ok) return resp;
       // BYOK: no direct hop; the caller sees the gateway's error and falls back to Workers AI
-      if (!allowDirectFallback) return resp;
+      if (!allowDirectFallback || singleHop) return resp;
       // If gateway returns 401/403/404 or server error, fall back to direct endpoint
       console.warn(`[AI-Gateway] HTTP ${resp.status} from ${gwUrl}, falling back to direct endpoint`);
     } catch (err) {
-      if (!allowDirectFallback) throw scrubError(err);
+      if (!allowDirectFallback || singleHop) throw scrubError(err);
       console.warn(`[AI-Gateway] Error for ${gwUrl}: ${scrubSecrets(err && err.message, headers["x-api-key"])}, falling back to direct endpoint`);
     }
   }
@@ -461,7 +462,7 @@ export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep,
       {
         type: "text",
         text: systemPrompt,
-        cache_control: { type: "ephemeral" },
+        ...(wantUsage ? {} : { cache_control: { type: "ephemeral" } }), // research mode: no cached friend text
       },
     ],
     messages: [{ role: "user", content: userPrompt }],
@@ -485,11 +486,24 @@ export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep,
     metadata,
     deadlineAt,
     allowDirectFallback: auth.mode !== "gateway-byok",
+    singleHop: Boolean(wantUsage),
   });
 
   if (!resp.ok) {
     if ((resp.status === 401 || resp.status === 403) && auth.mode === "store") clearStoreKey(env); // a rotated key is re-read on the next ask
-    throw new Error(`Anthropic API HTTP ${resp.status}`); // status only: the provider body never reaches an error, a trace row or a user
+    const httpErr = new Error(`Anthropic API HTTP ${resp.status}`); // status only: the provider body never reaches an error, a trace row or a user
+    if (wantUsage) {
+      // Research mode keeps two internal facts (never shown, never logged): the status, and whether the answer says the MODEL is missing (not_found_error naming the model,
+      // or invalid_request_error saying the model does not exist). Credit, auth, rate and every other error never trigger the fallback model.
+      httpErr.status = resp.status;
+      try {
+        const j = await resp.json();
+        const type = j && j.error && typeof j.error.type === "string" ? j.error.type : "";
+        const msg = j && j.error && typeof j.error.message === "string" ? j.error.message : "";
+        httpErr.modelMissing = (type === "not_found_error" && /model/i.test(msg)) || (type === "invalid_request_error" && /model/i.test(msg) && /not found|does not exist|unknown model|invalid model/i.test(msg));
+      } catch { httpErr.modelMissing = false; }
+    }
+    throw httpErr;
   }
 
   const data = await resp.json();
@@ -929,7 +943,10 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     }
 
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
-    const sheets = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
+    const sheets0 = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
+    // Research mode: names on the sheets join the roster as keys, and a free-text field that fails the strict guard is dropped before any block is rendered (research/claude.js).
+    const rparty = research ? researchParty(sheets0, stateMap) : null;
+    const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
     const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
     const partyBuilds = renderPartyBuilds(sheets, askerSheet);
@@ -1063,7 +1080,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
     const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1247,7 +1264,7 @@ export async function answerWithAi({
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
     // Research mode: names become per-request tokens before any model sees the prompt (research/claude.js). Workers AI gets the same tokenised prompt; with the flag off these are the
     // untouched prompts. If tokenising fails Claude is skipped and Workers AI (inside Cloudflare) takes the prompt as it is.
-    const priv = research ? prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, by }) : null;
+    const priv = research ? prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, by, party: inputs.researchParty }) : null;
     const sendSystem = priv && priv.ok ? priv.system : systemPrompt;
     const sendUser = priv && priv.ok ? priv.user : userPrompt;
     let researchNote = "";
