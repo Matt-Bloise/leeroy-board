@@ -1,4 +1,4 @@
-// /ask research mode (ASK_RESEARCH on): the Claude hop. Provider order is Claude -> Workers AI -> library facts; no other provider ever sees friend text.
+// /ask research mode (ASK_RESEARCH on): the Claude hop. Provider order is Claude (compose on the deep model, one Haiku-class retry on 529/5xx/timeout, max 2 sends) -> Workers AI -> library facts; no other provider ever sees friend text.
 //
 // Every outside call happens only after (1) the whole prompt is tokenised (privacy/tokenise.js: names become per-request tokens; the name list is the roster PLUS
 // every name on the party sheets, so a sixth member or a character name is a key too), (2) the strict guard passes over EVERY friend-writable segment (question,
@@ -21,6 +21,7 @@ import { RESEARCH_MAX_TOKENS } from "./rules.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 2000000;
 export const CLAUDE_TIMEOUT_MS = 9000; // one budget for the first call and the model-id retry together; Workers AI keeps its own 12s after it, inside the 24s ask deadline
+export const CLAUDE_COMPOSE_MS = 6000; // the compose send's own deadline inside CLAUDE_TIMEOUT_MS; a timeout there still leaves >= RETRY_MIN_MS for the Haiku-class retry
 export const PAUSE_MS = 10 * 60 * 1000;
 export const USAGE_CLAMP = 200000; // per usage field, per call
 const RETRY_MIN_MS = 2500;
@@ -254,6 +255,8 @@ const failReason = (e) => {
   const m = /HTTP (\d{3})/.exec(String((e && e.message) || ""));
   return m ? `claude:http-${m[1]}` : "claude:error";
 };
+// Overload-class failures that justify the one Haiku-class retry: Anthropic 529, any 5xx, or a timeout. Never 401/403/400/429/other 4xx.
+const overloaded = (e) => Boolean(e) && (e.code === "ai_timeout" || e.name === "AiTimeoutError" || e.name === "TimeoutError" || Number(e.status) === 529 || (Number(e.status) >= 500 && Number(e.status) < 600));
 // Billed or possibly billed: keep the reservation. Known not billed (a guard stop, a 4xx that is not a rate limit): give it back.
 const notBilled = (e) => Boolean(e) && (e.code === "OUTBOUND_IDENTIFIER_LEAK" || e.code === "OUTBOUND_GUARD_CONFIG" || (Number(e.status) >= 400 && Number(e.status) < 500 && Number(e.status) !== 429 && Number(e.status) !== 408));
 
@@ -284,17 +287,35 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   }
   const settle = async (delta) => { try { await adjustTokens(env, delta, at); } catch { pauseClaude(); } };
 
-  const { primary, fallback } = researchClaudeModels(env, deep);
-  const deadlineAt = Date.now() + CLAUDE_TIMEOUT_MS;
+  // Compose always runs on the deep (Sonnet-class) model; the ask's `deep` flag no longer picks the model here. The fast (Haiku-class) model is only the overload fallback.
+  // At most 2 Anthropic sends per ask: compose, then ONE of (a) the 4.5 id of the same family on a model-not-found, or (b) the Haiku-class model on 529/5xx/timeout.
+  const { primary, fallback } = researchClaudeModels(env, true);
+  const { primary: fastModel } = researchClaudeModels(env, false);
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + CLAUDE_TIMEOUT_MS;
+  const composeDeadlineAt = startedAt + CLAUDE_COMPOSE_MS; // leaves the Haiku-class retry its share of the budget after a compose timeout
   const beforeSend = (body) => guardBody(body, priv.roster);
-  const attempt = (modelOverride) => call({ env, systemPrompt: priv.system, userPrompt: priv.user, deep, skipCache: true, metadata: null, deadlineAt, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
+  const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: priv.system, userPrompt: priv.user, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
   let res;
   try {
     try {
-      res = await attempt(primary);
+      res = await attempt(primary, composeDeadlineAt);
     } catch (e) {
-      if (!(e && e.modelMissing === true && fallback && fallback !== primary && deadlineAt - Date.now() >= RETRY_MIN_MS)) throw e;
-      res = await attempt(fallback); // one retry, and only for a model-not-found answer (never credit, auth or rate errors)
+      if (e && e.modelMissing === true && fallback && fallback !== primary && deadlineAt - Date.now() >= RETRY_MIN_MS) {
+        res = await attempt(fallback); // same reservation: a model-not-found answer is not billed
+      } else if (overloaded(e) && fastModel && fastModel !== primary && deadlineAt - Date.now() >= RETRY_MIN_MS) {
+        // The failed compose send keeps its reservation (possibly billed). The retry reserves and settles its own estimate under the same cap and pause rules.
+        try {
+          if (!(await reserveTokens(env, estimate, cap, at))) {
+            await alertOnce(env, cap, at);
+            return { reason: "claude:cap" };
+          }
+        } catch {
+          pauseClaude();
+          return { reason: "claude:counter-error" };
+        }
+        res = await attempt(fastModel);
+      } else throw e;
     }
   } catch (e) {
     if (notBilled(e)) await settle(-estimate);

@@ -77,18 +77,20 @@ test("order: Claude answers first, with the research model, 700 tokens, no cache
   const r = await ask(ABSTAIN_Q);
   assert.equal(r.anth.length, 1, r.row.model);
   assert.equal(r.wai.length, 0);
-  assert.equal(r.anth[0].model, "claude-haiku-5-5");
+  assert.equal(r.anth[0].model, "claude-sonnet-5-5", "research compose is the Sonnet-class (deep) model");
   assert.equal(r.anth[0].body.max_tokens, 700);
-  assert.match(r.row.model, /^claude:claude-haiku-5-5\+research/);
+  assert.match(r.row.model, /^claude:claude-sonnet-5-5\+research/);
   assert.match(r.answer, /Short answer first/);
   assert.equal(r.anth[0].headers["x-api-key"], FAKE_KEY);
   assert.ok(!r.anth[0].raw.includes(FAKE_KEY), "the key is a header, never in the body");
   assert.deepEqual(r.others.filter((u) => /groq|gemini|googleapis|openrouter|cerebras|azure/.test(u)), [], "no other provider ever sees the ask");
 });
 
-test("deep uses the deep research model", async () => {
-  const r = await ask(ABSTAIN_Q, { deep: true });
-  assert.equal(r.anth[0].model, "claude-sonnet-5-5");
+test("compose always uses the deep research model: the ask's deep flag no longer picks the Haiku-class one", async () => {
+  for (const deep of [false, true]) {
+    const r = await ask(ABSTAIN_Q, { deep });
+    assert.deepEqual(r.anth.map((a) => a.model), ["claude-sonnet-5-5"], `deep=${deep}`);
+  }
 });
 
 test("Claude unavailable: Workers AI answers and no Anthropic request is made", async () => {
@@ -127,14 +129,14 @@ test("both down: library facts with the honest line, and still no other provider
 
 test("model id: a 404 on the new id retries once with the 4.5 fallback id", async () => {
   const NF = (m) => ({ status: 404, errBody: { type: "error", error: { type: "not_found_error", message: `model: ${m}` } } });
-  const r = await ask(ABSTAIN_Q, { claude: (body) => (body.model === "claude-haiku-5-5" ? NF(body.model) : { status: 200, text: "**Fallback model answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
-  assert.deepEqual(r.anth.map((a) => a.model), ["claude-haiku-5-5", "claude-haiku-4-5-20251001"]);
+  const r = await ask(ABSTAIN_Q, { claude: (body) => (body.model === "claude-sonnet-5-5" ? NF(body.model) : { status: 200, text: "**Fallback model answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
+  assert.deepEqual(r.anth.map((a) => a.model), ["claude-sonnet-5-5", "claude-sonnet-4-5-20250929"]);
   assert.match(r.answer, /Fallback model answer/);
   assert.equal(r.wai.length, 0);
-  const both = await ask(ABSTAIN_Q, { deep: true, claude: (b) => NF(b.model) });
+  const both = await ask(ABSTAIN_Q, { claude: (b) => NF(b.model) });
   assert.deepEqual(both.anth.map((a) => a.model), ["claude-sonnet-5-5", "claude-sonnet-4-5-20250929"], "exactly one retry");
   assert.equal(both.wai.length, 1);
-  const custom = await ask(ABSTAIN_Q, { env: (e) => { e.RESEARCH_CLAUDE_MODEL_FAST = "model-x"; e.RESEARCH_CLAUDE_FALLBACK_FAST = "model-y"; }, claude: (b) => (b.model === "model-x" ? { status: 400, errBody: { type: "error", error: { type: "invalid_request_error", message: "model: model-x does not exist" } } } : { status: 200, text: "**Ok answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
+  const custom = await ask(ABSTAIN_Q, { env: (e) => { e.RESEARCH_CLAUDE_MODEL_DEEP = "model-x"; e.RESEARCH_CLAUDE_FALLBACK_DEEP = "model-y"; }, claude: (b) => (b.model === "model-x" ? { status: 400, errBody: { type: "error", error: { type: "invalid_request_error", message: "model: model-x does not exist" } } } : { status: 200, text: "**Ok answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
   assert.deepEqual(custom.anth.map((a) => a.model), ["model-x", "model-y"]);
 });
 
@@ -465,13 +467,13 @@ test("4. the model fallback retries only on a model-not-found signal, never on c
     assert.equal(r.anth.length, 1, `${c.status} ${c.errBody ? c.errBody.error.type : "no body"} must not retry`);
     assert.equal(r.wai.length >= 1, true);
   }
-  const miss = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-haiku-5-5" ? e(404, "not_found_error", "model: claude-haiku-5-5") : { status: 200, text: OKTEXT }) });
-  assert.deepEqual(miss.anth.map((a) => a.model), ["claude-haiku-5-5", "claude-haiku-4-5-20251001"]);
-  const bad400 = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-haiku-5-5" ? e(400, "invalid_request_error", "model: claude-haiku-5-5 does not exist") : { status: 200, text: OKTEXT }) });
+  const miss = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-sonnet-5-5" ? e(404, "not_found_error", "model: claude-sonnet-5-5") : { status: 200, text: OKTEXT }) });
+  assert.deepEqual(miss.anth.map((a) => a.model), ["claude-sonnet-5-5", "claude-sonnet-4-5-20250929"]);
+  const bad400 = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-sonnet-5-5" ? e(400, "invalid_request_error", "model: claude-sonnet-5-5 does not exist") : { status: 200, text: OKTEXT }) });
   assert.equal(bad400.anth.length, 2);
   const gw = await ask(ABSTAIN_Q, { env: (x) => { x.CLOUDFLARE_ACCOUNT_ID = "acct"; x.AI_GATEWAY_ID = "gw"; }, claude: () => ({ status: 500 }) });
-  assert.equal(gw.anth.length, 1, "one send per attempt: no gateway-then-direct double hop");
-  assert.match(gw.anth[0].url, /gateway\.ai\.cloudflare\.com/);
+  assert.equal(gw.anth.length, 2, "a 500 is retried once on the Haiku-class model; still one send per attempt: no gateway-then-direct double hop");
+  for (const a of gw.anth) assert.match(a.url, /gateway\.ai\.cloudflare\.com/);
   assert.equal(gw.wai.length >= 1, true);
 });
 
@@ -570,6 +572,75 @@ test("minor. stale 'Workers AI only' wording is gone from the ASK_RESEARCH comme
   const flags = readFileSync(new URL("../../docs/runbooks/flags.md", import.meta.url), "utf8");
   assert.ok(!/so it over-counts/.test(flags));
   for (const k of ["cache_creation_input_tokens", "cpu:budget", "8 ms"]) assert.ok(flags.includes(k), k);
+});
+
+// ======================= compose on the Sonnet-class model, Haiku-class only as the fallback =======================
+const OKT = "**Composed answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed";
+const SONNET = "claude-sonnet-5-5";
+const HAIKU = "claude-haiku-5-5";
+const errOf = (status) => ({ status, errBody: { type: "error", error: { type: status === 529 ? "overloaded_error" : "api_error", message: "try later" } } });
+const slow = () => ({ status: 200, throws: Object.assign(new Error("t"), { name: "TimeoutError" }) });
+const counter = (db) => Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(`claude_tokens_${month()}`).json);
+
+test("C1. the Haiku-class model is used only after 529, 5xx or a timeout on compose, once, and its answer is used", async () => {
+  for (const [label, first] of [["529", errOf(529)], ["500", errOf(500)], ["503", errOf(503)], ["timeout", slow()]]) {
+    const r = await ask(ABSTAIN_Q, { claude: (b) => (b.model === SONNET ? first : { status: 200, text: OKT }) });
+    assert.deepEqual(r.anth.map((a) => a.model), [SONNET, HAIKU], label);
+    assert.equal(r.wai.length, 0, label);
+    assert.match(r.answer, /Composed answer/, label);
+    assert.match(r.row.model, new RegExp(`^claude:${HAIKU}\\+research`), label);
+  }
+});
+
+test("C2. at most 2 Anthropic sends per ask: both models failing goes to Workers AI, and a Haiku-class not-found does not add a third", async () => {
+  const both = await ask(ABSTAIN_Q, { claude: () => errOf(529) });
+  assert.deepEqual(both.anth.map((a) => a.model), [SONNET, HAIKU]);
+  assert.equal(both.wai.length >= 1, true);
+  assert.match(both.answer, /Workers answer first/);
+  const NF = { status: 404, errBody: { type: "error", error: { type: "not_found_error", message: "model: x" } } };
+  const hk = await ask(ABSTAIN_Q, { claude: (b) => (b.model === SONNET ? errOf(500) : NF) });
+  assert.equal(hk.anth.length, 2, "no third send");
+  const sn = await ask(ABSTAIN_Q, { claude: (b) => (b.model === SONNET ? NF : errOf(500)) });
+  assert.deepEqual(sn.anth.map((a) => a.model), [SONNET, "claude-sonnet-4-5-20250929"], "a not-found goes to the 4.5 id, not the Haiku-class one");
+  assert.equal(sn.wai.length >= 1, true);
+});
+
+test("C3. 401, 403, 400 credit, 429 and an unrelated 404 never retry on the Haiku-class model", async () => {
+  const mk = (status, type, message) => ({ status, errBody: { type: "error", error: { type, message } } });
+  for (const c of [mk(401, "authentication_error", "invalid x-api-key"), mk(403, "permission_error", "nope"), mk(400, "invalid_request_error", "Your credit balance is too low to access the API"), mk(429, "rate_limit_error", "slow down"), mk(404, "not_found_error", "route")]) {
+    const r = await ask(ABSTAIN_Q, { claude: () => c });
+    assert.equal(r.anth.length, 1, `${c.status} ${c.errBody.error.type}`);
+    assert.equal(r.anth[0].model, SONNET);
+    assert.equal(r.wai.length >= 1, true);
+  }
+});
+
+test("C4. cap: each attempt reserves and settles its own estimate; the cap and the pause still apply to the retry", async () => {
+  const E = await learnE();
+  // a failed 5xx attempt keeps its reservation (possibly billed); the Haiku-class retry reserves its own and settles to its real usage
+  const db = schemaDb();
+  const r = await ask(ABSTAIN_Q, { db, claude: (b) => (b.model === SONNET ? errOf(529) : { status: 200, text: OKT, usage: { input_tokens: 100, output_tokens: 20 } }) });
+  assert.deepEqual(r.anth.map((a) => a.model), [SONNET, HAIKU]);
+  assert.equal(counter(db), E + 120, "one kept reservation for the failed send plus the real usage of the retry");
+  // room for only one reservation: compose is sent, the retry is refused by the cap, Workers AI answers, one alert row
+  const db2 = schemaDb();
+  const r2 = await ask(ABSTAIN_Q, { db: db2, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = String(Math.floor(1.5 * E)); }, claude: () => errOf(529) });
+  assert.equal(r2.anth.length, 1, "the retry never goes out over the cap");
+  assert.equal(r2.wai.length >= 1, true);
+  assert.equal(db2.raw.prepare("SELECT COUNT(*) AS n FROM kv_state WHERE key LIKE 'alert:claude-cap:%'").get().n, 1);
+  assert.ok(counter(db2) <= Math.floor(1.5 * E));
+  // a retry that fails with a not-billed 4xx gives its own reservation back
+  const db3 = schemaDb();
+  await ask(ABSTAIN_Q, { db: db3, claude: (b) => (b.model === SONNET ? errOf(500) : { status: 401 }) });
+  assert.equal(counter(db3), E, "only the first (kept) reservation remains");
+});
+
+test("C5. ASK_RESEARCH off: the legacy provider path is untouched by the compose-model change", async () => {
+  const off = await ask("who tanks tonight", { research: false, provider: "claude", deep: true });
+  assert.equal(off.anth.length, 1);
+  assert.equal(off.anth[0].model, "claude-sonnet-4-5-20250929", "legacy deep id");
+  const fast = await ask("who tanks tonight", { research: false, provider: "claude" });
+  assert.equal(fast.anth[0].model, "claude-haiku-4-5-20251001");
 });
 
 // ======================= round 3 (second-family review of the budget code) =======================
