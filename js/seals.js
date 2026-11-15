@@ -160,7 +160,8 @@
   const F = { lane: {}, built: false };
   const members = () => (K.D && K.D.party ? K.D.party.members : []);
   const cardOf = (m) => $(`#cards .card[data-slug="${K.MEM.slug(m.name)}"]`);
-  const roleNow = (m) => m.role_now || (/^damage until \d+/i.test(m.role_detail || "") ? "damage" : m.role);
+  const lane = (r) => (LANES.some(([k]) => k === r) ? r : "damage"); // a member with no role shown (or one this board has no lane for) sits in the damage lane; the lanes are the three roles
+  const roleNow = (m) => lane(m.role_now || (/^damage until \d+/i.test(m.role_detail || "") ? "damage" : m.role));
   const roleFrom = (m) => (m.role_from && (m.role_from.role || (typeof m.role_from === "string" && m.role_from))) || ((/healer from level (\d+)/i.exec(m.role_detail || "") || [])[1] ? "healer" : null);
   function fiveSum() {
     const ms = members(), n = Object.fromEntries(LANES.map(([r]) => [r, 0])), diff = [];
@@ -184,7 +185,7 @@
       h("p", { class: "sr-only", text: "Press a coin to turn its card over. Drag a coin between lanes to try a different formation; arrow keys move the focused coin." }));
     lede.parentNode.insertBefore(form, lede.nextSibling);
     ms.forEach((m) => {
-      const b = h("button", { class: "fc", type: "button", "data-name": m.name, "data-k": m.class_key, "aria-pressed": "false", style: `--cc: ${K.classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.class}. Turn the card over. Arrow keys move between lanes.` },
+      const b = h("button", { class: "fc", type: "button", "data-name": m.name, "data-k": m.class_key, "aria-pressed": "false", style: `--cc: ${K.classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.class || "build hidden"}. Turn the card over. Arrow keys move between lanes.` },
         h("span", { class: "fc-in" }, h("span", { class: "fc-face fc-f" }, window.BoardCrest.guard(h("img", { src: window.BoardCrest.src(m.class_key), alt: "", width: 320, height: 320, decoding: "async" }), m.class_key), h("span", { class: "fc-nm", text: m.name })), h("span", { class: "fc-face fc-b" }, h("b", { text: m.class }), h("i", { text: "spells" }))));
       coinInput(b, m); F.lane[m.name] = roleNow(m); $(`.fl[data-role="${roleNow(m)}"] .fl-tray`, form).append(b);
     });

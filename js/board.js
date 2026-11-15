@@ -150,6 +150,7 @@ const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, co
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 // A member can hide race, class, spec, professions and zone, so any of those can be absent from the public party document.
 const raceClass = (m) => [m && m.race, m && m.class].filter(Boolean).join(" ") || "Build hidden";
+const classOf = (m) => (m && m.class) || "Class hidden"; // the class alone; a member can hide it (a hidden value is absent from the public party document)
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
 /* party.n (data/client.json flags, default off): copy that said "five" says the real member count. Off, or with five members, every string is the old one. Scene ids and hashes (#five) never change.
@@ -323,7 +324,7 @@ function memberByKey(key) { return (D.party && D.party.members.find((m) => m.cla
 function memberByName(name) { return (D.party && D.party.members.find((m) => m.name === name)) || null; }
 
 const GLYPH = { tank: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z", healer: "M12 5v14M5 12h14", damage: "M5 19L17 7M14 4h6v6M7 15l2 2M4 20l2-2" };
-const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", role: "img", "aria-label": role }, s("path", { d: GLYPH[role] || GLYPH.damage }));
+const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", role: "img", "aria-label": role || "role not shown" }, s("path", { d: GLYPH[role] || GLYPH.damage }));
 
 let clockTimer = null;
 function launchLine() {
@@ -730,9 +731,9 @@ function renderCards() {
       return h("li", { class: "spell" }, h("div", { class: "spell-name" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null), vals ? h("div", { class: "spell-vals", text: vals }) : null, h("div", { class: "spell-meta", text: meta }));
     }));
     list.setAttribute("data-j", "e");
-    const names = h("ul", { class: "sp-names", "data-j": "g c", "aria-label": `${m.class} spells at ${lvl}` }, spells.map((sp, si) => h("li", {}, h("button", { type: "button", class: "sp-tt", "data-cls": m.class, "data-sp": si, "aria-expanded": "false", "aria-controls": "ttc" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null))));
+    const names = h("ul", { class: "sp-names", "data-j": "g c", "aria-label": `${m.class ? `${m.class} spells` : "Spells"} at ${lvl}` }, spells.map((sp, si) => h("li", {}, h("button", { type: "button", class: "sp-tt", "data-cls": m.class || "", "data-sp": si, "aria-expanded": "false", "aria-controls": "ttc" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null))));
     const back = h("div", { class: "face back" },
-      h("div", { class: "back-head" }, h("h3", { text: `${m.class} at ${lvl}` }), h("span", { class: "label", text: `client ${D.client.build}` })),
+      h("div", { class: "back-head" }, h("h3", { text: m.class ? `${m.class} at ${lvl}` : `At ${lvl}` }), h("span", { class: "label", text: `client ${D.client.build}` })),
       names, list, flipBtn(`Back to ${m.name}`));
     back.inert = true;
     card.append(h("div", { class: "card-inner" }, front, back));
@@ -1090,7 +1091,7 @@ function renderWheel() {
   });
   const nodes = keys.map((k) => {
     const m = memberByKey(k), [x, y] = pos[k];
-    const g = s("g", { class: `wheel-node${ART.crest[k] ? " has-crest" : ""}`, tabindex: 0, role: "button", "aria-pressed": "false", "aria-label": `${m.name}, ${m.class}: show buffs`, style: `--nc: ${classVar(k)}`, "data-k": k, "data-x": x, "data-y": y },
+    const g = s("g", { class: `wheel-node${ART.crest[k] ? " has-crest" : ""}`, tabindex: 0, role: "button", "aria-pressed": "false", "aria-label": `${m.name}, ${classOf(m)}: show buffs`, style: `--nc: ${classVar(k)}`, "data-k": k, "data-x": x, "data-y": y },
       s("circle", { cx: x, cy: y, r: 26 }), ART.crest[k] ? crestSvg(k, x, y) : null, s("text", { x, y: y + 44, text: m.name }), s("text", { x, y: y + 60, style: "font-size:16.5px;fill:var(--l-text)", text: " " + m.class }));
     svg.append(g); return g;
   });
@@ -1202,7 +1203,7 @@ function renderBuffsDeep() {
   });
   box.replaceChildren(...[
     h("h3", { id: "deep-h", text: me ? "For you" : "Who gives what" }),
-    me && !BD.pick ? h("div", { class: "deep-who", role: "group", "aria-label": "Whose buffs are shown" }, h("b", { class: "deep-me", text: `Showing ${me.name}, ${me.race} ${me.class}.` }), h("button", { type: "button", class: "lib-tool", id: "deep-change", onclick: () => { BD.pick = true; renderBuffsDeep(); const x = $("#buffs-deep .deep-who button"); if (x) x.focus({ preventScroll: true }); } }, "Change person"))
+    me && !BD.pick ? h("div", { class: "deep-who", role: "group", "aria-label": "Whose buffs are shown" }, h("b", { class: "deep-me", text: `Showing ${me.name}, ${raceClass(me)}.` }), h("button", { type: "button", class: "lib-tool", id: "deep-change", onclick: () => { BD.pick = true; renderBuffsDeep(); const x = $("#buffs-deep .deep-who button"); if (x) x.focus({ preventScroll: true }); } }, "Change person"))
       : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), h("span", { class: "deep-scope", text: "Only changes what this page shows you" }), D.party.members.map((m) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(!!me && me.name === m.name), style: `--cc: ${classVar(m.class_key)}`, onclick: () => { BD.pick = false; MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); const x = $("#deep-change"); if (x) x.focus({ preventScroll: true }); } }, crestMark(m), m.name))),
     h("div", { class: "deep-ctl" }, h("label", { for: "deep-level", class: "deep-l" }, "Level ", h("b", { id: "deep-l", text: String(L) })), slider, marks, six),
     h("p", { class: "deep-key", text: "Stamina adds health, Intellect adds mana, Spirit refills health and mana faster." }),
@@ -1354,7 +1355,7 @@ function buildSignupControls() {
       h("label", { for: `${q}-${v}`, text: label }))));
   }
   const sel = $("#as");
-  sel.replaceChildren(h("option", { value: "", text: "Not saying" }), ...D.party.members.map((m) => h("option", { value: m.name, text: `${m.name}, ${m.class}` })));
+  sel.replaceChildren(h("option", { value: "", text: "Not saying" }), ...D.party.members.map((m) => h("option", { value: m.name, text: `${m.name}, ${classOf(m)}` })));
   sel.addEventListener("change", () => { RT.mine.as = sel.value || null; try { localStorage.setItem("board-as", sel.value); } catch (e) {} save("as"); pushPresence(); });
   const other = $("#meet-place");
   let pause = 0;
@@ -3523,7 +3524,7 @@ function renderTonight() {
       h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...names,
         h("div", { class: "tn-first-act", role: "group", "aria-label": "Next" }, show, look), say));
   }
-  else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
+  else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${raceClass(member)}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
   const ev = tonightNext(T);
   const idx = member ? P.members.indexOf(member) : -1, person = T.people.find((x) => x.member === idx);
   const w = wk(), entries = w ? w.current.filter((e) => e.rsvp) : []; /* this week's answers only (wk) */
@@ -3762,7 +3763,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { raceClass, classOf, pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);

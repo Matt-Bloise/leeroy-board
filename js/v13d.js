@@ -77,7 +77,7 @@ const CORE = {
   timeline() { const l = evOf("launch"), r = evOf("raids"); return l && l.epoch ? { a: `${K.launchSay(l)}${r && r.epoch ? ` Raids ${r.epoch * 1000 > Date.now() ? "open" : "opened"} ${K.fmtWhen(r.epoch)}.` : ""}`, go: K.launchPast() ? null : ["Add launch to my calendar", () => saveIcs(l), "ics"] } : null; },
   five() {
     const P = D.party, me = MEM.member(); if (!P) return null;
-    const a = me ? `${me.name}: ${me.race} ${me.class}, ${typeof me.role_detail === "string" ? me.role_detail : me.role}. With you: ${K.andList(P.members.filter((x) => x !== me).map((x) => x.name))}.` : `${K.pn.word()[0].toUpperCase() + K.pn.word().slice(1)} of you: ${P.members.map((x) => `${x.name} (${x.race} ${x.class})`).join(", ")}.`;
+    const a = me ? `${me.name}: ${K.raceClass(me)}, ${typeof me.role_detail === "string" ? me.role_detail : me.role || "role not shown"}. With you: ${K.andList(P.members.filter((x) => x !== me).map((x) => x.name))}.` : `${K.pn.word()[0].toUpperCase() + K.pn.word().slice(1)} of you: ${P.members.map((x) => `${x.name} (${K.raceClass(x)})`).join(", ")}.`;
     return { a, go: ["Turn my card", () => unfold("five", me && MEM.slug(me.name))] };
   },
   roads() {
@@ -97,7 +97,7 @@ const CORE = {
   buffs() {
     const C = D.client, d = decideData(), me = MEM.member(); if (!C || !C.buffs) return null;
     const give = me ? C.buffs.list.filter((b) => !b.sixth && b.class === me.class_key).map((b) => b.name) : [], get = me && d && d.party ? d.party.buffs.filter((b) => b.giver !== me.class_key && (b.to || []).includes(me.class_key)).map((b) => b.name) : [];
-    return { a: me ? `${me.class} gives: ${give.length ? few(give) : "no group buffs"}. You get: ${get.length ? few(get) : "none from this party"}.` : `${C.buffs.list.filter((b) => !b.sixth).length} buffs pass between the ${K.pn.word()} classes.`, go: ["Show the whole table", () => openPanel($("#panel-buffs"))] };
+    return { a: me ? `${K.classOf(me)} gives: ${give.length ? few(give) : "no group buffs"}. You get: ${get.length ? few(get) : "none from this party"}.` : `${C.buffs.list.filter((b) => !b.sixth).length} buffs pass between the ${K.pn.word()} classes.`, go: ["Show the whole table", () => openPanel($("#panel-buffs"))] };
   },
   ledger() {
     const P = D.party, d = decideData(), me = MEM.member(), pe = d && me && d.people ? d.people.find((x) => x.class_key === me.class_key) : null; if (!P) return null;
@@ -111,7 +111,7 @@ const CORE = {
     return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: me ? ["Change my answer", () => unfold("signups", "rsvp")] : null, who: signupWho };
   },
   librarian() { const st = D.stats; return st ? { a: `Type /ask in #wow-forever, or write below. Median answer: ${Math.round(st.median_s)} s.`, go: ["Ask Leeroy", () => { const t = $("#ask-text"); if (t) t.focus(); else unfold("librarian"); }] } : null; },
-  library() { const me = MEM.member(); return { a: me ? `Start with your class page (${me.class}) and the page for ${me.race}s.` : "Start with the class overview, then the page for your class.", go: me ? ["Open my class page", `#library.classes.${MEM.slug(me.class_key)}`] : ["Open the class overview", "#library.classes.overview"] }; },
+  library() { const me = MEM.member(); return { a: me ? `Start with your class page (${K.classOf(me)}) and the page for ${me.race ? `${me.race}s` : "your race"}.` : "Start with the class overview, then the page for your class.", go: me ? ["Open my class page", `#library.classes.${MEM.slug(me.class_key)}`] : ["Open the class overview", "#library.classes.overview"] }; },
   decide() {
     const d = decideData(), me = MEM.member(), pe = d && me && d.people ? d.people.find((x) => x.class_key === me.class_key) : null, x = pe && pe.decisions.find((y) => y.state === "open" || y.state === "chat");
     return { a: x ? `${x.title}: ${x.state_text}. ${x.by && x.by.text ? x.by.text : ""}` : me ? "Nothing of yours is open." : "Pick your name to see your own choices.", go: ["Open that decision", () => unfold("decide")] };
@@ -235,7 +235,7 @@ function zoneCard(zone) {
   return h("div", { class: "zone-card", role: "region", "aria-label": `${zone}, zoomed in` },
     h("h3", { text: zone }),
     h("ol", { class: "zone-steps" },
-      h("li", {}, ms.length ? `${K.andList(ms.map((m) => `${m.name} (${m.race} ${m.class})`))} wake${ms.length === 1 ? "s" : ""} here.` : "Nobody at this table starts here."),
+      h("li", {}, ms.length ? `${K.andList(ms.map((m) => `${m.name} (${K.raceClass(m)})`))} wake${ms.length === 1 ? "s" : ""} here.` : "Nobody at this table starts here."),
       r ? h("li", { text: `${r.how.charAt(0).toUpperCase()}${r.how.slice(1)} to Orgrimmar.` }) : null,
       h("li", { text: zone === "Mulgore" ? "The road passes the Crossroads, then the Valley of Strength in Orgrimmar." : "Into Orgrimmar through the Valley of Strength." })),
     whole);

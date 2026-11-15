@@ -117,7 +117,7 @@ function prefill(m) {
   out.race = { value: slugOf(m.race), src: "board", locked: true };
   out.class = { value: slugOf(m.class), src: "board", locked: true };
   const sp = p && p.decisions.find((x) => x.key === "spec40");
-  const at = (n) => { const i = String(m.spec).toLowerCase().indexOf(n.toLowerCase().slice(0, 3)); return i < 0 ? 99 : i; };
+  const at = (n) => { const i = String(m.spec || "").toLowerCase().indexOf(n.toLowerCase().slice(0, 3)); return i < 0 ? 99 : i; };
   const named = sp ? sp.options.filter((o) => o.board).map((o) => o.name).sort((a, b) => at(a) - at(b)) : [];
   if (named[0]) out.spec_path = { value: slugOf(named[0]), src: "board" };
   if (named[1]) out.spec_at_40 = { value: slugOf(named[1]), src: "board" };
@@ -161,7 +161,7 @@ function lvBack(card, m) {
   const back = card.querySelector(".back"), l = lvData(m.class); if (!back || !l || back.querySelector(".ps-lv")) return;
   const row = (t, a, b) => { const n = lvNames(l, a, b); return n.length ? h("p", { class: "ps-lv-r" }, h("b", { text: `${t}: ` }), `${K.andList(n)}.`) : null; };
   const rows = [row("Levels 2 to 10", 2, 10), row("Levels 11 to 20", 11, 20)].filter(Boolean); if (!rows.length) return;
-  back.insertBefore(h("section", { class: "ps-lv", "aria-label": `${m.class} spells learned on the way to ${LV_MAX}` }, h("h4", { class: "ps-lv-h", text: "Learned on the way" }), ...rows, h("p", { class: "ps-lv-n", text: "First ranks, from the client table." })), back.querySelector(".flip"));
+  back.insertBefore(h("section", { class: "ps-lv", "aria-label": `${m.class ? `${m.class} spells` : "Spells"} learned on the way to ${LV_MAX}` }, h("h4", { class: "ps-lv-h", text: "Learned on the way" }), ...rows, h("p", { class: "ps-lv-n", text: "First ranks, from the client table." })), back.querySelector(".flip"));
 }
 function lvNow(m, n, mine) {
   const l = lvData(m.class); if (!l || !Number.isInteger(n) || n < 2) return null;
@@ -271,7 +271,7 @@ function sheetView(m) {
   return h("article", { class: "ps-card", "data-who": pslug(m), style: `--cc: ${K.classVar(m.class_key)}`, "aria-labelledby": "ps-name" },
     h("header", { class: "ps-head" },
       h("span", { class: "ps-crest" }, window.BoardCrest.guard(h("img", { src: window.BoardCrest.src(m.class_key), alt: "", width: 72, height: 72, loading: "lazy", decoding: "async" }), m.class_key)),
-      h("span", { class: "ps-id" }, h("h3", { class: "ps-name", id: "ps-name", text: `${m.name}'s sheet` }), h("span", { class: "ps-what", text: `${m.race} ${m.class}${m.role ? `, ${roleOf(m)}` : ""}` }), parity(m, F)),
+      h("span", { class: "ps-id" }, h("h3", { class: "ps-name", id: "ps-name", text: `${m.name}'s sheet` }), h("span", { class: "ps-what", text: `${K.raceClass(m)}${m.role ? `, ${roleOf(m)}` : ""}` }), parity(m, F)),
       h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, `Back to ${K.pn.title()}`)),
     charsView(m),
     h("p", { class: "ps-how", text: how }),
@@ -327,7 +327,7 @@ function tableView() {
     return h("tr", { "data-who": m.class_key, style: `--cc: ${K.classVar(m.class_key)}` },
       h("th", { scope: "row" }, h("button", { type: "button", class: "ps-who", "aria-label": `${m.name}: open their sheet`, onclick: () => openSheet(pslug(m), true) }, crest(m), h("b", { text: m.name }))),
       cell("Role", m.role ? roleOf(m) : "not on the board"),
-      cell("Race and class", `${F.race.text || m.race} ${F.class.text || m.class}`),
+      cell("Race and class", [F.race.text || m.race, F.class.text || m.class].filter(Boolean).join(" ") || "Build hidden"),
       cell("Spec plan", F.spec_path.text ? `${F.spec_path.text}${F.spec_at_40.text && F.spec_at_40.value !== F.spec_path.value ? `, then ${F.spec_at_40.text} at 40` : ", no change at 40 on record"}` : "not on the board"),
       cell("Professions", profs.length ? h("span", {}, ...profs.flatMap((pr, i) => [i ? " and " : "", labelOf("professions", pr), take[pr] && take[pr].length > 1 ? h("span", { class: "ps-two-t", text: ` (${K.pn.say(take[pr].length)} takers)` }) : ""])) : "none on the board", F.professions.note ? h("small", { class: "ps-note", text: ` ${F.professions.note}` }) : null),
       cell("Still deciding", open.length ? K.andList(open) : "nothing open on the record"));
@@ -364,7 +364,7 @@ function sampleView(S) {
   const inner = [h("h3", { class: "ps-sample-h", id: "ps-sample-h" }, h("span", { class: "ps-sample-tag", text: "Sample guild" }), ` ${S.party.party}, a sheet to look at`),
     h("p", { class: "ps-sample-p", text: "Made-up names, so you can see what a sheet holds before you have one." }),
     h("ul", { class: "ps-sample-l", "aria-label": "The sample guild, one line each" }, S.party.members.map((m) => { const b = bld(m.name), a = sig(m.name);
-      return h("li", { "data-who": m.class_key, style: `--cc: ${K.classVar(m.class_key)}` }, h("b", { text: m.name }), h("span", { text: `${m.race} ${m.class}, ${m.role}. ${b.spec_path || m.spec}${b.level ? `, level ${b.level}` : ""}.` }), h("small", { text: `${K.andList(m.professions.map((p) => p.name))}.${a ? ` ${m.name.split(" ")[0]} ${RSVP[a.rsvp] || a.rsvp} on launch night.` : ""}${b.goals ? ` Goal: ${b.goals}` : ""}` })); })),
+      return h("li", { "data-who": m.class_key, style: `--cc: ${K.classVar(m.class_key)}` }, h("b", { text: m.name }), h("span", { text: `${K.raceClass(m)}, ${m.role}. ${b.spec_path || m.spec}${b.level ? `, level ${b.level}` : ""}.` }), h("small", { text: `${K.andList(m.professions.map((p) => p.name))}.${a ? ` ${m.name.split(" ")[0]} ${RSVP[a.rsvp] || a.rsvp} on launch night.` : ""}${b.goals ? ` Goal: ${b.goals}` : ""}` })); })),
     h("button", { type: "button", class: "lib-tool ps-sample-go", onclick: go }, "Make this for my guild")];
   /* the real party comes first on The five; the made-up guild waits behind "See an example" */
   return [h("details", { class: "ps-sample-d" }, h("summary", { class: "ps-sample-sum", text: "See an example" }), ...inner)];

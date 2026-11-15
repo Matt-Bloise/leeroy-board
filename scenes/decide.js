@@ -103,7 +103,7 @@ function personView(d, key) {
   const m = byKey(key), p = d.people.find((x) => x.class_key === key);
   if (!m || !p) return h("p", { class: "dc-sum", text: "No record for that person on the board." });
   return h("div", { class: "dc-person", "data-who": key },
-    h("h3", { class: "dc-name" }, crest(m), `${m.name}: ${m.race} ${m.class}`),
+    h("h3", { class: "dc-name" }, crest(m), `${m.name}: ${K.raceClass(m)}`),
     h("p", { class: "dc-sum", text: summary(p) }),
     h("div", { class: "dc-cards" }, p.decisions.map((x) => card(d, x))));
 }
@@ -112,11 +112,12 @@ function allView(d) {
     const m = byKey(p.class_key); if (!m) return null;
     return h("li", { class: "dc-row", style: `--cc: ${K.classVar(m.class_key)}` },
       h("button", { type: "button", class: "dc-open", "aria-label": `${m.name}: open their choices`, onclick: () => pick(m.class_key) }, crest(m), h("b", { text: m.name })),
-      h("span", { class: "dc-rowt", text: `${m.race} ${m.class}. ${summary(p)}` }));
+      h("span", { class: "dc-rowt", text: `${K.raceClass(m)}. ${summary(p)}` }));
   })));
 }
 const tick = () => [s("svg", { class: "dc-tick", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M5 12.5l4.5 4.5L19 7" })), h("span", { class: "sr-only", text: "yes" })];
 function partyView(d) {
+  if (d.party && d.party.withheld) return h("p", { class: "dc-note dc-withheld", text: "Party composition is not shown: a member keeps part of their build private, and the composition would give it away." });
   const P = d.party, ms = members(), names = (ks) => (ks.length ? K.andList(ks.map(nameOf)) : "nobody");
   const roles = h("div", { class: "dc-sect" }, h("h4", { class: "dc-h4", text: "Roles by level" }),
     h("table", { class: "dc-table" }, h("thead", {}, h("tr", {}, h("th", { scope: "col", text: "Levels" }), h("th", { scope: "col", text: "Tank" }), h("th", { scope: "col", text: "Healers" }), h("th", { scope: "col", text: "Damage" }))),
