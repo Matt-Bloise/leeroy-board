@@ -142,6 +142,11 @@ export function parseRoster(roster, opts = {}) {
     if (typeof g !== "string" || g !== g.toLowerCase()) throw configError("genericAliases entries must be lowercase strings");
     generic.add(skel(g));
   }
+  // Optional: lowercase game/dictionary words that cannot identify a person. They only switch OFF the fragment (first/last 5 letters) rule for a name that is one of them
+  // or whose fragment is one of them (or the start/end of one); every whole-name form (exact, spaced, leet, reversed, collapsed) still matches.
+  const stopIn = Array.isArray(roster) ? [] : roster.fragmentWords ?? [];
+  if (!Array.isArray(stopIn)) throw configError("fragmentWords must be an array");
+  const stop = stopIn.length ? stopIn.map((w) => skel(String(w))).filter((w) => w.length >= 3) : null;
   const entries = [];
   const ids = [];
   const bodyNames = [];
@@ -158,7 +163,7 @@ export function parseRoster(roster, opts = {}) {
       const sig = `${i}|${key}|${kind}`;
       if (seen.has(sig)) continue;
       seen.add(sig);
-      entries.push(compileKey(raw, key, kind, i));
+      entries.push(compileKey(raw, key, kind, i, stop));
       const lower = raw.toLowerCase().replace(/\s+/g, " ").trim();
       const letters = key.length;
       const multi = /\s/.test(lower);
@@ -186,7 +191,21 @@ function withAsker(R, asker) {
   return { ...R, entries: [...R.entries, compileKey(raw, key, "asker", -1)] };
 }
 
-function compileKey(raw, key, kind, member) {
+// Fragment (partial) keys: first 5 and last 5 letters of a 7+ letter name. Only for display/character/first names (and every kind when no stop list is given, as before),
+// never for a name that is itself a stop word, and never for a fragment that is a stop word or the start (first 5) / end (last 5) of one.
+const PARTIAL_KINDS = new Set(["display", "character", "first"]);
+function partialsOf(key, kind, stop) {
+  const frags = [...new Set([key.slice(0, 5), key.slice(-5)])];
+  if (!stop) return frags;
+  if (!PARTIAL_KINDS.has(kind) || stop.includes(key)) return [];
+  return frags.filter((f, i) => {
+    const first = i === 0 || key.slice(0, 5) === key.slice(-5) ? stop.some((w) => w.startsWith(f)) : false;
+    const last = i !== 0 || key.slice(0, 5) === key.slice(-5) ? stop.some((w) => w.endsWith(f)) : false;
+    return !(first || last);
+  });
+}
+
+function compileKey(raw, key, kind, member, stop = null) {
   const e = { raw, key, kind, member, short: key.length <= 4, plain: [], coll: [], partial: [], words: null };
   if (e.short) {
     const w = spaced(raw);
@@ -202,7 +221,7 @@ function compileKey(raw, key, kind, member) {
   }
   e.plain = [...u];
   e.coll = [...new Set([...u].map(collapse))];
-  if (key.length >= 7) e.partial = [...new Set([key.slice(0, 5), key.slice(-5)])];
+  if (key.length >= 7) e.partial = partialsOf(key, kind, stop);
   e.rev = [key, ...e.partial].map(reverse);
   return e;
 }

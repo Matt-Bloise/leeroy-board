@@ -52,10 +52,11 @@ const month = () => new Date().toISOString().slice(0, 7).replace("-", "");
 const bodiesText = (list) => list.map((b) => JSON.stringify(b)).join("\n=====\n");
 
 let n = 0;
-async function ask(question, { by = "Red Fox", memberSlug = "red-fox", research = true, key = true, deep = false, env: envPatch = null, db = null, claude = null, wai: waiFn = null, waiFail = false, provider = "groq", isMember = true, sheets = null, state = null } = {}) {
+async function ask(question, { by = "Red Fox", memberSlug = "red-fox", research = true, key = true, deep = false, env: envPatch = null, db = null, claude = null, wai: waiFn = null, waiFail = false, provider = "groq", isMember = true, sheets = null, state = null, facts = null, persona = null } = {}) {
   invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache();
   const DB = db || schemaDb();
-  DB.raw.prepare("INSERT OR REPLACE INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES (?, ?, ?, ?, '[]', ?, '2026-11-01T00:00:00Z')").run(TANK_PAGE.id, TANK_PAGE.category, TANK_PAGE.title, TANK_PAGE.blurb, JSON.stringify(TANK_PAGE.facts));
+  DB.raw.prepare("INSERT OR REPLACE INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES (?, ?, ?, ?, '[]', ?, '2026-11-01T00:00:00Z')").run(TANK_PAGE.id, TANK_PAGE.category, TANK_PAGE.title, TANK_PAGE.blurb, JSON.stringify(facts || TANK_PAGE.facts));
+  if (persona) DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('persona', ?, 'x')").run(JSON.stringify(persona));
   DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify(sheets || SHEETS));
   for (const [k, v] of Object.entries(state || {})) DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(k, JSON.stringify(v));
   const env = { DB, AI: fakeAi, GROQ_API_KEY: "test-key-not-real", GEMINI_API_KEY: "test-gemini-not-real", ...(key ? { ANTHROPIC_API_KEY: FAKE_KEY } : {}), ...(research ? { ASK_RESEARCH: "on" } : {}), BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) } };
@@ -313,7 +314,7 @@ test("property: 200 seeded asks with the real roster, no identifier in any outbo
   const stems = ["what should", "does", "is it true that", "tell me what", "did", "can you explain why", "how does"];
   const tails = ["think about the weather", "play at level 10", "know about the auction house", "need for the dungeon run", "say about fishing", "feel about boats"];
   let claude = 0, workers = 0, blocked = 0;
-  const odd = Object.keys(oddForms("Examplemage"));
+  const odd = Object.keys(oddForms("Quillmage"));
   for (let i = 0; i < 200; i++) {
     const base = pick(nonGeneric);
     const form = rnd() < 0.5 ? base : oddForms(base)[pick(odd)];
@@ -421,15 +422,15 @@ test("2. free-text fields (goals, plan_zone, unknown ones) reach Claude only whe
 test("2. names outside the five-member roster: sheet names, slugs and character names are tokenised by construction", async () => {
   const sheets = [
     ...sheetOf({ class: vis("paladin"), goals: vis("my main is Grukthar Bonechewer and I like it"), main: vis("Grukthar Bonechewer") }),
-    { slug: "zed-ex", name: "Examplemage Zedford", fields: { class: vis("rogue"), professions: vis("mining"), goals: vis("help Examplemage Zedford level") }, updated: "x" },
+    { slug: "zed-ex", name: "Quillmage Zedford", fields: { class: vis("rogue"), professions: vis("mining"), goals: vis("help Quillmage Zedford level") }, updated: "x" },
   ];
   const r = await ask("what should I do about my build and my party", { sheets });
-  assert.equal(r.anth.length, 1);
+  assert.equal(r.anth.length, 1, r.row.model);
   const t = anthText(r);
-  for (const leak of ["Grukthar", "Bonechewer", "Examplemage", "Zedford", "zed-ex"]) assert.ok(!t.includes(leak), `${leak} reached Anthropic`);
+  for (const leak of ["Grukthar", "Bonechewer", "Quillmage", "Zedford", "zed-ex"]) assert.ok(!t.includes(leak), `${leak} reached Anthropic`);
   assert.ok(!bodiesText(r.wai).includes("Zedford"));
   const reply = await ask("what should I do about my party", { sheets, claude: (b) => ({ status: 200, text: `**${(b.messages[0].content.match(/(\{P\d+\.[a-z0-9]+\}): class rogue/) || [])[1]} is ready.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed` }) });
-  assert.match(reply.answer, /Examplemage Zedford/, "the token comes back as that member's display name");
+  assert.match(reply.answer, /Quillmage Zedford/, "the token comes back as that member's display name");
 });
 
 test("2. the structured vs free-text field table is in flags.md and matches the code (fictional field list)", () => {
@@ -811,4 +812,62 @@ test("F5. if the 5-5 ids do not exist, every ask spends 2 sends (the 4.5 ids); t
   const flags = readFileSync(new URL("../../docs/runbooks/flags.md", import.meta.url), "utf8");
   assert.ok(/do(es)? not exist[^.]*2 (Anthropic )?sends/i.test(flags), "flags.md states the 2-sends-per-ask cost when the 5-5 ids are missing");
   assert.ok(/RESEARCH_CLAUDE_FALLBACK_FAST[^.]*unused/i.test(flags));
+});
+
+// ---- owner conditions A, B, C (PR 329): first names, strict-guard coverage of every outbound segment, common-word sheet names ----------------------------------
+test("A. a first name taken from a sheet name ('First Last') is tokenised everywhere: typed alone, in a free-text field, in the question; absent from every outbound body", async () => {
+  const sheets = [
+    ...sheetOf({ class: vis("paladin"), goals: vis("duo with Mirabel on friday") }),
+    { slug: "mirabel-stormcrow", name: "Mirabel Stormcrow", fields: { class: vis("rogue"), professions: vis("mining") }, updated: "x" },
+  ];
+  const r = await ask("what would Mirabel say about the weather", { sheets });
+  assert.equal(r.anth.length, 1, "tokenised, so Claude is still used");
+  assert.ok(!/mirabel/i.test(anthText(r)), "first name reached Anthropic");
+  const w = await ask("what would Mirabel say about the weather", { sheets, key: false });
+  assert.ok(!/mirabel/i.test(bodiesText(w.wai)), "first name reached Workers AI");
+});
+
+test("A. a first name in a sheet field (first_name) is a key too, and a reply that names it is discarded", async () => {
+  const sheets = [{ slug: "zed-ex", name: "ZedEx", fields: { class: f("rogue"), first_name: f("Quillon") }, updated: "x" }];
+  const r = await ask("tell me about Quillon and the weather", { sheets });
+  assert.ok(!/quillon/i.test(anthText(r)), "sheet first name reached Anthropic");
+  const leak = await ask(ABSTAIN_Q, { sheets, claude: () => ({ status: 200, text: "**Quillon should play whatever is fun.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed" }) });
+  assert.ok(!/Quillon/.test(leak.answer));
+});
+
+test("B. a name the tokeniser misses inside a LIBRARY fact stops Claude (strict guard covers library text); Workers AI answers", async () => {
+  const hex = Buffer.from(NAMES[2]).toString("hex");
+  const facts = [{ key: "tanking.tonight", value: `Who tanks tonight is agreed in the party channel (ref ${hex}).` }];
+  const r = await ask("who tanks tonight", { facts });
+  assert.equal(r.anth.length, 0, "library text with a roster name in an encoding must not reach Claude");
+  assert.match(r.row.model, /guard:/);
+  assert.ok(r.wai.length >= 1, "falls to Workers AI, never a wall");
+});
+
+test("B. a name the tokeniser misses inside the PERSONA text stops Claude", async () => {
+  const hex = Buffer.from(NAMES[2]).toString("hex");
+  const r = await ask("who tanks tonight", { persona: { system: `You are a dry guild veteran. Note ${hex}.` } });
+  assert.equal(r.anth.length, 0, "persona text with a roster name in an encoding must not reach Claude");
+  assert.match(r.row.model, /guard:/);
+  assert.ok(r.wai.length >= 1);
+});
+
+test("B. the clean persona, library and sheet segments still reach Claude (no false stop)", async () => {
+  const r = await ask("who tanks tonight", { persona: { system: "You are a dry guild veteran." } });
+  assert.equal(r.anth.length, 1, r.row.model);
+});
+
+test("C. sheets named 'Light' and 'Tank' are not tokenisable names: 'light' in the question and prompt stays plain", async () => {
+  const sheets = [
+    ...sheetOf({ class: vis("paladin") }),
+    { slug: "light", name: "Light", fields: { class: vis("priest") }, updated: "x" },
+    { slug: "tank-2", name: "Tank", fields: { class: vis("warrior") }, updated: "x" },
+  ];
+  const base = await ask("is light armor good for a rogue", { sheets: sheetOf({ class: vis("paladin") }) });
+  const r = await ask("is light armor good for a rogue", { sheets });
+  assert.equal(r.anth.length, 1);
+  const user = r.anth[0].body.messages[0].content;
+  assert.ok(/is light armor good for a rogue/.test(user), "the question is unchanged");
+  const count = (t) => (t.match(/\{P\d+\./g) || []).length;
+  assert.ok(count(user) <= count(base.anth[0].body.messages[0].content), "no extra tokens from Light or Tank");
 });

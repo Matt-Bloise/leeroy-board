@@ -11,6 +11,57 @@ import { skeleton } from "./skeleton.js";
 
 export const genericAliases = ["mage", "rat", "tank"];
 
+// Words that must never become a tokenisable key when they arrive from a sheet name, a first name or a character name (a key "light" would replace the word everywhere
+// in the prompt). genericAliases is the one explicit list; these are the common English and game words it is extended with for SHEET-derived names, plus a library-text
+// check (libraryWords). A multi-word name ("Light Dawnbringer") is never rejected as a whole: only a single word is tested.
+const COMMON_WORDS = new Set((
+  "light heavy dark red blue green black white gold silver big small old new fast slow high low east west north south sun moon star fire ice frost storm wind rain snow earth stone " +
+  "iron steel wolf bear cat dog fox hawk owl crow raven eagle lion tiger drake dragon king queen lord lady prince knight baron duke earl bishop monk priest cleric healer " +
+  "mage wizard witch warlock druid shaman hunter ranger rogue thief paladin warrior tank dps heal damage melee caster pet bank guild raid party group dungeon quest boss mob " +
+  "street road tower castle forest river hill field night day dawn dusk shadow ghost blade sword axe bow staff wand shield armor armour cloth leather mail plate gear loot " +
+  "potion elixir flask food water bread meat fish herb ore leaf root bone skin cold hot warm cool sharp swift quick brave bold calm wild free lone lucky happy angry sad dead " +
+  "you me us them him her they it one two three four five six seven eight nine ten zero none all any some many few more less most best worst good bad nice cute rat bat " +
+  // professions, specs, zones, items (game vocabulary that appears in ordinary questions and sheet fields)
+  "skinning leatherworking blacksmithing enchanting engineering alchemy herbalism mining tailoring fishing cooking first aid bandage smith smithing " +
+  "retribution protection holy restoration feral elemental enhancement balance guardian discipline assassination combat subtlety arms fury beast marksmanship survival destruction affliction demonology arcane " +
+  "stormwind orgrimmar ironforge darnassus undercity thunder bluff elwynn durotar barrens westfall duskwood stranglethorn tanaris ungoro winterspring silithus felwood ashenvale darkshore teldrassil dun morogh loch modan redridge badlands blasted swamp hinterlands plaguelands " +
+  "dagger mace robe cloak ring amulet trinket boots gloves helm belt bracers mount reputation talent spec level class race faction horde alliance"
+).split(" ").filter(Boolean));
+export const GAME_WORDS = [...COMMON_WORDS];
+// Words the guard must not treat as a fragment of a name (outbound-guard.js roster.fragmentWords): the first/last 5 letters of a long name never block text when that fragment is
+// one of these words (or the start/end of one). Exact, spaced, leet and reversed matches of the whole name are unaffected.
+export const fragmentWords = [...COMMON_WORDS];
+
+const WORD_RE = /[a-z][a-z'-]{1,}/g;
+const libWordCache = new WeakMap();
+// The set of lowercase words in the library text (titles, blurbs, fact values) for a pages array. Cached per array object.
+export function libraryWords(pages) {
+  if (!Array.isArray(pages)) return new Set();
+  const hit = libWordCache.get(pages);
+  if (hit) return hit;
+  const out = new Set();
+  const add = (t) => { if (typeof t === "string") for (const w of t.toLowerCase().match(WORD_RE) || []) out.add(w.replace(/^['-]+|['-]+$/g, "")); };
+  for (const p of pages) {
+    if (!p || typeof p !== "object") continue;
+    add(p.title); add(p.blurb);
+    for (const fct of Array.isArray(p.facts) ? p.facts : []) { add(fct && fct.value); add(fct && fct.key); }
+  }
+  libWordCache.set(pages, out);
+  return out;
+}
+
+// True when a name must not be a key: it is one of genericAliases, a single common/game word, or a single word that occurs in the library text.
+export function isGenericName(raw, libWords) {
+  const text = String(raw ?? "").trim();
+  if (!text) return false;
+  const key = skeleton(text);
+  if (genericAliases.some((g) => skeleton(g) === key)) return true;
+  if (/\s/.test(text)) return false;
+  const w = text.toLowerCase();
+  if (COMMON_WORDS.has(w)) return true;
+  return Boolean(libWords && typeof libWords.has === "function" && libWords.has(w));
+}
+
 let firstNameSource = null;
 export function setFirstNameSource(fn) {
   firstNameSource = typeof fn === "function" ? fn : null;
@@ -30,7 +81,7 @@ export function researchMembers() {
 let cached = null;
 // The same object each time (the guard caches its parse per object); rebuilt when the first-name source changes.
 export function researchRoster() {
-  if (!cached) cached = { members: researchMembers(), genericAliases: [...genericAliases] };
+  if (!cached) cached = { members: researchMembers(), genericAliases: [...genericAliases], fragmentWords };
   return cached;
 }
 
@@ -49,10 +100,12 @@ const nameStrings = (v, out = []) => {
   return out;
 };
 
-export function researchMembersFor(sheets) {
+const FIRST_NAME_FIELDS = ["first_name", "firstname", "real_name", "realname"];
+export function researchMembersFor(sheets, libWords = null) {
   const members = researchMembers();
   const owner = new Map(); // skeleton -> member index
   const usable = (k) => [...k].length >= 2 && !RESERVED.has(k) && !/^p\d+$/.test(k);
+  const okName = (n) => usable(skeleton(n)) && !isGenericName(n, libWords);
   members.forEach((m, i) => {
     for (const n of [m.display, ...m.aliases, ...m.firstNames]) { const k = skeleton(String(n)); if (k && !owner.has(k)) owner.set(k, i); }
   });
@@ -66,11 +119,18 @@ export function researchMembersFor(sheets) {
       const fv = f[k];
       nameStrings(fv && typeof fv === "object" && !Array.isArray(fv) && "value" in fv ? fv.value : fv, chars);
     }
+    // First names as the party data shows them: the first word of a multi-word sheet name ("First Last"; a one-word handle has none), and first_name / real_name fields.
+    const firsts = [];
+    if (typeof s.name === "string" && /\s/.test(s.name.trim())) firsts.push(s.name.trim().split(/\s+/)[0]);
+    for (const k of FIRST_NAME_FIELDS) {
+      const fv = f[k];
+      for (const t of nameStrings(fv && typeof fv === "object" && !Array.isArray(fv) && "value" in fv ? fv.value : fv)) firsts.push(/\s/.test(t.trim()) && k.includes("real") ? t.trim().split(/\s+/)[0] : t.trim());
+    }
     const all = [...own, ...chars].map((x) => x.trim().slice(0, 60)).filter(Boolean);
     let idx = -1;
     for (const n of own) { const k = skeleton(n); if (owner.has(k)) { idx = owner.get(k); break; } }
     if (idx < 0) {
-      const first = all.find((n) => usable(skeleton(n)) && !owner.has(skeleton(n)));
+      const first = all.find((n) => okName(n) && !owner.has(skeleton(n)));
       if (!first) continue;
       members.push({ display: first, aliases: [], firstNames: [] });
       idx = members.length - 1;
@@ -78,9 +138,15 @@ export function researchMembersFor(sheets) {
     }
     for (const n of all) {
       const k = skeleton(n);
-      if (!usable(k) || owner.has(k)) continue;
+      if (!okName(n) || owner.has(k)) continue;
       owner.set(k, idx);
       (members[idx].characterNames ||= []).push(n);
+    }
+    for (const n of firsts.map((x) => x.slice(0, 60)).filter(Boolean)) {
+      const k = skeleton(n);
+      if (!okName(n) || owner.has(k)) continue;
+      owner.set(k, idx);
+      (members[idx].firstNames ||= []).push(n);
     }
   }
   return members;

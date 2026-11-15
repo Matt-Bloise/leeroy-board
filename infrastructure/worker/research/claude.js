@@ -16,7 +16,7 @@ import { stripFence } from "../prompt-fence.js";
 import { buildNameMap, tokenise, detokenise, stripRestorableTokens } from "../privacy/tokenise.js";
 import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
-import { researchMembers, researchMembersFor, genericAliases } from "../privacy/roster-config.js";
+import { researchMembers, researchMembersFor, genericAliases, fragmentWords, libraryWords } from "../privacy/roster-config.js";
 import { RESEARCH_MAX_TOKENS } from "./rules.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 2000000;
@@ -116,7 +116,7 @@ function contextFor(members) {
   const key = JSON.stringify(members);
   let c = ctxCache.get(key);
   if (!c) {
-    const roster = { members, genericAliases: [...genericAliases] };
+    const roster = { members, genericAliases: [...genericAliases], fragmentWords };
     const template = buildNameMap(members, null, { genericAliases, nonce: "tmpl" });
     c = { roster, template };
     if (ctxCache.size >= 8) ctxCache.clear();
@@ -160,10 +160,10 @@ const strings = (v, out = []) => {
 
 // Called by buildAnswerInputs in research mode, BEFORE the prompt blocks are rendered. Returns the sheets to render (free-text fields that fail the guard removed),
 // the member list for the name map, and `mandatory`: raw strings that must pass the guard before Claude is called. Never throws: { failed: true } means skip Claude.
-export function researchParty(sheets, stateMap) {
+export function researchParty(sheets, stateMap, pages = null) {
   try {
     const list = Array.isArray(sheets) ? sheets : [];
-    const members = researchMembersFor(list);
+    const members = researchMembersFor(list, libraryWords(pages));
     const ctx = contextFor(members);
     const passes = (text) => { try { guardUserText([tokenise(text, ctx.template)], ctx.roster); return true; } catch { return false; } };
     const mandatory = [];
@@ -226,6 +226,9 @@ export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, pre
       user,
       userSegments,
       partySegments,
+      // Everything else that goes out (persona and rules in the system prompt; library facts, party state and top-level sheet blocks in the user prompt) is not friend-typed
+      // but is still scanned by the strict guard, so an encoded name in any segment stops Claude.
+      get promptSegments() { return [this.system, this.user]; },
       ms: performance.now() - t0,
       // Raw model reply -> display-name text, or null when it must be discarded (a name we never send, or a token that is not ours).
       clean(raw) {
@@ -270,6 +273,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   try {
     guardUserText(priv.userSegments, priv.roster);
     for (const seg of priv.partySegments) guardUserText([seg], priv.roster);
+    for (const seg of priv.promptSegments) guardUserText([seg], priv.roster, { maxChars: MAX_PROMPT_CHARS, blockScripts: false });
   } catch (e) { return { reason: guardReason(e) }; }
   if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
 

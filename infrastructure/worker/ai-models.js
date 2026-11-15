@@ -946,7 +946,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets0 = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     // Research mode: names on the sheets join the roster as keys, and a free-text field that fails the strict guard is dropped before any block is rendered (research/claude.js).
-    const rparty = research ? researchParty(sheets0, stateMap) : null;
+    const rparty = research ? researchParty(sheets0, stateMap, parsedPages) : null;
     const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
     const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;

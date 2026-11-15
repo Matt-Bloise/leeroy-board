@@ -69,6 +69,20 @@ With `ASK_RESEARCH = "on"` (never in a PR preview) the `/ask` model call runs th
 
 **Cost bound, with assumptions (prices unverified; check the provider's price page).** Worst case per month is the cap times the dearest per-token price: if input costs `Pi` and output costs `Po` dollars per million tokens, then 2,000,000 tokens cost at most `2 x max(Pi, Po)` dollars. Illustration only, not a quote: at an assumed 5 dollars per million tokens (either direction) the cap bounds the month at 10 dollars, at 15 dollars per million at 30 dollars. Cache writes and reads count as full tokens (all four usage fields are summed), so the count is at least what the provider bills at the dearest rate for these four fields; a provider-side charge outside them (for example a priced tool) is not counted. Change the cap in `wrangler.toml` and deploy.
 
+## ASK_RESEARCH name sources and guard fragments
+
+Name keys come from the sheets, and a word that cannot identify a person is never a key. Three rules apply under `ASK_RESEARCH` only; flag off is unchanged.
+
+**First names.** `researchMembersFor` (privacy/roster-config.js) adds the first word of a multi-word sheet name ("First Last") and any `first_name` or `real_name` sheet field as that member's first name. A one-word handle adds none. No roster is hard-coded. `setFirstNameSource` still works for injected names.
+
+**Common-word names.** A sheet name, character name or first name is not a key when `isGenericName` says so: it is in `genericAliases`, it is a single word on the common/game word list (professions, classes, specs, zones, items, short English words), or it is a single word that occurs in the library text (`libraryWords`). A multi-word name is never rejected whole. Roster members are never filtered by this rule.
+
+**Strict guard on every segment.** After the friend-typed segments, the strict guard also scans the tokenised system prompt (persona and rules) and user prompt (library facts, party state, sheet blocks) for the whole outbound text, up to 60,000 characters per segment. A hit sends the ask to Workers AI (`guard:*`). Measured on the checked-in library with the real roster: 14 of 150 pages trip the strict guard on their own, so asks that retrieve those pages are answered by Workers AI instead of Claude. That is the price of failing closed.
+
+**Fragment rule.** A name of 7 or more letters also matches its first 5 and last 5 letters. With `roster.fragmentWords` set (the common/game list), that fragment rule applies only to display, character and first names, never to a name that is itself on the list, and never to a fragment that is a listed word or the start (first 5) or end (last 5) of one. Exact, spaced, leet, reversed and collapsed forms of every name are unchanged, including a name that is itself a common word. `tools/guard-collisions.mjs` prints the remaining collisions by name kind (counts and game words only, never a name or fragment; `--sheets file.json` adds sheet-derived names, `--no-stop` shows the old behaviour).
+
+Measured with 154 game words against the real roster plus 11 fictional long-word sheet names: 9 fragment collisions before, 0 after. Residual, not fixed: a fragment of a name that is not on the word list still blocks text containing it; two adjacent listed words can spell a compound sheet name ("Holy Smith" against a sheet named Holysmith) in the despaced skeleton; a long dictionary word absent from the list stays a key; a real name that is also a library word is not tokenised (it cannot be told from the word).
+
 ## Migrate another flag
 
 1. Add the **same key as the var** (for example `CARDS_ENABLED`) to `infrastructure/flagship-flags.txt`; the next production deploy creates the boolean flag, disabled.
