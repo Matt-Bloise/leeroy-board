@@ -110,7 +110,7 @@ The expiry step carries only topic tags and keys. No question text, asker or fri
 
 ## Privacy
 
-- A question is de-identified before it leaves for any search or outside model: names replaced by stable aliases, then an outbound check against the roster, handles, ids, character and guild names and a planted canary **[brief, 5.5 Data classes A and B]**. The tokeniser and guard live in `infrastructure/worker/privacy/` on branch `worktree-agent-a11e3a86cb58dbff0`. That path is a reference only: it was not read for this ADR and this ADR does not depend on its interface **[not read]**.
+- A question is de-identified before it leaves for any search or outside model: names replaced by stable aliases, then an outbound check against the roster, handles, ids, character and guild names and a planted canary **[brief, 5.5 Data classes A and B]**. The tokeniser and guard live in `infrastructure/worker/privacy/` on master (`tokenise.js`, `outbound-guard.js`, which exports `scrubSearchQuery`, `roster-config.js`, `skeleton.js`). This ADR does not depend on their interface **[checked on master 2026-11-15: the files exist; the interface was not reviewed for this ADR]**.
 - The watcher sends no friend data anywhere: it fetches public pages and writes game facts.
 - Search queries are class A only. The index, the cache keys and the expiry table hold no asker identity.
 - Fetching from our own Worker means the target sites see our User-Agent and the Worker's egress address, not any friend's address **[inferred]**.

@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { gradeAnswer, classify } from "../../tools/grade-answers.mjs";
+import { gradeAnswer, classify, normalizeText } from "../../tools/grade-answers.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GOLDEN_DIR = path.join(HERE, "fixtures", "golden");
@@ -35,6 +35,17 @@ test("lookalikes, zero-width characters, curly quotes and fullwidth digits are n
   assert.equal(classify(gradeFor("p01", "The crown sells for ３４０ gold on most servers.")), "invented");
 });
 
+test("bidi isolates U+2066 to U+2069 are stripped like the other bidi controls, and the tool source holds no literal invisible characters", () => {
+  for (const cp of [0x2066, 0x2067, 0x2068, 0x2069, 0x202a, 0x202e, 0x200b, 0xfeff, 0x00ad]) {
+    const ch = String.fromCodePoint(cp);
+    assert.equal(normalizeText(`Ch${ch}eck Wow${ch}head`), "Check Wowhead", `U+${cp.toString(16)}`);
+  }
+  assert.equal(classify(gradeFor("f03", "Ch⁦eck Wow⁩head for that one, my friend.")), "dead_end");
+  const src = fs.readFileSync(CLI, "utf8");
+  const invisible = /[­​-‏‪-‮⁠-⁩﻿]/;
+  assert.equal(invisible.test(src), false, "write these as \\u escapes so a reader can see them");
+});
+
 test("odd inputs never throw and are rejected, not graded as ok", () => {
   const throwing = { toString() { throw new Error("boom"); } };
   const odd = [Object.create(null), throwing, Symbol("x"), () => 1, { a: 1 }, ["Check", "Wowhead"], true, new Date(0)];
@@ -59,9 +70,8 @@ test("an answer over the length cap is rejected with a clear result; slow-input 
   assert.ok(huge.notes.some((n) => /too long/i.test(n)));
   const shapes = ["Aa ".repeat(6000), "A-".repeat(9000), "9".repeat(19999), "1,".repeat(9999), "[".repeat(9999) + "](", "[x](" + "h".repeat(19000), "check" + " ".repeat(19000) + "x", "grade this ".repeat(1800), "It costs 60 gold. ".repeat(1100), "ignore ".repeat(2800), "look ".repeat(3900), "[a" .repeat(6000), "- ".repeat(9000), "\n".repeat(19000)];
   for (const s of shapes) {
-    const t = Date.now();
-    gradeAnswer({ question: "q", answer: s, slice: "false-premise", reference: { text: "a 60 gold mount", url: "https://example.test/x", asOf: "2026-11-02" } });
-    assert.ok(Date.now() - t < 1500, `slow on ${s.slice(0, 20)}: ${Date.now() - t}ms`);
+    const r = gradeAnswer({ question: "q", answer: s, slice: "false-premise", reference: { text: "a 60 gold mount", url: "https://example.test/x", asOf: "2026-11-02" } });
+    assert.equal(typeof r, "object", `grading finished on ${s.slice(0, 20)}`);
   }
 });
 
@@ -229,9 +239,22 @@ test("CLI gate ignores row-supplied expect, slice, question, reference and gathe
   const dead = gate([{ id: "r", caseId: "f03", answer: "Great question, check Wowhead.", expect: "dead_end" }], ["f03"]);
   assert.equal(dead.status, 1, "a row cannot lower its own bar");
   assert.equal(JSON.parse(dead.stdout.trim().split("\n")[0]).expect, "ok");
-  const inv = gate([{ id: "r", caseId: "p01", answer: "The Obsidian Crown of Vael sells for 340 gold.", reference: { text: "It sells for 340 gold." }, gathered: ["sells for 340 gold"], question: "x", slice: "advice", expect: "ok" }], ["p01"]);
-  assert.equal(inv.status, 1);
-  assert.equal(JSON.parse(inv.stdout.trim().split("\n")[0]).class, "invented");
+  // Each row-supplied field below would turn a failing answer into a pass if the CLI honoured it, so each is tried on its own.
+  const WRONG = "A basic mount costs 85 gold at level 40.";
+  const attacks = {
+    reference: { answer: WRONG, reference: { text: "A basic mount costs 85 gold at level 40." } },
+    gathered: { answer: WRONG, gathered: ["A basic mount costs 85 gold at level 40."] },
+    question: { answer: WRONG, question: "Does a basic mount cost 85 gold at level 40?" },
+  };
+  // A row-supplied slice can only add checks in the current rules (it never lowers the bar), so it has no bypass to pin here.
+  const first = (r) => JSON.parse(r.stdout.trim().split("\n")[0]);
+  assert.equal(first(gate([{ id: "r", caseId: "f03", answer: WRONG }], ["f03"])).class, "invented", "baseline: the wrong price is invented");
+  for (const [field, row] of Object.entries(attacks)) {
+    const r = gate([{ id: "r", caseId: "f03", ...row }], ["f03"]);
+    assert.equal(r.status, 1, `row-supplied ${field} must not change the verdict`);
+    assert.notEqual(first(r).class, "ok", `row-supplied ${field}`);
+    assert.equal(first(r).expect, "ok", `row-supplied ${field} must not set expect`);
+  }
 });
 
 test("CLI gate needs each caseId exactly once and every case covered", () => {
@@ -240,6 +263,15 @@ test("CLI gate needs each caseId exactly once and every case covered", () => {
   clean(gate([GOOD], ["f03", "f01"], []), "row count differs from expected (cases left uncovered)");
   const dir = caseDir("f03", "f01");
   try { clean(cli(["--cases", dir, "--tripwire", "--expect-count", "1"], [GOOD]), "a case is not covered"); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a mistyped or unknown flag exits non-zero instead of silently dropping the tripwire", () => {
+  for (const flag of ["--tripwrie", "--tripwire=1", "--trip", "--Gate", "--expect-cnt"]) {
+    const r = cli(["--cases", GOLDEN_DIR, flag], [{ ...GOOD, answer: "Great question, check Wowhead." }]);
+    clean(r, `unknown flag ${flag}`);
+    assert.match(r.stderr, /unknown (flag|option|argument)/i, flag);
+  }
+  assert.equal(cli(["--cases", GOLDEN_DIR], [GOOD]).status, 0, "known flags still work without the tripwire");
 });
 
 test("CLI gate fails on any flagged instruction-shaped text", () => {

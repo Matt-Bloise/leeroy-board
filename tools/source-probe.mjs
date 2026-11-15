@@ -3,10 +3,10 @@
 // (docs/adr/0011-research-sources-and-hotfix-index.md). No dependencies.
 //
 // Usage:
-//   node tools/source-probe.mjs --out <dir> [--dry-run] [--config <file>] [--fixtures <dir>] [--max-bytes n] [--timeout ms] [--delay ms]
+//   node tools/source-probe.mjs --out <dir> [--live] [--config <file>] [--fixtures <dir>] [--max-bytes n] [--timeout ms] [--delay ms]
 //
-// --dry-run reads recorded fixtures (tests/unit/fixtures/source-probe/manifest.json) and makes NO network call.
-// Without it the tool fetches the listed public pages from this machine, one at a time, with a delay. The result describes this
+// The default (also spelled --dry-run) reads recorded fixtures (tests/unit/fixtures/source-probe/manifest.json) and makes NO network call.
+// Only with --live does the tool fetch the listed public pages from this machine, one at a time, with a delay. The result describes this
 // machine's network and Node's CPU, not Cloudflare's edge: the CPU figure is an estimate (see the report notes).
 //
 // Rules the tool enforces (each has a test in tests/unit/source-probe.test.mjs):
@@ -81,26 +81,16 @@ function patternToRegex(pattern) {
   return new RegExp("^" + re + (anchored ? "$" : ""));
 }
 
-// Picks the group for our product token (the most specific agent match, else "*"), then applies the rules to a path+query.
+// Merges all groups that match our product token or "*", then applies the rules to a path+query (longest match wins, Allow wins a tie).
 export function robotsAllows(groups, userAgent, pathAndQuery) {
   const product = String(userAgent || "").split("/")[0].toLowerCase();
-  let chosen = null;
-  let best = -1;
-  for (const g of groups) {
-    for (const a of g.agents) {
-      if (a === "*") continue;
-      if (product === a || product.includes(a)) {
-        if (a.length > best) {
-          best = a.length;
-          chosen = g;
-        }
-      }
-    }
-  }
-  if (!chosen) chosen = groups.find((g) => g.agents.includes("*")) || null;
-  if (!chosen) return { allowed: true, matched: null };
+  // Every group that names our product token or "*" applies, and their rules are merged. This is stricter than RFC 9309
+  // (which lets a specific group replace "*"): a crawler that is not sure should obey the more restrictive reading.
+  const matching = groups.filter((g) => g.agents.some((a) => a === "*" || (a && (product === a || product.includes(a)))));
+  if (!matching.length) return { allowed: true, matched: null };
+  const rules = matching.flatMap((g) => g.rules);
   let match = null;
-  for (const r of chosen.rules) {
+  for (const r of rules) {
     if (!r.pattern) continue; // an empty Disallow allows everything
     if (!patternToRegex(r.pattern).test(pathAndQuery)) continue;
     if (!match || r.pattern.length > match.pattern.length || (r.pattern.length === match.pattern.length && r.allow && !match.allow)) match = r;
@@ -432,13 +422,16 @@ export function makeFixtureFetch(manifest, fixturesDir, log) {
 // ---------- CLI ----------
 
 function parseArgs(argv) {
-  const a = { dryRun: false };
+  const a = { dryRun: false, live: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === "--dry-run") a.dryRun = true;
+    else if (k === "--live") a.live = true;
     else if (["--out", "--config", "--fixtures", "--max-bytes", "--timeout", "--delay"].includes(k)) a[k.slice(2)] = argv[++i];
     else throw new Error(`unknown argument ${k}`);
   }
+  if (a.live && a.dryRun) throw new Error("--live and --dry-run cannot be combined");
+  a.dryRun = !a.live; // offline fixtures unless --live is given
   return a;
 }
 
@@ -456,7 +449,7 @@ export async function main(argv) {
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf8"));
     fetchFn = makeFixtureFetch(manifest, dir);
   } else {
-    fetchFn = fetch;
+    fetchFn = (...a) => globalThis.fetch(...a); // the only place the network is reachable: --live
   }
   const merged = { ...DEFAULT_LIMITS, ...(config.limits || {}), ...limits };
   const report = await runProbe(config, { fetchFn, dryRun: args.dryRun, limits, delayMs: merged.delayMs });

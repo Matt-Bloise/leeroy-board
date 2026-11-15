@@ -15,7 +15,7 @@ Design only, nothing built. 2026-11-14, base 7fb60170. Members are A to E, chara
 | Ask box | `js/ask.js` | n/a | [read] 280 chars, seven-provider picker, "Also share in #wow-forever" box, six-per-hour limit text (copy and code disagree: 2 vs 6). |
 | Answers page | none | n/a | [read] `GET /api/ask?id=`. A random-UUID **shared** turn is readable by id alone (`index.js` ~1090). With `WEB_LOGIN` on, any session reads the newest shared turn (~1111). |
 
-No review-classes doc exists here, and the Nov 14 exposure has no in-repo record (closest: audit finding 4, `tests/unit/ask-anonymous-privacy.test.mjs`). Adversarial tests below are mine.
+The review-defect classes are in [docs/review-classes.md](../review-classes.md), but the Nov 14 exposure itself has no in-repo record (closest: audit finding 4, `tests/unit/ask-anonymous-privacy.test.mjs`). Adversarial tests below are mine.
 
 ## 2. Work items
 
@@ -23,14 +23,14 @@ No review-classes doc exists here, and the Nov 14 exposure has no in-repo record
 - **Files:** new `member-gate.js` (`isRosterMember(env, discordId)`: `discord_members` roster id match or active `memberships`); `web-auth.js`, `index.js` (`/me`, `/ask` session branch ~1089-1125, socket auth ~1007), `characters-api.js` `tenantFor`, `data-rights.js`.
 - **Change:** `webSessionFrom` still proves identity; every member-only route now also needs the gate. `/me` returns `member: false` for outsiders. `tenantFor` stops falling back to "the only tenant" for non-members (today an outsider could add characters).
 - **Flags:** `WEB_LOGIN` on after the gate merges. No migration.
-- **Matt:** Discord portal: add redirect `https://api.leeroy.party/api/auth/discord/callback` (from `redirectUri()`), confirm secret `DISCORD_CLIENT_SECRET`. Privacy page changes first ("Web sign-in is off today", line 46).
+- **The tank player:** Discord portal: add redirect `https://api.leeroy.party/api/auth/discord/callback` (from `redirectUri()`), confirm secret `DISCORD_CLIENT_SECRET`. Privacy page changes first ("Web sign-in is off today", line 46).
 - **Tests:** (1) id is never a credential: a UUID shared turn, an old timestamp id and a guessed `?id=` return nothing without session plus gate. (2) Discord account with no roster entry: gets `member:false`, 401 from `/api/home`, empty socket payload (extend `live-socket-privacy.test.mjs`), cannot POST `/me/characters`. (3) Public-read allow-list unchanged (`public-read-contract.test.mjs`).
 
 ### W2. Join with no admin step (risk 4)
 - **Files:** `join.js`, `build-modal.js`, `project-build.js`, `discord.js` (replace `notOnRoster`: reply with `joinHintBody()` instead of the admin line), new `POST /api/me/join` in `characters-api.js` for the web.
 - **Change:** project-build also inserts `memberships` (role `member`, active) in its one atomic batch. Gate = being in the Discord server (slash command arrives with `guild_id`). Web join needs proof of guild membership: probe `guilds.members.read` scope versus a bot REST lookup [inferred; unverified which needs a privileged intent]. No approval queue.
 - **Flags:** `BUILD_MODAL`, `BUILD_PROJECT`, `JOIN_PROMPT` on. No migration.
-- **Matt:** confirm the server is invite-only; if anyone with a link can enter, "in the server" is not a gate.
+- **The tank player:** confirm the server is invite-only; if anyone with a link can enter, "in the server" is not a gate.
 - **Tests:** new Discord account runs `/join` then `/ask` and gets a personal answer, zero admin calls (extend `join-flow.test.mjs`); a user from another guild is refused; a second `/join` is idempotent; hidden-field test: a new member's sheet fields default `visible:false`.
 
 ### W3. Characters per person (risk 4)
@@ -73,11 +73,11 @@ No review-classes doc exists here, and the Nov 14 exposure has no in-repo record
 | 2 | W5 front page (client, `/api/changes`) | after W1; the server half of ask-41 waits | `index.js`, `ask.js` | 6 |
 | 3 | W4 which-character | **after Phase 1** (`ai-models.js`) and W3 | `ai-models.js`, `ask-build.js` | 7 |
 
-**Needs Matt:** Discord app redirect and secret; `WEB_LOGIN`, `CHARS_V1`, `BUILD_*`, `JOIN_PROMPT`, `HOME_V2`, `ASK_CHAR_PICK` in production; invite-only confirmation; Josh if production flags or secrets sit on his account; the privacy page change before login goes on.
+**Needs the tank player:** Discord app redirect and secret; `WEB_LOGIN`, `CHARS_V1`, `BUILD_*`, `JOIN_PROMPT`, `HOME_V2`, `ASK_CHAR_PICK` in production; invite-only confirmation; the healer player if production flags or secrets sit on his account; the privacy page change before login goes on.
 
-**Mock to Matt before building (5):** the five wireframes below, as a clickable mock. The Activity board mock is separate (brief 4.4).
+**Mock to the tank player before building (5):** the five wireframes below, as a clickable mock. The Activity board mock is separate (brief 4.4).
 
-**Usage count before deleting anything:** per-command and per-tab production counts over 14 days or more, a repo tag, Matt's yes. This design deletes nothing.
+**Usage count before deleting anything:** per-command and per-tab production counts over 14 days or more, a repo tag, the tank player's yes. This design deletes nothing.
 
 ## 4. Wireframes (mobile, 36 columns)
 

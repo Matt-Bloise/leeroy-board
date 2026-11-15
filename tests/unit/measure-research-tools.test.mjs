@@ -107,6 +107,17 @@ test("latency tool: the key is sent as a header only and never printed, even whe
   assert.ok(!JSON.stringify(phase).includes("FAKEKEYFORTESTS"));
 });
 
+test("latency tool: the live fetch refuses redirects so a redirect cannot carry the key to another host", async () => {
+  const target = resolveTarget({ ANTHROPIC_API_KEY: FAKE_KEY });
+  const inits = [];
+  const stub = async (url, init) => { inits.push(init); return new Response(JSON.stringify({ usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200 }); };
+  const res = await callOnce({ fetchImpl: stub, target, bodyText: buildBody(0, "m", { promptChars: 600 }), secrets: [FAKE_KEY] });
+  assert.equal(res.ok, true);
+  assert.equal(inits.length, 1);
+  assert.equal(inits[0].redirect, "error");
+  assert.equal(inits[0].headers["x-api-key"], FAKE_KEY, "the stub saw the key, which is why redirects must be refused");
+});
+
 test("latency tool: a live run with no credential refuses with exit 2; gateway BYOK needs only the token", () => {
   const p = run("measure-claude-latency.mjs", ["--live", "--n", "1"]);
   assert.equal(p.status, 2);
