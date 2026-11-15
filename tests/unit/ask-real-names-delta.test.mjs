@@ -90,11 +90,11 @@ test("1. a secret on a line of the tonight title or a sign-up (real mode) drops 
     clean(r, "title/sign-up");
   }
 });
-test("1. prepareRealPrompt drops a secret line whole, whatever surrounds it, and a lone BEGIN line takes the rest of the text", () => {
+test("1. prepareRealPrompt drops a secret line whole, whatever surrounds it, and a lone BEGIN line takes at most three more lines (CHANGED: it used to take the rest of the text)", () => {
   const out = prepareRealPrompt({ system: "keep system", user: `line one\nsee ${WEBHOOK} now\nline three\n${KEY_BEGIN}\n${KEY_BODY}\nafter the key` }, {});
   assert.ok(out.user.includes("line one") && out.user.includes("line three"));
   assert.ok(!/webhooks|123456789012345678|\[id\]|\[redacted\]|PRIVATE KEY/.test(out.user) && !out.user.includes(WEBHOOK_TOKEN) && !out.user.includes(KEY_BODY));
-  assert.ok(!out.user.includes("after the key"), "a lone BEGIN line takes the rest");
+  assert.ok(!out.user.includes("after the key"), "a lone BEGIN line takes the next lines (two here, within the bound of three)");
   assert.equal(out.system, "keep system");
 });
 
@@ -149,10 +149,13 @@ test("5. a guest whose prompt cannot be tokenised is labelled library:degraded-*
 });
 
 // ---- 6 the leftover scan and eval's refusal ------------------------------------------------------------------------------------------------------
-test("6. the final leftover scan: a secret shape that survives the line drop (it spans a newline) fails closed", () => {
+test("6. the final leftover scan: a secret that survives the line drop (an env secret value that itself spans a newline) fails closed (CHANGED: the Bearer-plus-newline shape no longer counts as a secret, because no pattern matches across a line break any more)", () => {
+  const env = { SOME_API_KEY: "alpha-secret-1\nbeta-secret-2" };
+  assert.throws(() => prepareRealPrompt({ system: "s", user: "x alpha-secret-1\nbeta-secret-2 y" }, env), (e) => e.code === "OUTBOUND_SECRET");
+  assert.throws(() => prepareRealPrompt({ system: "alpha-secret-1\nbeta-secret-2", user: "u" }, env), (e) => e.code === "OUTBOUND_SECRET");
   const tail = "ghijklmnop0123456789qrstuvwx";
-  assert.throws(() => prepareRealPrompt({ system: "s", user: `x Bearer\n${tail} y` }, {}), (e) => e.code === "OUTBOUND_SECRET");
-  assert.throws(() => prepareRealPrompt({ system: `Bearer\n${tail}`, user: "u" }, {}), (e) => e.code === "OUTBOUND_SECRET");
+  assert.doesNotThrow(() => prepareRealPrompt({ system: "s", user: `x Bearer\n${tail} y` }, {}), "a word at the end of one line and a token-shaped word on the next are not one secret");
+  assert.throws(() => prepareRealPrompt({ system: "s", user: `x Bearer ${tail} y` }, {}, [], { friend: [`Bearer ${tail}`] }), (e) => e.code === "OUTBOUND_SECRET", "the same-line shape still stops a typed secret");
 });
 test("6. admin evaluation: a prompt that cannot be tokenised fails the candidate with research_prompt_not_tokenised and nothing is dispatched", async () => {
   setFirstNameSource(() => { throw new Error("roster source down"); });

@@ -51,7 +51,9 @@ const SECRET_PATTERNS = [
   ["anthropic-key", /sk-ant-[A-Za-z0-9_-]{6,}/],
   ["api-key", /\bsk-[A-Za-z0-9_-]{20,}/],
   // Case-sensitive "Bearer " and a token-shaped tail: 20+ token characters that include a digit ("standard bearer responsibilities" is not a secret).
-  ["bearer", /\bBearer\s+(?=[A-Za-z0-9._~+\/=-]{0,200}\d)[A-Za-z0-9._~+\/=-]{20,}/],
+  // No pattern below may match across a line break ([ \t] and never \s between tokens): the whole prompt is scanned after its lines are screened, and a word at the end of one stored line plus a
+  // token-shaped label at the start of the next must not read as one secret (it blanked the prompt for every later ask).
+  ["bearer", /\bBearer[ \t]+(?=[A-Za-z0-9._~+\/=-]{0,200}\d)[A-Za-z0-9._~+\/=-]{20,}/],
   ["discord-token", /[MNO][A-Za-z0-9_-]{23,27}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}/],
   ["discord-mfa", /\bmfa\.[A-Za-z0-9_-]{20,}/],
   ["webhook", /discord(?:app)?\.com\/api\/(?:v\d+\/)?webhooks\//i],
@@ -60,9 +62,9 @@ const SECRET_PATTERNS = [
   ["aws-key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
   ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/],
   ["slack-token", /\bxox[baprs]-[A-Za-z0-9-]{10,}/],
-  ["basic-auth", /\bAuthorization:\s*Basic\s+[A-Za-z0-9+\/]{8,}={0,2}/i],
+  ["basic-auth", /\bAuthorization:[ \t]*Basic[ \t]+[A-Za-z0-9+\/]{8,}={0,2}/i],
   // The header form is matched in any case ("authorization: bearer ..."); the bare word "Bearer" above stays case-sensitive.
-  ["auth-bearer", /\bauthorization\s*:\s*bearer\s+[A-Za-z0-9._~+\/=-]{20,}/i],
+  ["auth-bearer", /\bauthorization[ \t]*:[ \t]*bearer[ \t]+[A-Za-z0-9._~+\/=-]{20,}/i],
   ["private-key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
 ];
 // Bare hex: 40+ hex characters with at least 12 distinct characters and at least one letter (an md5, 32 zeros or a run of digits is not a token). A hex-shaped string is REDACTED
@@ -108,12 +110,25 @@ export const redactIds = (text) => String(text ?? "").replace(LONG_ID_RE, "[id]"
 // dropped whole one level up (research/claude.js researchParty).
 const BEGIN_KEY_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 const END_KEY_RE = /-----END [A-Z ]*PRIVATE KEY-----/;
+// Bounded: a BEGIN marker takes the lines up to a matching END marker when one follows within KEY_MAX_LINES lines and before any fence line; with no such END it takes at most KEY_LOSE_LINES lines.
+// A line holding a prompt fence token (<<< or >>>) is never dropped for being near a marker, and ends the skip, so a stray marker can never remove the LIBRARY or USER_QUESTION sections.
+const KEY_MAX_LINES = 80;
+const KEY_LOSE_LINES = 3;
+const FENCE_LINE = /<<<|>>>/;
 export function dropSecretLines(text, env, extra = []) {
   const out = [];
-  let inKey = false;
-  for (const line of String(text ?? "").split("\n")) {
-    if (inKey) { if (END_KEY_RE.test(line)) inKey = false; continue; }
-    if (BEGIN_KEY_RE.test(line)) { inKey = !END_KEY_RE.test(line); continue; }
+  const lines = String(text ?? "").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (BEGIN_KEY_RE.test(line) && !FENCE_LINE.test(line)) {
+      if (END_KEY_RE.test(line)) continue; // BEGIN and END on one line: that line only
+      let end = -1;
+      for (let j = i + 1; j < lines.length && j <= i + KEY_MAX_LINES && !FENCE_LINE.test(lines[j]); j++) if (END_KEY_RE.test(lines[j])) { end = j; break; }
+      if (end >= 0) { i = end; continue; }
+      let k = 0; // no matching END: this line and at most the next KEY_LOSE_LINES lines, never a fence line
+      while (k < KEY_LOSE_LINES && i + 1 < lines.length && !FENCE_LINE.test(lines[i + 1])) { i++; k++; }
+      continue;
+    }
     if (scanSecrets(line, env, { extra, ids: false }).length) continue;
     out.push(line);
   }

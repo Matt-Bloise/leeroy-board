@@ -479,3 +479,26 @@ CREATE TABLE IF NOT EXISTS vote_ballots (
   cast_at TEXT NOT NULL,
   PRIMARY KEY (vote_id, voter_hash)
 );
+
+-- Group memory (migration 0011; flag GROUP_MEMORY, docs/runbooks/group-memory.md). group_log: what the group said (asks, answers, later channel messages), by member slug.
+-- group_wiki: running notes the refresher writes from new group_log rows. Private storage: no route reads them; only a roster member's own prompt does.
+CREATE TABLE IF NOT EXISTS group_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'web',
+  author_slug TEXT NOT NULL CHECK (length(author_slug) > 0),
+  kind TEXT NOT NULL CHECK (kind IN ('ask', 'answer', 'message')),
+  text TEXT NOT NULL,
+  reply_to TEXT,
+  source TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_group_log_channel_at ON group_log(channel, at DESC);
+CREATE INDEX IF NOT EXISTS idx_group_log_author ON group_log(author_slug, at);
+CREATE TABLE IF NOT EXISTS group_wiki (
+  page_key TEXT PRIMARY KEY CHECK (length(page_key) BETWEEN 1 AND 40),
+  title TEXT NOT NULL,
+  body_md TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  rev INTEGER NOT NULL DEFAULT 1,
+  note TEXT
+);

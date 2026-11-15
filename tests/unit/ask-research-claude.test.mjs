@@ -165,8 +165,8 @@ test("token counter: usage is added to claude_tokens_YYYYMM; the cap gives later
   assert.equal(alerts[0].key, `alert:claude-cap:${month()}`);
   assert.ok(!alerts[0].json.includes("Red Fox"));
   assert.ok(!alerts[0].json.includes(FAKE_KEY));
-  // default cap and an invalid value both mean 2,000,000, not unlimited
-  db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, '2000000', 'x')").run(key);
+  // default cap and an invalid value both mean 5,000,000 (CHANGED from 2,000,000, the owner decision with GROUP_MEMORY), not unlimited
+  db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, '5000000', 'x')").run(key);
   for (const v of [undefined, "abc", "-5", ""]) {
     const r = await ask(ABSTAIN_Q, { db, env: (e) => { if (v !== undefined) e.RESEARCH_CLAUDE_MONTHLY_TOKENS = v; } });
     assert.equal(r.anth.length, 0, `cap value ${v}`);
@@ -371,7 +371,7 @@ test("wrangler.toml declares the research Claude vars; the key is not in the fil
   assert.match(toml, /^RESEARCH_CLAUDE_MODEL_DEEP = "claude-sonnet-5-5"/m);
   assert.match(toml, /^RESEARCH_CLAUDE_FALLBACK_FAST = "claude-haiku-4-5-20251001"/m);
   assert.match(toml, /^RESEARCH_CLAUDE_FALLBACK_DEEP = "claude-sonnet-4-5-20250929"/m);
-  assert.match(toml, /^RESEARCH_CLAUDE_MONTHLY_TOKENS = "2000000"/m);
+  assert.match(toml, /^RESEARCH_CLAUDE_MONTHLY_TOKENS = "5000000"/m); // CHANGED from 2000000 (owner decision with GROUP_MEMORY)
   assert.match(toml, /^CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001"/m, "legacy vars unchanged");
   assert.ok(!/sk-ant-/.test(toml));
 });

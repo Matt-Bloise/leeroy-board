@@ -82,6 +82,12 @@ async function seeded() {
     run("INSERT INTO answer_details (intent_id, more, sources, asker_hash, created_at) VALUES (?, ?, ?, NULL, ?)", `q-${slug}`, `More for ${name}`, `Sources for ${name}`, NOWISO);
   }
   run("INSERT INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?), (?, ?)", `q-${SLUG}`, ids.answerHash, `q-${OTHER_SLUG}`, ids.otherAnswerHash);
+  // group memory (migration 0011): each person's log rows and own wiki page, plus a shared page that mentions both by name
+  for (const [slug, name] of [[SLUG, NAME], [OTHER_SLUG, OTHER_NAME]]) {
+    run("INSERT INTO group_log (at, channel, author_slug, kind, text, source) VALUES (?, 'c1', ?, 'ask', ?, 'ask')", NOWISO, slug, `What should ${name} play?`);
+    run("INSERT INTO group_wiki (page_key, title, body_md, updated_at) VALUES (?, ?, ?, ?)", `person-${slug}`, name, `${name} plays a mage.`, NOWISO);
+  }
+  run("INSERT INTO group_wiki (page_key, title, body_md, updated_at) VALUES ('group', 'The group', ?, ?)", `${NAME} and ${OTHER_NAME} share a running bit (${SLUG} starts it).`, NOWISO);
   // answer buttons: one detail row bound to the person as asker (private answer), a vote by each person
   run("INSERT INTO answer_details (intent_id, more, asker_hash, created_at) VALUES ('q-private-me', 'private', ?, ?), ('q-private-other', 'private', ?, ?)", ids.answerHash, NOWISO, ids.otherAnswerHash, NOWISO);
   run("INSERT INTO answer_feedback (intent_id, user_hash, vote, created_at) VALUES ('q-x', ?, 1, ?), ('q-x', ?, -1, ?)", ids.answerHash, NOWISO, ids.otherAnswerHash, NOWISO);
@@ -132,7 +138,7 @@ test("member key erase: zero rows keyed by this member's ids or hashes in any co
   const before = scan(db, needles(ids));
   assert.ok(before.length >= 20, `the seed must reach many tables, got ${before.length}`);
   const hitTables = new Set(before.map((h) => h.split(".")[0]));
-  for (const t of ["ask_turn_askers", "users", "identities", "sessions_v2", "provider_tokens", "memberships", "characters", "signups_v2", "audit_log", "members", "sheet_events", "dispatches", "intents", "fact_fixes", "ask_turns", "answer_details", "answer_feedback", "user_state", "sessions", "kv_state"]) assert.ok(hitTables.has(t), `seed misses ${t}`);
+  for (const t of ["ask_turn_askers", "users", "identities", "sessions_v2", "provider_tokens", "memberships", "characters", "signups_v2", "audit_log", "members", "sheet_events", "dispatches", "intents", "fact_fixes", "ask_turns", "answer_details", "answer_feedback", "user_state", "sessions", "kv_state", "group_log", "group_wiki"]) assert.ok(hitTables.has(t), `seed misses ${t}`);
 
   const res = await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asKey }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
   assert.equal(res.status, 200);
@@ -181,6 +187,7 @@ test("member key erase: zero rows keyed by this member's ids or hashes in any co
     ["SELECT COUNT(*) AS c FROM members WHERE slug = ?", OTHER_SLUG], ["SELECT COUNT(*) AS c FROM ask_turns WHERE by_name = ?", OTHER_NAME],
     ["SELECT COUNT(*) AS c FROM answer_details WHERE intent_id = ?", `q-${OTHER_SLUG}`], ["SELECT COUNT(*) AS c FROM sheet_events WHERE slug = ?", OTHER_SLUG],
     ["SELECT COUNT(*) AS c FROM dispatches WHERE slug = ?", OTHER_SLUG], ["SELECT COUNT(*) AS c FROM fact_fixes WHERE by_name = ?", OTHER_NAME], ["SELECT COUNT(*) AS c FROM intents WHERE slug = ?", OTHER_SLUG],
+    ["SELECT COUNT(*) AS c FROM group_log WHERE author_slug = ?", OTHER_SLUG], ["SELECT COUNT(*) AS c FROM group_wiki WHERE page_key = ?", `person-${OTHER_SLUG}`], ["SELECT COUNT(*) AS c FROM group_wiki WHERE page_key = 'group'"],
   ];
   for (const [sql, ...a] of keep) assert.equal(count(db, sql, ...a), 1, sql);
 });
@@ -213,7 +220,7 @@ test("member export carries every section DATA_MAP promises, with the seeded row
   assert.equal(res.status, 200);
   const text = await res.text(), body = JSON.parse(text);
   const sections = new Set(Object.values(DATA_MAP).flatMap((x) => (x.member ? x.member.split(",").map((p) => p.trim()) : [])));
-  assert.equal(sections.size, 24);
+  assert.equal(sections.size, 26); // was 24 before migration 0011 added legacy.group_log and legacy.group_wiki
   for (const path of sections) {
     const [top, name] = path.split(".");
     const rows = body[top] && body[top][name];

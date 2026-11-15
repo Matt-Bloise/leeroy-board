@@ -45,6 +45,7 @@ import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-comma
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordBallot, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, loadConfigKeyStrict, libraryShelfLine, buildThreadMention } from "./config.js";
+import { groupMemoryOn } from "./research/group-memory.js";
 import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
 import { updateKvJson, KvConflictError } from "./kv-cas.js";
@@ -833,7 +834,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         askerId: String(user.id || ""),
         memberOpen: noWall,
         wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
-        answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
+        answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || "") }),
       })
     );
 
@@ -1954,6 +1955,18 @@ ${GATE_OFF_NOTE}` : ""}`,
         at: now,
       });
 
+      // GROUP_MEMORY: the text is someone else's message. Resolve its author against the roster so group memory files it under THEIR slug (never as this member's own ask); flag off: no read.
+      let messageTarget = null;
+      if (groupMemoryOn(env)) {
+        let authorSlug = "";
+        try {
+          const authorId = String((targetMsg.author && targetMsg.author.id) || "");
+          const roster = await loadConfigKey(env, "discord_members");
+          const hit = authorId && Array.isArray(roster) ? roster.find((m) => m && m.id === authorId) : null;
+          if (hit && typeof hit.slug === "string") authorSlug = hit.slug;
+        } catch {}
+        messageTarget = { authorSlug };
+      }
       const persona = await loadPersona(env);
       const { noWall, budget: menuBudget } = await askWallPlan(env, { isMember: Boolean(member), userPart: await hashId(user.id), preview: isPrPreviewEnv(env) }); // same plan as /ask: no pre-check for a member, the guests' keys otherwise
       ctx.waitUntil(
@@ -1965,7 +1978,7 @@ ${GATE_OFF_NOTE}` : ""}`,
           memberOpen: noWall,
           wrap: (answerText) => `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${answerText}`,
           askerId: String(user.id || ""),
-          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: menuBudget, isMember: Boolean(member), storeDetails: true }),
+          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: menuBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || ""), ...(messageTarget ? { messageTarget } : {}) }),
         })
       );
 
