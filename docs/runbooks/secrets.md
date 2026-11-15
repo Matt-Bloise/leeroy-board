@@ -35,7 +35,7 @@ Added to previews only by the workflow: `IS_PR_PREVIEW`, `WORKER_NAME` (`pr-prev
 
 | Name | Read at | Note |
 | :--- | :--- | :--- |
-| `DISCORD_CLIENT_ID` | `account.js:81,93`; `index.js:863` | Not in `wrangler.toml` or any workflow. `account.js:81` returns 500 "worker not configured" when it is unset, while `index.js:863` has a built-in fallback. Whether it is set in the dashboard is unverified; if not, Discord login (`POST /auth/discord`) cannot work. |
+| `DISCORD_CLIENT_ID` | `account.js:86`; `index.js:1144` | Not in `wrangler.toml` or any workflow. Both sites fall back to the public Discord app id when it is unset (`account.js:86` no longer returns 500), so login works without it. Setting it explicitly is optional. |
 | `AI_DAILY_NEURON_CAP` | `budget.js:39` | Optional budget override |
 | `DATA_RIGHTS` | `data-rights.js` (`dataRightsOn`) | Plain var in `wrangler.toml`, default `"off"`. Q59: `"on"` enables `GET /api/me/export` and `POST /api/me/erase` for a member key or a web session cookie. While off both answer 404. Needs `USER_SALT`. Roll back by setting it to `"off"`. |
 | `CHARS_V1` | `characters-api.js` (`charsOn`) | Plain var in `wrangler.toml`, default `"off"`. Character switcher: `"on"` adds `characters` and `selected` to `GET /api/me` for a web session and enables `POST /api/me/characters` (add, rename, select). While off the route answers 404 and `/api/me` is unchanged. Needs `WEB_LOGIN` on and migration 0005. The board also needs the client flag `chars.v1` in `data/client.json`. Roll back by setting it to `"off"`; the rows stay. |
@@ -107,7 +107,7 @@ Each row was verified against the file and line shown, or the live repository se
 | 6 | Production workflow has no `permissions:` block | Only `pr-preview-cloudflare.yml:15` and `preview-tests.yml:11` declare one (grep); repository default workflow permission is `write` (GitHub API, 2026-11-02) | The deploy job's `GITHUB_TOKEN` is broader than needed | Add `permissions: contents: read` to `deploy-cloudflare.yml`; set the repo default to read |
 | 7 | Actions pinned by tag, not commit sha | `actions/checkout@v4` (`deploy-cloudflare.yml:24`), `actions/github-script@v7` (`pr-preview-cloudflare.yml:287`) | A moved tag runs new code with secrets in scope | Pin to full commit shas |
 | 8 | Secret list drift | Workflow syncs 11 names including `DISCORD_BOT_TOKEN` (`deploy-cloudflare.yml:261,263`); `infrastructure/README.md:102` lists 10 | Rotation inventories miss one | Fixed in this runbook; update the README |
-| 9 | `DISCORD_CLIENT_ID` has no source of truth | See "Read by the code but not set"; `account.js:81` vs `index.js:863` | Login may fail with a generic 500 | Set it explicitly in `wrangler.toml` (it is not secret) and remove the divergent fallback |
+| 9 | `DISCORD_CLIENT_ID` has no source of truth | See "Read by the code but not set"; `account.js:86` vs `index.js:1144` | Two fallback sites hold the same public id | Set it explicitly in `wrangler.toml` (it is not secret) and remove the divergent fallback |
 | 10 | Secrets removed from GitHub stay in the Worker | `deploy-cloudflare.yml:265` | Revoked credentials may remain live | Delete with `wrangler secret delete` during rotation |
 
 Items 2, 3 and 4 combine: a branch push opens a PR, the PR workflow runs with production credentials, and nothing blocks a direct push to `master`. Treat 3 and 4 as the first fixes before onboarding any additional contributor with write access.
@@ -116,7 +116,7 @@ Items 2, 3 and 4 combine: a branch push opens a PR, the PR workflow runs with pr
 
 Nothing here is done by the PR; merging changes nothing live while `WEB_LOGIN = "off"`.
 
-1. Make sure `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` are set on the Worker (the secret is synced from the GitHub secret of the same name on deploy; the web routes read both from the environment and have no built-in fallback).
+1. Make sure `DISCORD_CLIENT_SECRET` is set on the Worker (synced from the GitHub secret of the same name on deploy). `DISCORD_CLIENT_ID` is optional: both routes default to the public app id.
 2. In the Discord developer portal, OAuth2, Redirects: add `<API_ORIGIN>/api/auth/discord/callback` exactly (production: the `API_ORIGIN` value in `wrangler.toml` plus that path).
 3. Apply `infrastructure/migrations/0002_identity_tenancy.sql` to production D1 (adds `users` and `sessions_v2`). Without it the callback answers 503 and logs one warning; `/api/me` keeps working for board keys.
 4. Set `WEB_LOGIN = "on"` in `wrangler.toml` and deploy. Roll back by setting it back to `"off"`: all sessions stop being honoured at once; rows remain in `sessions_v2`.
