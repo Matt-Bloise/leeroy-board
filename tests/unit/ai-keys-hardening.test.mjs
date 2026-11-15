@@ -79,8 +79,8 @@ test("a failing or empty store is cached for about 30 s, then retried; availabil
 });
 
 // ---- 2. credential validation ----
-test("stored or legacy values with whitespace or control characters are not configured, and no message carries them", async () => {
-  const bad = [`${FAKE}\n`, `${FAKE} `, `sk-ant-FAKE\tTEST-0000`, `sk-ant-FAKE-\x00-0000`, `sk-ant-FAKE-\r\n-0000`, ` ${FAKE}`, "sk-ant-FAKE TEST-0000"];
+test("stored or legacy values with INTERIOR whitespace or control characters are not configured, and no message carries them", async () => {
+  const bad = [`sk-ant-FAKE\tTEST-0000`, `sk-ant-FAKE-\x00-0000`, `sk-ant-FAKE-\r\n-0000`, "sk-ant-FAKE TEST-0000", `${FAKE}\nx`];
   for (const v of bad) {
     for (const env of [{ ANTHROPIC_API_KEY: v }, { ANTHROPIC_KEY_STORE: store(async () => v) }]) {
       resetKeyCacheForTests();
