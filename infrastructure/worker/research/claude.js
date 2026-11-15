@@ -68,22 +68,30 @@ export function resetResearchClaudeForTests() { pausedUntil = 0; ctxCache.clear(
 const USAGE_FIELDS = ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"];
 export function usageTokens(usage, estimate) {
   if (!usage || typeof usage !== "object") return estimate;
-  let sum = 0;
-  let seen = 0;
-  for (const k of USAGE_FIELDS) {
+  const valid = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+  // input and output must both be valid numbers: a partial block must never refund most of the reservation.
+  if (!valid(usage.input_tokens) || !valid(usage.output_tokens)) return estimate;
+  let sum = Math.min(usage.input_tokens, USAGE_CLAMP) + Math.min(usage.output_tokens, USAGE_CLAMP);
+  for (const k of ["cache_creation_input_tokens", "cache_read_input_tokens"]) {
     const raw = usage[k];
-    if (raw === undefined || raw === null) continue;
-    if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) return estimate;
+    if (raw === undefined || raw === null) continue; // optional: counted when present
+    if (!valid(raw)) return estimate;
     sum += Math.min(raw, USAGE_CLAMP);
-    seen++;
   }
-  return seen && sum > 0 ? Math.ceil(sum) : estimate; // a real response always used some input; 0 total is not believable
+  return sum > 0 ? Math.ceil(sum) : estimate; // a real response always used some input; 0 total is not believable
 }
 
-// One atomic statement: add the estimate only while the month is under the cap (and the stored value is a plain integer). Rows come back only on success.
+// Conservative upper bound on what a prompt costs: ASCII at 3 characters per token, every other UTF-16 unit (CJK, emoji, accents) at 1.5 tokens, plus the full answer allowance.
+export function estimateTokens(systemText, userText) {
+  const text = `${systemText ?? ""}${userText ?? ""}`;
+  const nonAscii = (text.match(/[^\u0000-\u007f]/g) || []).length;
+  return Math.ceil((text.length - nonAscii) / 3 + nonAscii * 1.5) + RESEARCH_MAX_TOKENS;
+}
+
+// One atomic statement: add the estimate only if the WHOLE reservation fits under the cap (both branches) (and the stored value is a plain integer). Rows come back only on success.
 const RESERVE_SQL =
-  "INSERT INTO kv_state (key, json, updated_at) SELECT ?1, CAST(CAST(?2 AS INTEGER) AS TEXT), ?3 WHERE ?4 > 0 " +
-  "ON CONFLICT(key) DO UPDATE SET json = CAST(CAST(json AS INTEGER) + CAST(?2 AS INTEGER) AS TEXT), updated_at = ?3 WHERE CAST(json AS INTEGER) < ?4 AND json NOT GLOB '*[^0-9]*' RETURNING json";
+  "INSERT INTO kv_state (key, json, updated_at) SELECT ?1, CAST(CAST(?2 AS INTEGER) AS TEXT), ?3 WHERE ?4 > 0 AND CAST(?2 AS INTEGER) <= ?4 " +
+  "ON CONFLICT(key) DO UPDATE SET json = CAST(CAST(json AS INTEGER) + CAST(?2 AS INTEGER) AS TEXT), updated_at = ?3 WHERE CAST(json AS INTEGER) + CAST(?2 AS INTEGER) <= ?4 AND json NOT GLOB '*[^0-9]*' RETURNING json";
 const ADJUST_SQL = "UPDATE kv_state SET json = CAST(CAST(MAX(0, CAST(json AS INTEGER) + CAST(?2 AS INTEGER)) AS INTEGER) AS TEXT), updated_at = ?3 WHERE key = ?1";
 
 export async function reserveTokens(env, estimate, cap, now = new Date()) {
@@ -265,7 +273,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
 
   const at = now();
   const cap = monthlyTokenCap(env);
-  const estimate = Math.ceil((priv.system.length + priv.user.length) / 3) + RESEARCH_MAX_TOKENS;
+  const estimate = estimateTokens(priv.system, priv.user);
   try {
     if (!(await reserveTokens(env, estimate, cap, at))) {
       await alertOnce(env, cap, at);

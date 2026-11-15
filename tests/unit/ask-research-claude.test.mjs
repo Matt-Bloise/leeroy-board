@@ -11,8 +11,9 @@ import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { ROSTER_DATA } from "../../infrastructure/worker/bot-data.js";
 import { scanBody, CANARY } from "../../infrastructure/worker/privacy/outbound-guard.js";
 import { researchRoster, setFirstNameSource, genericAliases } from "../../infrastructure/worker/privacy/roster-config.js";
-import { resetResearchClaudeForTests, privacyBudget, classifyField, STRUCTURED_FIELDS, FREE_TEXT_FIELDS, prepareResearchPrivacy } from "../../infrastructure/worker/research/claude.js";
+import { resetResearchClaudeForTests, privacyBudget, classifyField, STRUCTURED_FIELDS, FREE_TEXT_FIELDS, prepareResearchPrivacy, reserveTokens, counterKey, estimateTokens, usageTokens } from "../../infrastructure/worker/research/claude.js";
 import { buildNameMap, tokenise } from "../../infrastructure/worker/privacy/tokenise.js";
+import { RESEARCH_MAX_TOKENS } from "../../infrastructure/worker/research/rules.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const FAKE_KEY = "sk-ant-FAKE-TEST-0000";
@@ -138,19 +139,22 @@ test("model id: a 404 on the new id retries once with the 4.5 fallback id", asyn
 });
 
 test("token counter: usage is added to claude_tokens_YYYYMM; the cap sends later asks to Workers AI with one alert row a month", async () => {
+  const E = await learnE(); // the estimate this ask reserves; the cap below fits three of them
+  const cap = String(3 * E);
   const db = schemaDb();
-  const r1 = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = "200"; } });
+  const r1 = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = cap; } });
   assert.equal(r1.anth.length, 1);
   const key = `claude_tokens_${month()}`;
   assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 133);
   // 133 < 200: still allowed; this one pushes it to 266
-  const r2 = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = "200"; } });
+  const r2 = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = cap; } });
   assert.equal(r2.anth.length, 1);
   assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 266);
   assert.equal(db.raw.prepare("SELECT COUNT(*) c FROM kv_state WHERE key LIKE 'alert:claude-cap:%'").get().c, 0);
+  db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(key, String(2 * E + 1)); // 2E+1 used of 3E: the whole reservation no longer fits
   for (let i = 0; i < 3; i++) {
-    const r = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = "200"; } });
-    assert.equal(r.anth.length, 0, "at or above the cap Claude is skipped");
+    const r = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = cap; } });
+    assert.equal(r.anth.length, 0, "when the reservation does not fit under the cap Claude is skipped");
     assert.equal(r.wai.length, 1);
     assert.match(r.answer, /Workers answer first/);
   }
@@ -438,24 +442,26 @@ test("4. the model fallback retries only on a model-not-found signal, never on c
   assert.equal(gw.wai.length >= 1, true);
 });
 
-test("5. the cap gate reserves before the call: 20 concurrent asks at cap minus 100 make one send, and the counter ends near the cap", async () => {
+test("5. the cap gate reserves before the call: 20 concurrent asks with room for one reservation make one send", async () => {
   const db = schemaDb();
   const key = `claude_tokens_${month()}`;
+  const E = await learnE();
+  const CAP = Math.floor(1.5 * E); // one reservation fits, two never do
   await ask(ABSTAIN_Q, { db }); // seeds library, sheets, schema
-  db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, '900', 'x')").run(key);
+  db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, '0', 'x')").run(key);
   anth = []; wai = []; waiThrows = false;
-  claudeAnswer = () => ({ status: 200, text: OKTEXT });
+  claudeAnswer = () => ({ status: 200, text: OKTEXT, usage: { input_tokens: 5 * E, output_tokens: 1 } }); // settles above the cap, so a later refund cannot admit a second ask
   const ids = Array.from({ length: 20 }, (_, i) => {
     const id = `cc${++n}x${i}`;
     db.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, 'Red Fox', ?, 'groq', 'thinking', 1, 'x')").run(id, ABSTAIN_Q);
     return id;
   });
-  const env = { DB: db, AI: fakeAi, ANTHROPIC_API_KEY: FAKE_KEY, ASK_RESEARCH: "on", RESEARCH_CLAUDE_MONTHLY_TOKENS: "1000", BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) } };
+  const env = { DB: db, AI: fakeAi, ANTHROPIC_API_KEY: FAKE_KEY, ASK_RESEARCH: "on", RESEARCH_CLAUDE_MONTHLY_TOKENS: String(CAP), BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) } };
   const e0 = console.error, w0 = console.warn; console.error = () => {}; console.warn = () => {};
   try { await Promise.all(ids.map((id) => answerWithAi({ env, origin: "https://worker.test", intentId: id, by: "Red Fox", memberSlug: "red-fox", question: ABSTAIN_Q, provider: "groq", share: true, journey: "curious", isMember: true }))); } finally { console.error = e0; console.warn = w0; }
   assert.equal(anth.length, 1, "exactly one send past the gate");
   const used = Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json);
-  assert.ok(used >= 1000 && used <= 1100, `counter ${used}`);
+  assert.ok(used >= CAP, `counter ${used}`);
 });
 
 test("5. a counter write failure stops Claude for a while (spend must not go unrecorded)", async () => {
@@ -531,4 +537,93 @@ test("minor. stale 'Workers AI only' wording is gone from the ASK_RESEARCH comme
   const flags = readFileSync(new URL("../../docs/runbooks/flags.md", import.meta.url), "utf8");
   assert.ok(!/so it over-counts/.test(flags));
   for (const k of ["cache_creation_input_tokens", "cpu:budget", "8 ms"]) assert.ok(flags.includes(k), k);
+});
+
+// ======================= round 3 (second-family review of the budget code) =======================
+async function learnE() {
+  const db = schemaDb();
+  await ask(ABSTAIN_Q, { db, claude: () => ({ status: 200, usage: null }) }); // no usage block: settles at the estimate
+  return Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(`claude_tokens_${month()}`).json);
+}
+const rowOf = (db, key) => db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key);
+
+test("R1. a reservation must fit under the cap on BOTH branches (insert and update)", async () => {
+  const key = counterKey(new Date());
+  const env = (n) => { const db = schemaDb(); if (n !== null) db.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(key, String(n)); return { DB: db }; };
+  // absent counter, estimate alone over the cap: refused, and nothing is created
+  let e = env(null);
+  assert.equal(await reserveTokens(e, 1000, 100), false);
+  assert.equal(rowOf(e.DB, key), undefined);
+  // present counter 99 + 1000 > 100: refused, unchanged
+  e = env(99);
+  assert.equal(await reserveTokens(e, 1000, 100), false);
+  assert.equal(rowOf(e.DB, key).json, "99");
+  // fits exactly: allowed; one more does not
+  e = env(90);
+  assert.equal(await reserveTokens(e, 10, 100), true);
+  assert.equal(rowOf(e.DB, key).json, "100");
+  assert.equal(await reserveTokens(e, 1, 100), false);
+  // absent counter and the estimate fits: allowed on the insert branch
+  e = env(null);
+  assert.equal(await reserveTokens(e, 100, 100), true);
+  assert.equal(rowOf(e.DB, key).json, "100");
+  // cap 0 never admits; a non-numeric stored value is never admitted
+  assert.equal(await reserveTokens(env(null), 1, 0), false);
+  assert.equal(await reserveTokens(env("abc"), 1, 100), false);
+});
+
+test("R1. an ask whose estimate alone exceeds the cap skips Claude, Workers AI answers, one alert row", async () => {
+  const db = schemaDb();
+  for (let i = 0; i < 2; i++) {
+    const r = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = "100"; } });
+    assert.equal(r.anth.length, 0);
+    assert.equal(r.wai.length, 1);
+    assert.match(r.row.model, /claude:cap/);
+  }
+  assert.equal(db.raw.prepare("SELECT COUNT(*) c FROM kv_state WHERE key LIKE 'alert:claude-cap:%'").get().c, 1);
+  assert.equal(rowOf(db, `claude_tokens_${month()}`), undefined, "nothing was reserved");
+});
+
+test("R2. the estimate is a conservative upper bound: non-ASCII text counts at 1.5 tokens per character, not 1/3", () => {
+  const ascii = "a".repeat(3000);
+  assert.equal(estimateTokens(ascii, ""), 1000 + RESEARCH_MAX_TOKENS);
+  const cjk = "中文字".repeat(1000); // 3000 CJK characters
+  assert.ok(estimateTokens(cjk, "") >= 3000 * 1.5 + RESEARCH_MAX_TOKENS);
+  const emoji = "\u{1F600}".repeat(1000); // 2000 UTF-16 units
+  assert.ok(estimateTokens("", emoji) >= 2000 * 1.5 + RESEARCH_MAX_TOKENS);
+  // scales with the input: ten times the CJK text is about ten times the estimate
+  const ratio = (estimateTokens(cjk.repeat(10), "") - RESEARCH_MAX_TOKENS) / (estimateTokens(cjk, "") - RESEARCH_MAX_TOKENS);
+  assert.ok(ratio > 9.5 && ratio < 10.5, String(ratio));
+});
+
+test("R2. a long CJK/emoji question reserves a conservative estimate end to end", async () => {
+  const q = `${"中文字\u{1F600}".repeat(300)} tell me about the weather`;
+  const db = schemaDb();
+  const r = await ask(q, { db, claude: () => ({ status: 200, usage: null }) });
+  assert.equal(r.anth.length, 1, r.row.model);
+  const settled = Number(rowOf(db, `claude_tokens_${month()}`).json);
+  const sent = r.anth[0].body.messages[0].content.length + r.anth[0].body.system[0].text.length;
+  const nonAscii = (r.anth[0].raw.match(/[^\x00-\x7f]/g) || []).length;
+  assert.ok(settled >= nonAscii * 1.5 + RESEARCH_MAX_TOKENS - 1, `settled ${settled} for ${nonAscii} non-ASCII characters of ${sent}`);
+});
+
+test("R3. usage needs BOTH valid input_tokens and output_tokens; otherwise it settles at the estimate (no refund)", () => {
+  assert.equal(usageTokens({ output_tokens: 1 }, 5000), 5000);
+  assert.equal(usageTokens({ input_tokens: 7 }, 5000), 5000);
+  assert.equal(usageTokens({ cache_read_input_tokens: 9, cache_creation_input_tokens: 9 }, 5000), 5000);
+  assert.equal(usageTokens({ input_tokens: 10, output_tokens: 5 }, 5000), 15);
+  assert.equal(usageTokens({ input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 5000, cache_read_input_tokens: 4000 }, 20000), 9015);
+  assert.equal(usageTokens({ input_tokens: 1e15, output_tokens: 1 }, 5000), 200001);
+  for (const bad of [{ input_tokens: -1, output_tokens: 5 }, { input_tokens: NaN, output_tokens: 5 }, { input_tokens: "10", output_tokens: 5 }, { input_tokens: 10, output_tokens: null }, { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: -3 }, { input_tokens: 0, output_tokens: 0 }, null, undefined, "x", []]) {
+    assert.equal(usageTokens(bad, 5000), 5000, JSON.stringify(bad));
+  }
+});
+
+test("R3. an ask whose usage block is partial settles at the estimate end to end", async () => {
+  const E = await learnE();
+  for (const usage of [{ output_tokens: 1 }, { input_tokens: 3 }]) {
+    const db = schemaDb();
+    await ask(ABSTAIN_Q, { db, claude: () => ({ status: 200, usage }) });
+    assert.equal(Number(rowOf(db, `claude_tokens_${month()}`).json), E, JSON.stringify(usage));
+  }
 });
