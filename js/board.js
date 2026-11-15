@@ -2745,7 +2745,7 @@ const askChip = (q, label) => copyChip(label || "Ask Leeroy", `/ask ${q}`, "Copi
 
 function libCore() {
   /* ready only when BOTH the ranker and the slice-7 lead helper have settled; a helper that fails to load is null and the list keeps plain rank order */
-  if (!LIBS.coreP) LIBS.coreP = Promise.all([import("../vendor/rank-core.js?v=16d8a1283e").catch(() => null), import("./library-search.js?v=5a42177630").catch(() => null)]).then(([core, lsm]) => { LIBS.lsm = lsm; LIBS.core = core; if (lsm && LIBS.view && LIBS.view.kind === "results" && LIBS.ready && LIBS.via === "page") libPending(); return core; });
+  if (!LIBS.coreP) LIBS.coreP = Promise.all([import("../vendor/rank-core.js?v=c1e9f57ba5").catch(() => null), import("./library-search.js?v=5a42177630").catch(() => null)]).then(([core, lsm]) => { LIBS.lsm = lsm; LIBS.core = core; if (lsm && LIBS.view && LIBS.view.kind === "results" && LIBS.ready && LIBS.via === "page") libPending(); return core; });
   return LIBS.coreP;
 }
 function libStart() {
@@ -2754,7 +2754,7 @@ function libStart() {
   libCore();
   libTips();
   let w = null;
-  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=dffa5944b5", { type: "module" }); } catch (e) { w = null; }
+  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=5f9438cb5c", { type: "module" }); } catch (e) { w = null; }
   if (!w) { libFallback("no worker"); return; }
   LIBS.worker = w; LIBS.via = "worker";
   const timer = setTimeout(() => { if (!LIBS.ready) libFallback("worker timeout"); }, 8000);
