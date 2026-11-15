@@ -127,6 +127,12 @@ export async function loadAskCaps(env) {
 export async function checkAskBudget(env, keys, caps, now = new Date(), { skipGlobal = false, failClosed = false } = {}) {
   const retryAfter = secondsToUtcMidnight(now);
   try {
+    // Research mode, non-roster user (keys.userFirst): their daily cap wins over every other verdict, so a spent guests' share cannot lift it.
+    if (keys && keys.userFirst && keys.userKey && !keys.guest) {
+      const c0 = caps || resolveCaps(null);
+      const u0 = await loadRow(env, keys.userKey, now);
+      if (u0.asks >= c0.userDailyAsks) return { code: "budget_user", retryAfter };
+    }
     if (!skipGlobal) {
       const global = await loadBudget(env, now, { strict: failClosed });
       if (overCap(global.neurons, dailyCap(env))) return { code: "budget_global", retryAfter };

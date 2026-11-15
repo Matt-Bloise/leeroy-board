@@ -31,8 +31,7 @@ import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HA
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
-import { memberLine, researchTimeoutMs, guestLibraryOnly } from "./research/no-wall.js";
-const RESEARCH_RETRY_MAX_START_MS = 12000;
+import { memberLine, researchTimeoutMs, guestLibraryOnly, hardEndMs } from "./research/no-wall.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -259,6 +258,8 @@ const AI_TIMEOUT_MS = 20000;
 export const ASK_CHOSEN_TIMEOUT_MS = 12000;
 export const ASK_FALLBACK_TIMEOUT_MS = 9000;
 export const ASK_DEADLINE_MS = 24000;
+// The delivery deadline in force (discord.js answerAndDeliver reads the same override): research mode takes its margin from this, not from the constant.
+export const askDeadlineMs = (env) => (Number(env && env.ASK_DEADLINE_MS) > 0 ? Number(env.ASK_DEADLINE_MS) : ASK_DEADLINE_MS);
 
 export class AiTimeoutError extends Error {
   constructor(what, ms = AI_TIMEOUT_MS) {
@@ -671,7 +672,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
             metadata: JSON.parse(gatewayMetadata(metadata)),
             cacheTtl: Number(env.AI_GATEWAY_CACHE_TTL) || 21600, // 6 hours: matches the cron update cycle
           },
-        }, deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS);
+        }, strictDeadline && deadlineAt ? Math.max(1, Math.round((deadlineAt - Date.now()) * 0.6)) : deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS);
       } catch (gwErr) {
         console.warn(`[AI-Gateway] Workers AI gateway error (${env.AI_GATEWAY_ID}): ${gwErr.message}, falling back to direct run`);
         result = null;
@@ -679,7 +680,9 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
     }
 
     if (!result) {
-      result = await runWorkersAiWithTimeout(env, model, inputs, undefined, msLeft(deadlineAt));
+      // Research mode: no 1 s floor. A direct run after a failed gateway run only starts when 1 s or more is left before the hard end.
+      if (strictDeadline && deadlineAt && deadlineAt - Date.now() < 1000) throw new AiTimeoutError("Workers AI call", 0);
+      result = await runWorkersAiWithTimeout(env, model, inputs, undefined, strictDeadline && deadlineAt ? Math.floor(deadlineAt - Date.now()) : msLeft(deadlineAt));
     }
 
     answer = String(
@@ -1360,15 +1363,23 @@ export async function answerWithAi({
     }
 
     try {
-      if (libOnly) throw new Error("research: guest budget spent, library facts only");
+      if (libOnly) {
+        await recordAttributed(env, budget, 0); // a library answer counts toward the per-user cap too, so it cannot be asked for without bound
+        throw new Error("research: guest budget spent, library facts only");
+      }
       // Research mode: Claude first (tokenised, guarded, token-capped; research/claude.js). Any skip or failure leaves rawAnswer unset and Workers AI answers below.
       if (research && memberNoWall) { // Claude is for members only: a guest never spends the Claude token cap
-        const viaClaude = await tryResearchClaude({ env, priv, deep, call: callAnthropicClaude });
+        // The Claude hop ends no later than the hard end (research/claude.js hands its own 9 s deadline to the call; this clamps it), and is skipped with under 2.5 s left.
+        const hardEnd = t0 + hardEndMs(askDeadlineMs(env));
+        const viaClaude = hardEnd - Date.now() < 2500
+          ? { reason: "claude:no-time" }
+          : await tryResearchClaude({ env, priv, deep, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
         if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
       if (!rawAnswer) {
-      const waiMs = research ? researchTimeoutMs(Date.now() - t0, ASK_CHOSEN_TIMEOUT_MS, ASK_DEADLINE_MS) : ASK_CHOSEN_TIMEOUT_MS;
+      const deadlineMs = askDeadlineMs(env);
+      const waiMs = research ? researchTimeoutMs(Date.now() - t0, ASK_CHOSEN_TIMEOUT_MS, deadlineMs) : ASK_CHOSEN_TIMEOUT_MS;
       if (waiMs === null) throw new Error("research: no time left for Workers AI"); // under 1 s before the margin: library facts, never an attempt past it
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
         provider: chosenProvider,
@@ -1380,7 +1391,7 @@ export async function answerWithAi({
         metadata,
         budgetKeys: budget,
         timeoutMs: waiMs,
-        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS, hardDeadlineAt: t0 + ASK_DEADLINE_MS - 4000 } : {}),
+        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS, hardDeadlineAt: t0 + hardEndMs(deadlineMs) } : {}),
       }));
       if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? ""; // a name we never send, or a token that is not ours: the reply is dropped (the retry below, then library facts)
       }
@@ -1388,9 +1399,10 @@ export async function answerWithAi({
       // library facts with an honest line, or the honest line alone.
       if (research && !usableAnswer(rawAnswer)) {
         rawAnswer = undefined;
-        const retryMs = researchTimeoutMs(Date.now() - t0, ASK_FALLBACK_TIMEOUT_MS, ASK_DEADLINE_MS);
-        if (Date.now() - t0 <= RESEARCH_RETRY_MAX_START_MS && retryMs !== null) { // the second send only starts early enough that its own timeout still ends 4 s before the deadline
-          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: retryMs, hardDeadlineAt: t0 + ASK_DEADLINE_MS - 4000, maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
+        const retryDeadline = askDeadlineMs(env);
+        const retryMs = researchTimeoutMs(Date.now() - t0, ASK_FALLBACK_TIMEOUT_MS, retryDeadline);
+        if (Date.now() - t0 <= retryDeadline / 2 && retryMs !== null) { // half the deadline (12 s of 24 s) // the second send only starts early enough that its own timeout still ends 4 s before the deadline
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: retryMs, hardDeadlineAt: t0 + hardEndMs(retryDeadline), maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
           if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? "";
         }
         if (!usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from the model"); }

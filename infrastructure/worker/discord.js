@@ -25,7 +25,8 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS, isPrPreviewEnv } from "./ai-models.js";
-import { askWallPlan, memberLine, memberAck, guestLibraryOnly } from "./research/no-wall.js";
+import { askWallPlan, memberLine, memberAck, guestLibraryOnly, MEMBER_FAILED_LINE } from "./research/no-wall.js";
+import { researchModeOn } from "./research/provider.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
@@ -646,7 +647,7 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
 
 // Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
-  const state = { verified: false, type: null };
+  const state = { verified: false, type: null, member: false };
   let res;
   try {
     res = await handleDiscordInteractionInner(req, env, ctx, origin, state);
@@ -655,9 +656,14 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     if (!state.verified || state.type === 1) throw err;
     // Name and a fixed tag only: err.message can carry a slice of user input.
     console.error("Discord interaction failed:", String((err && err.name) || "Error"), "[interaction_catch]");
+    // ASK_RESEARCH on, a roster member: the old line says "before you try again"; a member never reads retry wording (research/no-wall.js). Everyone else, and flag off: unchanged.
+    let failedLine = SLASH_COPY.interactionFailed();
+    if (state.member && state.type !== 4) {
+      try { if (await researchModeOn(env, { preview: isPrPreviewEnv(env) })) failedLine = MEMBER_FAILED_LINE; } catch {}
+    }
     const body = state.type === 4
       ? { type: 8, data: { choices: [] } }
-      : { type: 4, data: { content: SLASH_COPY.interactionFailed(), flags: 64 } };
+      : { type: 4, data: { content: failedLine, flags: 64 } };
     // Falls through to hardenInteractionBody below, so the catch reply carries allowed_mentions too.
     res = new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   }
@@ -723,6 +729,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     "Guest";
   const membersConfig = await loadConfigKey(env, "discord_members");
   const member = resolveMember(user.id, rawUser, membersConfig); // null when the user is not a recognised party member
+  state.member = Boolean(member); // read by the catch in handleDiscordInteraction
   const byName = member ? member.name : String(rawUser).slice(0, 80);
   const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
   // CARDS_ENABLED: flush a due board line and retry an unfinished card edit. Cheap D1 reads; the scheduled ticks do the same.
