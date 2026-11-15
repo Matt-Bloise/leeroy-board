@@ -56,7 +56,7 @@ In writing, including electronic form. Flow-down to sub-processors as 1.5.
 | Item | Draft content |
 | :--- | :--- |
 | Data subjects | The Customer's guild members and admins |
-| Categories | Discord id, display name, avatar, guild roles; sign-up choices and availability; questions typed to the assistant and the answers; hashed guest IP for rate limits (24 h) |
+| Categories | Discord id, display name; sign-up choices and availability; questions typed to the assistant and the answers; hashed guest IP for rate limits (24 h) |
 | Special categories | None intended. Free-text fields could contain any; the Customer is told not to enter them. |
 | Retention | As `docs/privacy.md` (for example Ask history 90 days, intents 7 days, guest limits 24 h). The synthesis targets are not all built; verify before signing. |
 | Frequency | Continuous |

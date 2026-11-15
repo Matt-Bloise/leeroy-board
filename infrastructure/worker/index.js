@@ -56,9 +56,10 @@ import { eventsEnabled, runSync } from "./scheduled-events.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
+import { projectPublicParty } from "./public-party.js";
 import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
-export { BoardRoom };
+export { BoardRoom, projectPublicParty };
 
 const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"];
 
@@ -316,27 +317,6 @@ export async function buildPartySheetsFromD1(env, { persist = true, partyDoc } =
   return { party, seq: Date.now() };
 }
 
-// The three public keys of the party document that come from a member's sheet.
-const PUBLIC_KEY = { race: "race", class: "class", spec_path: "spec" };
-
-// The public party document, re-derived from the final sheet state (never from the request that just arrived), so concurrent visible and hide
-// writes in any order end in the same place: a hidden field is absent from the document. Hidden fields are removed for every member (self-healing);
-// a visible value is copied only for the member and field written, as before. Mutates and returns partyDoc.
-export function projectPublicParty(partyDoc, sheets, slug, field) {
-  if (!partyDoc || !Array.isArray(partyDoc.members)) return partyDoc;
-  for (const m of partyDoc.members) {
-    const sheet = sheetForDocMember(sheets, partyDoc.members, m);
-    if (!sheet) continue;
-    for (const [sheetField, key] of Object.entries(PUBLIC_KEY)) {
-      const f = sheet.fields && sheet.fields[sheetField];
-      if (!f) continue;
-      if (f.visible === false) { delete m[key]; if (key === "class") delete m.class_key; }
-      else if (sheet.slug === slug && sheetField === field && f.value !== undefined && f.value !== null) m[key] = String(f.value);
-    }
-  }
-  return partyDoc;
-}
-
 // keepHidden (the admin path): a field its owner has hidden stays hidden. The check runs inside the commit, against the sheet state that is
 // written, so a hide that lands between the admin's request and the write is never undone.
 // levelRules (level, sheet-values.js nextLevelField): a visibility-only write (valueGiven false) keeps the value; a write of the same value
@@ -413,6 +393,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // Every route this Worker answers, as "METHOD pattern" (":name" is one path segment, a trailing "*" is a prefix, ANY is every
 // method). A description only: dispatch below does not read it. tests/unit/authz.test.mjs checks it against the handlers in
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
+const area0 = (p) => (p.startsWith("/atlas/") ? "atlas" : "data");
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
@@ -1043,6 +1024,7 @@ const worker = {
             // The party row is already in hand: pass it on so the sheets are reconciled without a second read.
             const { party } = await buildPartySheetsFromD1(env, { partyDoc: stored.party || null });
             const now = new Date().toISOString();
+            if (map.party) projectPublicParty(map.party, party, null, null); // belt and braces: a hide holds even if the stored document was written some other way
             resp = jsonResp(
               webBoardLinksDeep({
                 type: "state",
@@ -1408,6 +1390,7 @@ const worker = {
               bundle[row.key] = null;
             }
           }
+          if (bundle.party) projectPublicParty(bundle.party, partySheets, null, null);
           resp = jsonResp(webBoardLinksDeep(bundle), 200, {
             ...cors,
             "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
@@ -1466,7 +1449,12 @@ const worker = {
             let docJson = row.json;
             if (typeof docJson === "string" && path.startsWith("/data/")) {
               try {
-                docJson = JSON.stringify(publicDataDoc(raw, JSON.parse(docJson), row.updated_at));
+                const pubDoc = publicDataDoc(raw, JSON.parse(docJson), row.updated_at);
+                if (raw === "party" && pubDoc && Array.isArray(pubDoc.members)) {
+                  const { party: sheets } = await buildPartySheetsFromD1(env, { persist: false, partyDoc: pubDoc });
+                  projectPublicParty(pubDoc, sheets, null, null);
+                }
+                docJson = JSON.stringify(pubDoc);
               } catch {
                 // an unparsable stats row cannot be filtered, so it is not served (it may hold stats.recent)
                 if (raw === "stats") return jsonResp({ error: "Document stats is unreadable" }, 500, cors);
@@ -1499,6 +1487,11 @@ const worker = {
           if (isDeniedKvKey(raw) || !(path.startsWith("/atlas/") ? isPublicAtlasDoc(raw) : isPublicDataDoc(raw))) return jsonResp({ error: `Document ${raw} cannot be written here` }, 403, cors);
           const body = await req.json();
           const now = new Date().toISOString();
+          // The party document is public: an admin write must not bring back what a member hid on their sheet.
+          if (raw === "party" && area0(path) === "data" && body && Array.isArray(body.members)) {
+            const { party: sheets } = await buildPartySheetsFromD1(env, { persist: false, partyDoc: body });
+            projectPublicParty(body, sheets, null, null);
+          }
           await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
             .bind(raw, JSON.stringify(body), now)
             .run();

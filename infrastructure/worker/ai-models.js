@@ -13,6 +13,7 @@
 // =============================================================================
 
 import { classPageFallback } from "./ask-fallback.js";
+import { projectWithStoredSheets } from "./public-party.js";
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
@@ -894,6 +895,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       }
     }
 
+    if (stateMap.party && typeof stateMap.party === "object") await projectWithStoredSheets(env, stateMap.party);
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });

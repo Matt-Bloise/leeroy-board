@@ -25,6 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
+import { projectWithStoredSheets } from "./public-party.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
@@ -950,7 +951,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first(),
       ]);
       const signups = signupsRow ? JSON.parse(signupsRow.json) : { entries: [] };
-      const party = partyRow ? JSON.parse(partyRow.json) : { members: [] };
+      const party = await projectWithStoredSheets(env, partyRow ? JSON.parse(partyRow.json) : { members: [] });
       const lines = tonightLines({ now: Math.floor(Date.now() / 1000), byName, party, signups, boardUrl });
       return new Response(
         JSON.stringify({

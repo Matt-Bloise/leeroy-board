@@ -148,6 +148,8 @@ function startRoomLadder() {
 }
 const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, count: 600, digit: 240, close: 540, oak: "cubic-bezier(.2, .8, .2, 1)", fade: "cubic-bezier(.45, 0, .55, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+// A member can hide race, class, spec, professions and zone, so any of those can be absent from the public party document.
+const raceClass = (m) => [m && m.race, m && m.class].filter(Boolean).join(" ") || "Build hidden";
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
 /* party.n (data/client.json flags, default off): copy that said "five" says the real member count. Off, or with five members, every string is the old one. Scene ids and hashes (#five) never change.
@@ -495,8 +497,8 @@ function renderTiles() {
   const p = D.party, c = D.client, L = c.legacy, st = D.stats, S = D.signups;
   const count = (role) => p.members.filter((m) => (m.role_now || m.role) === role).length, later = p.members.filter((m) => m.role_from);
   fill("five",
-    h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${m.race} ${m.class}` }))))),
-    h("span", { class: "tile-viz list five-viz", ...(pnOn() ? { style: `--party-n: ${p.members.length}` } : {}) }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
+    h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${raceClass(m)}` }))))),
+    h("span", { class: "tile-viz list five-viz", ...(pnOn() ? { style: `--party-n: ${p.members.length}` } : {}) }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${raceClass(m)}` })))),
     h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many], i) => [i ? ", " : "", h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`)]),
       later.length ? ` (${andList(later.map((m) => `${count(m.role_from.role) === 1 ? "a second" : "a"} ${m.role_from.role} from ${m.role_from.level}`))}).` : ".", " ",
       h("span", { class: "strip-2" }, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Still choosing a spec: ${andList(o)}.` : `All ${pnWord()} have picked a spec.`; })())));
@@ -695,13 +697,13 @@ function miniSpark(vals) {
   return s("svg", { viewBox: `-4 -4 ${W + 8} ${H + 8}`, "aria-hidden": "true", preserveAspectRatio: "none" }, s("polyline", { class: "viz-line", points: pts }));
 }
 
-const roleWords = (m) => (m.role_from ? `${m.role_now || m.role} to ${m.role_from.level}, then ${m.role_from.role}` : m.role_now || m.role);
+const roleWords = (m) => (m.role_from ? `${m.role_now || m.role} to ${m.role_from.level}, then ${m.role_from.role}` : m.role_now || m.role || "not shown");
 function renderCards() {
   const wrap = $("#cards"); wrap.replaceChildren();
   const lvl = D.client.level;
   for (const m of D.party.members) {
     const spells = D.client.classes[m.class] || [];
-    const card = h("article", { class: "card", "data-k": m.class_key, "data-slug": MEM.slug(m.name), style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.race} ${m.class}` });
+    const card = h("article", { class: "card", "data-k": m.class_key, "data-slug": MEM.slug(m.name), style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${raceClass(m)}` });
     const flipBtn = (label) => h("button", { class: "flip", type: "button", "aria-pressed": "false", text: label, onclick: () => {
       const on = card.classList.toggle("flipped");
       sfx("flip", { delay: 120 });
@@ -709,18 +711,18 @@ function renderCards() {
       card.querySelector(".front").inert = on; card.querySelector(".back").inert = !on;
       (on ? card.querySelector(".back .flip") : card.querySelector(".front .flip")).focus({ preventScroll: true });
     } });
-    const profs = m.professions.map((p, pi) => h("span", {}, p.name, " ", h("span", { class: `chip stamp ${p.source}`, style: `--di: ${pi + 1}`, title: p.source === "board" ? "Written on the Party Board or in the group notes" : "Said in chat, not on the board yet" }, emb(p.source === "board" ? "seal" : "speech"), p.status ? `${SRC_WORD[p.source] || p.source}, ${p.status}` : SRC_WORD[p.source] || p.source)));
+    const profs = (m.professions || []).map((p, pi) => h("span", {}, p.name, " ", h("span", { class: `chip stamp ${p.source}`, style: `--di: ${pi + 1}`, title: p.source === "board" ? "Written on the Party Board or in the group notes" : "Said in chat, not on the board yet" }, emb(p.source === "board" ? "seal" : "speech"), p.status ? `${SRC_WORD[p.source] || p.source}, ${p.status}` : SRC_WORD[p.source] || p.source)));
     const front = h("div", { class: "face front" },
       ART.crest[m.class_key] ? crestImg(m.class_key) : null,
       h("div", { class: "who", text: m.name }),
-      h("div", { class: "what", text: `${m.race} ${m.class}` }),
-      h("div", { class: "spec", text: m.spec }),
+      h("div", { class: "what", text: `${raceClass(m)}` }),
+      h("div", { class: "spec", text: m.spec || "" }),
       h("dl", { "data-j": "g c e" },
         h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: roleWords(m) }))),
-        h("div", { "data-j": "c e" }, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), m.spec)))),
+        h("div", { "data-j": "c e" }, h("dt", { text: "Spec" }), h("dd", {}, (!m.spec ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not shown") : (m.spec_status || {}).status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), m.spec)))),
         h("div", {}, h("dt", { text: "Starts in" }), h("dd", { text: m.start_zone || "unknown" })),
         h("div", { "data-j": "c e" }, h("dt", { text: "Professions" }), h("dd", {}, profs.length ? profs : "none said yet"))),
-      flipBtn(`${m.class} spells at ${lvl}`));
+      flipBtn(m.class ? `${m.class} spells at ${lvl}` : `Spells at ${lvl}`));
     const list = h("ul", { class: "spells" }, spells.map((sp) => {
       const vals = sp.values.map((v) => fmtVal(v, sp.duration_ms) + (v.basis === "base" && !v.label.startsWith("%") ? " (starting value; may grow with level)" : v.level != null && v.level < lvl ? ` (rank caps at ${v.level})` : "")).join(" · ");
       const meta = [fmtCost(sp.cost), sp.cast_ms ? `${fmtMs(sp.cast_ms)} cast` : "instant", sp.cooldown ? `${fmtMs(sp.cooldown.ms)} cooldown` : null,
@@ -895,7 +897,7 @@ function renderMap() {
       const pin = s("g", { class: "map-pin", transform: `translate(${tx} ${ty})`, style: `--cc: ${classVar(m.class_key)}; --di: ${zi + i}` },
         s("path", { class: "pin-body", d: "M0 0c-7-8-15-16-15-26a15 15 0 1 1 30 0c0 10-8 18-15 26z" }),
         crestGuard(s("image", { href: crestSrc(m.class_key), x: -13, y: -39, width: 26, height: 26 }), m.class_key),
-        s("title", { text: `${m.name}, ${m.race} ${m.class}` }));
+        s("title", { text: `${m.name}, ${raceClass(m)}` }));
       g.append(pin);
       boxes.push({ x: tx - 15, y: ty - 42, w: 30, h: 42 });
       banners.push({ g, m, tx, ty, plate: plates[i], row: stagger ? i % 2 : 0 });
@@ -3560,7 +3562,7 @@ function beforeItems(T, P, member, mine) {
   const open = (rx) => P.open.find((o) => rx.test(o.title)), nowS = Date.now() / 1000, L = T.links || {};
   const ev = (k) => T.events.find((e) => e.key === k), names = ev("names_open"), launch = ev("launch");
   const dt = (epoch) => fmtWhen(epoch), out = [];
-  if (member) out.push({ id: "build", text: `Your build on the board: ${member.race} ${member.class}, ${member.spec}.`, more: `As the group has it (${(member.spec_status && member.spec_status.status) || "listed"}).` });
+  if (member) out.push({ id: "build", text: `Your build on the board: ${raceClass(member)}${member.spec ? `, ${member.spec}` : ""}.`, more: `As the group has it (${(member.spec_status && member.spec_status.status) || "listed"}).` });
   if (T.poll_closes) out.push({ id: "guild", text: `Guild name: the poll ${nowS < T.poll_closes ? "closes" : "closed"} ${dt(T.poll_closes)}.`, href: L.poll, more: nowS < T.poll_closes ? "Names can also be added in chat." : "", stamp: T.poll_closes });
   if (member) {
     const po = open(/profession/i) || {}, pr = member.professions || [], und = pr.some((p) => p.status === "undecided"), gap = (po.text || "").match(/Gap: ([A-Za-z]+)/);

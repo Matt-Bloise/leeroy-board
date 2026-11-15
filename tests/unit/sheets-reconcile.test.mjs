@@ -193,3 +193,12 @@ test("without a party document a write under a new slug never takes over a store
   await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "winton-alt", name: "Winton (alt)", field: "level", value: 1 }));
   assert.deepEqual(kv(env, "party_sheets").map((r) => r.slug).sort(), ["winton", "winton-alt"]);
 });
+
+test("sheet-match.js (the cycle-free copy public-party.js uses) agrees with party-source.js", async () => {
+  const a = await import("../../infrastructure/worker/sheet-match.js");
+  const b = await import("../../infrastructure/worker/party-source.js");
+  const sheets = [{ slug: "winton", name: "Winton" }, { slug: "sam-h", name: "Sam (Horde)" }, { slug: "ada", name: "Ada" }];
+  const docs = [{ name: "Winton (alt)" }, { name: "Sam" }, { name: "Ada" }, { name: "Nobody" }, { name: "Sam (Horde)" }];
+  for (const m of docs) assert.equal(a.sheetForDocMember(sheets, docs, m), b.sheetForDocMember(sheets, docs, m), m.name);
+  for (const n of ["Winton (alt)", "Sam (Horde) ", "", "Ada"]) assert.equal(a.normName(n), b.normName(n));
+});

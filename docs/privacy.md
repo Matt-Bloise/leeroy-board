@@ -1,6 +1,6 @@
 # Privacy
 
-leeroy.party is a private board for a small group of friends who play WoW Forever. Matt Bloise runs it. Uncle Jimmy built the back end. It is a fan project and has nothing to do with Blizzard. A lawyer has not yet reviewed this page. It describes what the board does today and is not legal advice.
+leeroy.party is a board for a small group of friends who play WoW Forever. Matt Bloise runs it. Uncle Jimmy built the back end. It is a fan project and has nothing to do with Blizzard. A lawyer has not yet reviewed this page. It describes what the board does today and is not legal advice.
 
 ## What we keep
 
@@ -14,7 +14,7 @@ leeroy.party is a private board for a small group of friends who play WoW Foreve
 - A daily count of how many AI questions you used.
 - If you ask on the web as a guest with no key: a fingerprint of your internet address and the time, to limit guests to a few questions an hour. We do not store the address itself.
 
-We do not store your email, a password, or your Discord picture.
+We do not store your email, a password, or your Discord picture. The board does not read your picture. A party card posted in Discord in October 2026 used profile pictures.
 
 ## Why we keep it
 
@@ -22,7 +22,8 @@ To sign you in, to show the group's board, to answer your questions, and to stop
 
 ## Who can see it
 
-- Anyone with the link can read the public board pages. The party list, sign-ups and timeline are open to anyone who asks the server. They have no sign-in. If your character or sign-up is on the board, a stranger could read it.
+- Anyone with the link can read the public board pages. The party list, sign-ups and timeline are open to anyone who asks the server. They have no sign-in. If your character or sign-up is on the board, a stranger could read it. A field you hide on your sheet is removed from those open pages.
+- The first members' builds are also written into the board's public code and older commits of the repo. Hiding a field does not remove them there.
 - A scan of those open pages on 8 November 2026 found no emails, tokens or secrets.
 - Matt and the group admins can see names, roles, builds and sign-ups.
 - Answers marked shared are visible to the group.
@@ -32,7 +33,7 @@ To sign you in, to show the group's board, to answer your questions, and to stop
 
 - Cloudflare hosts the board and the database. It also keeps its own request logs, which include your internet address. We do not control those logs. Cloudflare also adds a visit-counting script to leeroy.party. We have not yet checked what it records.
 - Discord handles the bot commands, and the web sign-in when that is switched on (it is off today). As of 9 November 2026 the bot receives your slash commands, button presses, direct messages to it, and messages that mention it. Discord does not send it the text of ordinary channel messages. Only the owner can add the bot to a server.
-- When you ask Leeroy a question, we send your name, your question, and the party's names and builds to an AI company so it can answer. Several AI companies can be used. They may keep a copy under their own rules.
+- When you ask Leeroy a question, we send your name, your question, and the party's names and builds to an AI company so it can answer, and, when you ask privately, your own hidden sheet fields. Several AI companies can be used. They may keep a copy under their own rules.
 - Nothing goes to Blizzard.
 
 So do not type anything private into a question. Two message actions work on someone else's message: "Ask Leeroy" stores that message as the question and sends it to the AI company, and "Fix this fact" stores the first 200 characters. Do not use them on a message that holds private information.

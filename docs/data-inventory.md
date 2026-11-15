@@ -135,7 +135,7 @@ Added 2026-11-02, for `docs/runbooks/rotate-salts.md` and `tools/rotate-salts.mj
 
 ## Where personal data lives outside the tables
 
-- Discord: the account itself, avatar and guild roles stay at Discord. We receive an id, display name and avatar through login or interactions (`POST /discord`). Which fields exactly are read is unverified; confirm in `worker/discord.js` and `worker/account.js`.
+- Discord: the account itself, avatar and guild roles stay at Discord. We receive an id and display name through login or interactions (`POST /discord`). The Worker also reads `interaction.member.permissions` to decide admin powers and does not store it. It does not read or store the avatar. Which fields exactly are read is unverified; confirm in `worker/discord.js` and `worker/account.js`.
 - Cloudflare request logs and Worker logs: IP address and request metadata. Retention is a Cloudflare setting (unverified).
 - AI vendors: question text is sent to the provider selected in `worker/ai-models.js`.
 - Browser storage on the person's device (preferences, device logs): unverified, not read from this schema.

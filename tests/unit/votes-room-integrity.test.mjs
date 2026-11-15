@@ -143,7 +143,7 @@ test("room: new sockets are refused (503) once MAX_SOCKETS are open", async () =
 // ---- 3. hidden-to-visible leftovers ----------------------------------------------------------------------------------------------
 test("sheet: a field that turns hidden stops being published in the party document", async () => {
   const env = makeEnv();
-  env.DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party', ?, 'x')").run(JSON.stringify({ members: [{ name: "Santa", race: "Orc", class: "Rogue", spec: "Sub" }] }));
+  env.DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party', ?, 'x')").run(JSON.stringify({ members: [{ name: "Santa", race: "Orc", class: "Rogue", spec: "Sub", title: "kept" }] }));
   const party = () => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json).members[0];
   const ev = (field, value, visible) => recordSheetEventInD1(env, ORIGIN, { slug: "santa", name: "Santa", field, value, visible });
   await ev("race", "Troll", true);
@@ -152,7 +152,8 @@ test("sheet: a field that turns hidden stops being published in the party docume
   assert.equal(party().race, undefined, "the old public value is gone once hidden");
   await ev("class", null, false);
   assert.equal(party().class, undefined, "hiding with no value also unpublishes");
-  assert.equal(party().spec, "Sub", "other fields untouched");
+  assert.equal(party().spec, undefined, "a spec names its class, so it goes with a hidden class");
+  assert.equal(party().title, "kept", "fields that come from no sheet field are untouched");
   await ev("race", "Dwarf", true);
   assert.equal(party().race, "Dwarf", "showing it again publishes the new value");
 });
