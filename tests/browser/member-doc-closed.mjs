@@ -23,15 +23,15 @@ try {
   await ctx.route("http://127.0.0.1:9/**", (r) => { api.push(new URL(r.request().url()).pathname); return r.fulfill({ status: 500, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: "{\"error\":\"down\"}" }); });
   await ctx.route(/\/data\/(party|decide|tonight|client|guided-atlas)\.json(\?|$)/, (r) => { staticReads.push(new URL(r.request().url()).pathname); return r.continue(); });
   const page = await ctx.newPage();
-  await page.goto(pageUrl(BASE, { params: { preview: "1", api: "http://127.0.0.1:9" } }), { waitUntil: "load" });
+  await page.goto(pageUrl(BASE, { params: { preview: "1", brain: "http://127.0.0.1:9" } }), { waitUntil: "load" });
   await page.waitForTimeout(9000); // three tries with their waits, then the plain line
   const text = await page.evaluate(() => document.body.innerText);
   const html = await page.content();
   ok("the API was asked for the party document", api.some((p) => /\/api\/data\/party$/.test(p)), api.join(","));
   ok("the static data/party.json was never fetched", !staticReads.some((p) => /party\.json$/.test(p)), staticReads.join(","));
   ok("none of the five member documents was read from its static file", staticReads.length === 0, staticReads.join(","));
-  ok("the plain line is on the page", text.includes(LINE), text.slice(0, 200));
-  ok("no member of the static party.json is shown", party.members.every((m) => !html.includes(`>${m.name}<`)), party.members.map((m) => m.name).join(","));
+  ok("the plain line is on the page", text.includes(LINE), `the page text has ${text.length} characters and not the line`);
+  ok("no member of the static party.json is shown", party.members.every((m) => !html.includes(`>${m.name}<`)), `${party.members.length} members checked, none shown`);
   await ctx.close();
 } finally { await browser.close(); }
 console.log(`\n${pass} passed, ${fail} failed`);
