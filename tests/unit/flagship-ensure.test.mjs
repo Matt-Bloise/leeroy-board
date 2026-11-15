@@ -234,14 +234,37 @@ test("CLI: --dry-run creates nothing", () => {
   assert.match(r.stdout, /would create D1_FEED/);
 });
 
+// Records every spawnSync the TOOL makes, in the tool's own process, before the child exists (preloaded with --require). The fake's own log is written only once
+// node has started inside it, and a loaded machine can take longer than the 400 ms timeout to get there: the child is then killed before it logs anything.
+// So "what was run" is read from this record, which does not depend on how far the killed child got.
+function spawnRecorder() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flagspawn-"));
+  const log = path.join(dir, "spawns.jsonl"), pre = path.join(dir, "record-spawns.cjs");
+  fs.writeFileSync(pre, `const cp=require("child_process"),fs=require("fs"),orig=cp.spawnSync;
+cp.spawnSync=function(cmd,args,...rest){fs.appendFileSync(${JSON.stringify(log)},JSON.stringify([cmd,...(args||[])])+"\\n");return orig.call(this,cmd,args,...rest);};
+require("module").syncBuiltinESMExports();\n`);
+  const spawns = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+  return { nodeOptions: `--require=${pre}`, spawns };
+}
+
 test("CLI: a hung wrangler is killed after the timeout, nothing more runs, a warning is raised, exit 1", () => {
   const f = fake({ hang: true });
+  const rec = spawnRecorder();
   const t0 = Date.now();
-  const r = cli(f, [], { FLAGSHIP_TIMEOUT_MS: "400" });
+  const r = cli(f, [], { FLAGSHIP_TIMEOUT_MS: "400", NODE_OPTIONS: rec.nodeOptions });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.ok(Date.now() - t0 < 8000, "returned promptly, not after the full 60 s");
-  assert.equal(f.calls().length, 1, "only the list was attempted");
-  assert.match(r.stdout, /::warning.*timed out after 400 ms.*Created nothing/s);
+  assert.deepEqual(rec.spawns(), [[process.execPath, f.prog, "flagship", "flags", "list", APP, "--json", "--all", "--remote"]], "only the list was attempted");
+  assert.ok(f.calls().every((c) => c[2] === "list") && f.calls().length <= 1, "the fake saw nothing but that list (it may have been killed before it could log)");
+  assert.match(r.stdout, /::warning.*could not list Flagship flags.*timed out after 400 ms.*Created nothing/s);
+});
+
+test("the spawn recorder sees what the fake sees (so the hung-wrangler check above reads the same calls)", () => {
+  const f = fake({ list: JSON.stringify([{ key: "OTHER" }]) });
+  const rec = spawnRecorder();
+  assert.equal(cli(f, [], { NODE_OPTIONS: rec.nodeOptions }).status, 0);
+  assert.deepEqual(rec.spawns().map((s) => s.slice(2)), f.calls());
+  assert.deepEqual(rec.spawns().map((s) => s[4]), ["list", "create"]);
 });
 
 test("every spawn has a timeout and the default is 60 s", () => {
