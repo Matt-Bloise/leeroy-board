@@ -25,11 +25,14 @@ const clean = (raw) => {
   return out;
 };
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
-function closesIn(ms) {
-  const left = ms - Date.now();
+function closesIn(ms, now = Date.now()) {
+  if (typeof ms !== "number" || !isFinite(ms)) return "Closed";
+  const left = ms - now;
+  if (left <= -60000) return "Closed";
   if (left <= 0) return "Closing now";
   if (left < 3600000) return `Closes in ${plural(Math.max(1, Math.ceil(left / 60000)), "minute")}`;
-  return `Closes in ${plural(Math.ceil(left / 3600000), "hour")}`;
+  if (left < 172800000) return `Closes in ${plural(Math.ceil(left / 3600000), "hour")}`;
+  return `Closes in ${plural(Math.round(left / 86400000), "day")}`;
 }
 function closedOn(ms) {
   try { return `Closed ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(ms))}`; } catch (e) { return "Closed"; }
@@ -119,5 +122,5 @@ function start() {
   sync();
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
-window.BoardVotes = { reload: load, clean };
+window.BoardVotes = { reload: load, clean, closesIn };
 })();

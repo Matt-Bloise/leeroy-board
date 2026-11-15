@@ -230,7 +230,7 @@ test("every room message reaches an anonymous socket with no private value and o
   const stored = (k) => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(k).json);
   for (const k of ["stats", "party", "signups", "timeline", "tonight", "decide"]) assert.equal((await put(`/data/${k}`, stored(k))).status, 200, k);
   const name = stored("party").members[0].name;
-  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name, field: "notes", value: C.hidden, visible: false }));
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name, field: "notes", value: C.hidden, visible: false, visibleGiven: true }));
   await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name, field: "level", value: 12 }));
   assert.ok(env.sent.length >= 7, `the Worker broadcast ${env.sent.length} messages`);
   const synthetic = [

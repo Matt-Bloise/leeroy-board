@@ -66,3 +66,50 @@ test("Timeline events without a when text get one: 'Launch night was undefined' 
   assert.ok(!JSON.stringify(b.D.party.settled_extra).includes("undefined"));
   assert.ok(b.D.party.settled_extra.some((x) => x.text.includes(`WHEN(${LAUNCH_EPOCH})`)));
 });
+
+// /tonight roster: a hidden or odd sheet field must never print as text, and the reply must fit Discord's 2000-char content limit.
+const BAD = /undefined|null|\[object/;
+const pre = LAUNCH_EPOCH - 60, post = LAUNCH_EPOCH + 86400;
+const rosterOf = (members, now) => tonightLines({ ...base, now, party: { members } }).find((l) => l.startsWith("• **Party"));
+test("roster: missing or odd race/class never prints as text, before and after launch", () => {
+  const cases = [
+    [{ name: "Aa", class: "Druid" }, "Aa (Druid)"],
+    [{ name: "Aa", race: "Orc" }, "Aa (Orc)"],
+    [{ name: "Aa" }, "Aa"],
+    [{ name: "Aa", race: "", class: "" }, "Aa"],
+    [{ name: "Aa", race: 5, class: { x: 1 } }, "Aa"],
+    [{ name: "Aa", race: null, class: ["Druid"] }, "Aa"],
+    [{ name: "Aa", race: "constructor", class: "__proto__" }, "Aa (constructor __proto__)"],
+    [{ name: "toString", race: "valueOf", class: "Druid" }, "toString (valueOf Druid)"],
+  ];
+  for (const now of [pre, post]) for (const [m, want] of cases) {
+    const lines = tonightLines({ ...base, now, party: { members: [m] } });
+    assert.ok(!lines.some((l) => BAD.test(l)), JSON.stringify(m));
+    assert.equal(lines.find((l) => l.startsWith("• **Party")), `• **Party (1):** ${want}`);
+  }
+});
+test("roster: members without a string name are skipped; junk rows and containers do not throw", () => {
+  for (const now of [pre, post]) {
+    const r = rosterOf([{ name: 7, race: "Orc", class: "Druid" }, null, 5, "x", [], { race: "Orc" }, { name: "" }, { name: "Aa", race: "Orc", class: "Druid" }], now);
+    assert.equal(r, "• **Party (1):** Aa (Orc Druid)");
+    for (const members of [null, undefined, 5, "x", {}, []]) assert.ok(!BAD.test(rosterOf(members, now)));
+  }
+});
+test("roster: a normal party is unchanged", () => {
+  const members = [{ name: "Aa", race: "Orc", class: "Warrior" }, { name: "Bb", race: "Troll", class: "Mage" }];
+  assert.equal(rosterOf(members, pre), "• **Party (2):** Aa (Orc Warrior) · Bb (Troll Mage)");
+  assert.equal(rosterOf(members, post), "• **Party (2):** Aa (Orc Warrior) · Bb (Troll Mage)");
+});
+test("roster: 60 members with 32-char names are capped with 'and N more' and the reply fits 2000", () => {
+  const members = Array.from({ length: 60 }, (_, i) => ({ name: String(i).padStart(2, "0") + "x".repeat(30), race: "Orc", class: "Warrior" }));
+  for (const now of [pre, post]) {
+    const lines = tonightLines({ ...base, now, party: { members } });
+    const text = lines.join("\n");
+    assert.ok(text.length <= 2000, String(text.length));
+    const r = lines.find((l) => l.startsWith("• **Party"));
+    const m = r.match(/and (\d+) more$/);
+    assert.ok(m, r);
+    assert.equal(r.split(" · ").length - 1 + Number(m[1]), 60);
+    assert.ok(!r.includes("·  "));
+  }
+});
