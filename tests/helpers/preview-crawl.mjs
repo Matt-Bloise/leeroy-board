@@ -7,7 +7,7 @@
 //
 // Nothing here is a hand list of routes: crawlPaths() reads ROUTES, the public document sets and the dispatcher's own regexes from infrastructure/worker.
 import { readFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { ROUTES } from "../../infrastructure/worker/index.js";
 import { PUBLIC_DATA_DOCS, PUBLIC_ATLAS_DOCS } from "../../infrastructure/worker/public-docs.js";
 import { SHEET_VOCAB } from "../../infrastructure/worker/sheet-vocab.js";
@@ -102,16 +102,59 @@ const attributable = (text, identity) => {
   return out.join("\n").toLowerCase();
 };
 
-// canaries: [{ field, value, generic? }]; answers: [{ text, headers }]; ctx: { identity: [name, slug] }
+// The target's class and class key are asserted unique in the party (runPreviewCrawl refuses a target whose class another member shares), so they are searched UNCONDITIONALLY:
+// any appearance anywhere, named or not, is a leak (an unnamed class-key list, a name-keyed object, a whole-document pass-through). The one exception is an answer that lists the game's
+// whole class vocabulary (the sheet page's options): there the class is game text, and it counts only where it is attributed to the target, as for every other game word.
+export const UNCONDITIONAL_FIELDS = new Set(["class", "class_key"]);
+const listsClassVocab = (hay) => {
+  const labels = Object.values(SHEET_VOCAB.class).map((l) => String(l).toLowerCase());
+  return labels.filter((l) => canaryRegex(l).test(hay)).length >= Math.ceil(labels.length * 0.8);
+};
+
+// The structural rule: no object that NAMES the target (its name or slug as a value, or as a key) carries a private field key or a hidden value anywhere beneath it.
+// This catches what a value search cannot: a level or race that is too short or shared with another member, in whatever shape the answer puts it.
+// An object that names the target by key is read through that key's value. Returns the private key names found, or a canary field name for a hidden value.
+export const PRIVATE_KEYS = new Set([...SHEET_FIELDS, "class_key", "color", "spec", "spec_status", "role_detail", "role_now", "role_from", "board_line", "start_zone"]);
+export function structuralHits(text, identity, canaries = []) {
+  let root;
+  try { root = JSON.parse(text); } catch { return []; }
+  const ids = new Set(identity.map(norm).filter(Boolean)), hits = new Set();
+  const values = canaries.map((c) => ({ field: c.field, v: c.value }));
+  const scan = (v) => {
+    if (Array.isArray(v)) { v.forEach(scan); return; }
+    if (v && typeof v === "object") {
+      for (const [k, x] of Object.entries(v)) {
+        if (PRIVATE_KEYS.has(k)) hits.add(k);
+        scan(x);
+      }
+      return;
+    }
+    if (v === null || v === undefined) return;
+    const s = norm(v);
+    for (const c of values) if (s === c.v) hits.add(c.field);
+  };
+  const walk = (v) => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== "object") return;
+    if (Object.values(v).some((x) => (typeof x === "string" || typeof x === "number") && ids.has(norm(x)))) scan(v);
+    for (const [k, x] of Object.entries(v)) { if (ids.has(norm(k))) scan(x); walk(x); }
+  };
+  walk(root);
+  return [...hits];
+}
+
+// canaries: [{ field, value, generic?, unconditional? }]; answers: [{ text, headers }]; ctx: { identity: [name, slug] }
 // returns the sorted field names with at least one value found
 export function findHits(canaries, answers, ctx = { identity: [] }) {
   const hit = new Set();
   for (const a of answers) {
     const hay = haystackOf(a);
-    let attr = null;
+    let attr = null, vocab = null;
+    for (const h of structuralHits(a.text, ctx.identity, canaries)) hit.add(h);
     for (const c of canaries) {
       if (hit.has(c.field) || !canaryRegex(c.value).test(hay)) continue;
-      if (c.generic) {
+      if (c.unconditional && vocab === null) vocab = listsClassVocab(hay);
+      if (c.generic || (c.unconditional && vocab)) {
         if (attr === null) attr = attributable(a.text, ctx.identity);
         if (!canaryRegex(c.value).test(attr)) continue;
       }
@@ -163,7 +206,8 @@ export function buildCanaries({ sheetFields, docMember, others, planted }) {
       if (value.length < MIN_CANARY_LENGTH) { skipped.add(field); continue; }
       if (canaryRegex(value).test(othersText)) { shared.add(field); continue; }
       const list = FIELD_LIST[field];
-      canaries.push({ field, value, generic: Boolean(list) && vocabValues(list).has(value) });
+      const unconditional = UNCONDITIONAL_FIELDS.has(field);
+      canaries.push({ field, value, unconditional, generic: !unconditional && Boolean(list) && vocabValues(list).has(value) });
     }
   }
   return { canaries, skipped: [...skipped].sort(), shared: [...shared].sort() };
@@ -207,9 +251,22 @@ export async function runPreviewCrawl({ call, live, admin, say = () => {}, concu
   if (health.isPrPreview !== true) throw new Error("GET /api/health does not say isPrPreview:true: this crawl writes to a member's sheet and only runs against a PR preview");
 
   // 2. the target. The admin token writes as the Worker's default admin member (POST /api/sheet), so that is the member whose nine lines can be hidden here.
-  const mine = json(expect200(await adminCall("GET", "/api/sheet"), "GET /api/sheet (admin)"), "GET /api/sheet");
+  let mine = json(expect200(await adminCall("GET", "/api/sheet"), "GET /api/sheet (admin)"), "GET /api/sheet");
   const slug = mine.slug, name = String(mine.name || "");
   if (!slug) throw new Error("the admin sheet read names no member");
+  // A run that was cancelled or killed leaves the nine lines hidden and a planted value in goals and launch_state. A preview's seed has every line visible and no goals or launch_state,
+  // so the original is derived from the seed: the planted lines go back to empty and every line back to visible, and only then is the sheet read as the original of THIS run.
+  const PLANTED = /^qz(goal|launch)/i;
+  const leftover = (f) => ["goals", "launch_state"].some((k) => f && f[k] && typeof f[k].value === "string" && PLANTED.test(f[k].value));
+  if (leftover(mine.sheet && mine.sheet.fields)) {
+    for (const k of SHEET_FIELDS) {
+      const r = k === "goals" || k === "launch_state" ? await adminCall("POST", "/api/sheet", { field: k, value: null, visible: true }) : await adminCall("POST", "/api/sheet", { field: k, visible: true });
+      if (r.status !== 200) throw new Error(`recovery of an earlier killed run: POST /api/sheet ${k}: HTTP ${r.status}`);
+    }
+    mine = json(expect200(await adminCall("GET", "/api/sheet"), "GET /api/sheet (admin)"), "GET /api/sheet");
+    if (leftover(mine.sheet && mine.sheet.fields)) throw new Error("recovery of an earlier killed run did not clear the planted values");
+    say("recovered the target's sheet from an earlier run that was cancelled or killed (planted lines emptied, every line visible, as the preview's seed has them)");
+  }
   const original = {};
   for (const k of SHEET_FIELDS) {
     const e = mine.sheet && mine.sheet.fields ? mine.sheet.fields[k] : undefined;
@@ -218,6 +275,8 @@ export async function runPreviewCrawl({ call, live, admin, say = () => {}, concu
   const stored = json(expect200(await adminCall("GET", "/api/data/party?stored=1"), "GET /api/data/party?stored=1 (admin)"), "stored party");
   const members = Array.isArray(stored.members) ? stored.members : [];
   const docMember = members.find((x) => norm(x.name) === norm(name));
+  // the log and the artifact name the target by position and a salted hash, never by name or slug
+  const label = `member #${members.indexOf(docMember) + 1} (${createHash("sha256").update(`${randomBytes(4).toString("hex")}${slug}`).digest("hex").slice(0, 8)})`;
   if (!docMember) throw new Error("the target is not in the stored party document");
   const others = members.filter((x) => x !== docMember);
   const salt = randomBytes(4).toString("hex");
@@ -242,7 +301,8 @@ export async function runPreviewCrawl({ call, live, admin, say = () => {}, concu
   const readSheet = async () => json(expect200(await adminCall("GET", "/api/sheet"), "GET /api/sheet (admin)"), "GET /api/sheet").sheet.fields || {};
   const state = { restoreAttempted: false };
   let main = null;
-  const report = { at: new Date().toISOString(), target: slug, routes: [], live: null, canaries: { searched: {}, skipped: built.skipped, shared: built.shared }, hits: [], restored: false };
+  const answers = [];
+  const report = { at: new Date().toISOString(), target: label, routes: [], live: null, canaries: { searched: {}, skipped: built.skipped, shared: built.shared }, hits: [], restored: false };
   for (const c of built.canaries) report.canaries.searched[c.field] = (report.canaries.searched[c.field] || 0) + 1;
 
   try {
@@ -261,7 +321,6 @@ export async function runPreviewCrawl({ call, live, admin, say = () => {}, concu
     // 4. crawl, anonymous: no Authorization, no cookie
     const list = crawlPaths();
     if (list.length < 20) throw new Error(`only ${list.length} paths derived from ROUTES`);
-    const answers = [];
     let next = 0;
     const one = async () => {
       for (;;) {
@@ -291,8 +350,10 @@ export async function runPreviewCrawl({ call, live, admin, say = () => {}, concu
     report.hits.sort();
   } catch (e) {
     main = e;
+    e.report = report; // the partial table and artifact are still written (tests/api/preview-crawl.test.mjs)
     throw e;
   } finally {
+    if (!report.routes.length && answers.length) report.routes = answers.sort((a, b) => (a.path < b.path ? -1 : 1)).map((a) => ({ route: a.route, path: a.path, status: a.status, hits: a.hits }));
     // 7. put every line back: value and visibility as they were, then read it back
     state.restoreAttempted = true;
     try {
@@ -312,7 +373,7 @@ export async function runPreviewCrawl({ call, live, admin, say = () => {}, concu
       report.restored = true;
     } catch (e) {
       if (main) say(`ALSO: the restore failed: ${e.message}`);
-      else throw e;
+      else { e.report = report; throw e; }
     }
   }
   return report;

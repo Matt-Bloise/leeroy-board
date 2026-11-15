@@ -316,8 +316,16 @@ const BF = (() => {
   return { json, note, fail, stale };
 })();
 window.BoardFetch = BF;
+/* The five member documents, wherever a brain base exists (leeroy.party, previews, the Activity, ?brain=): read from the Worker at BoardBrain.url("/data/<name>") ONLY, by the closed rule: a non-OK answer or a failed
+   fetch is the "could not load" line, never the static file of the same name (that file is the whole party). BoardBrain.url answers null for data/ on the legacy matt-bloise.github.io host and when there is no
+   base at all; those keep reading the static file (the legacy host is a frozen copy with no brain to ask), or the ?api= Worker through apiFetch. */
+const MEMBER_NAMES = ["party", "decide", "tonight", "client", "guided-atlas"];
+const memberUrl = (n) => { const b = window.BoardBrain; if (!MEMBER_NAMES.includes(n) || !b || typeof b.url !== "function") return null; try { return b.url(`/data/${n}`); } catch (e) { return null; } };
 const dataGet = (n) => {
-  const fallback = () => BF.json(`data/${n}.json`, { cache: "no-cache" });
+  const mu = memberUrl(n);
+  const fallback = () => (mu
+    ? BF.json(`data/${n}.json`, { cache: "no-store" }, (u, opt) => fetch(mu, { ...opt, mode: "cors", credentials: "omit" })) /* the logical name keys the retry and the (never read) saved copy; the request goes to the Worker */
+    : BF.json(`data/${n}.json`, { cache: "no-cache" }));
   if (n === "client") return fallback();
   const b = window.BoardBrain;
   if (b && typeof b.bootstrap === "function") return b.bootstrap().then((boot) => (boot && boot[n] != null ? boot[n] : fallback()));
@@ -3766,6 +3774,9 @@ async function boot(mode, sdk) {
     document.querySelectorAll(".tile-body").forEach((b) => b.replaceChildren(h("span", { class: "tile-line", text: "Not loaded." })));
     [...document.querySelectorAll(".panel")].filter((pn) => pn.id !== "panel-library").forEach((pn) => { const bx = h("div", { class: "data-box data-down" }); pn.insertBefore(bx, pn.firstChild); BF.fail(bx, "this scene's data", again, 1, MEMBER_DOWN); });
     route();
+    /* Discord mode does not wait for the member documents: with them down (closed rule), presence and the footer-link interception still start. */
+    bootDone = true;
+    if (mode === "discord") goDiscord(sdk); else if (lateSdk) goDiscord(lateSdk);
     return;
   }
   if (mode === "discord" && sdk) { const tok = launchToken(sdk.customId); if (tok) { try { history.replaceState(null, "", `${location.pathname}${location.search}#${tok}`); } catch (e) {} } }

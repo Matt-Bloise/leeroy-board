@@ -69,6 +69,7 @@ import { sheetValueProblem } from "./sheet-values.js";
 import { VOCAB_LIST, canonicalVocab } from "./sheet-vocab.js";
 import { canManageGuild } from "./setup-command.js";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
+import { dataCachePath } from "./public-docs.js";
 import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
 
 export const GOLD = 0xffd100; // WoW UI Gold
@@ -1254,7 +1255,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           at: entry.updated,
         });
 
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+        await purgeWorkerCache(origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
         await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
         if (cardsBefore) await afterSignupChange(env, ctx, cardsBefore, doc);
 
@@ -2049,7 +2050,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         at: entry.updated,
       });
 
-      await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+      await purgeWorkerCache(origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
       await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
       return new Response(
         JSON.stringify({

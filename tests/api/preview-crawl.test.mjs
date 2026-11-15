@@ -28,15 +28,18 @@ test("preview crawl: with all nine sheet lines of one member hidden, no anonymou
   assertPreviewBase(API);
   const wsUrl = `${API.replace(/^http/, "ws")}/api/live`;
   const live = (trigger) => collectLiveMessages(wsUrl, trigger, 8000);
-  let report = null;
+  let report = null, failure = null;
   try {
     report = await runPreviewCrawl({ call, live, admin: { Authorization: `Bearer ${TOKEN}` }, say: (s) => process.stdout.write(`${s}\n`) });
+  } catch (e) {
+    failure = e; report = e.report || null; // a run that throws still writes what it collected: the table and the artifact
   } finally {
     if (report) {
-      writeFileSync(REPORT, JSON.stringify(report, null, 2));
+      writeFileSync(REPORT, JSON.stringify({ ...report, failed: failure ? failure.message : null }, null, 2));
       process.stdout.write(`${formatTable(report)}\nreport: ${REPORT}\n`);
     }
   }
+  if (failure) throw failure;
   assert.equal(report.restored, true, "the sheet was put back");
   assert.deepEqual(report.hits, [], `hidden values found in anonymous answers (field names): ${report.hits.join(", ")}`);
 });

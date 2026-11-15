@@ -437,5 +437,5 @@ test("GET /api/data/party?stored=1 (the stored document, for a read-then-write t
   }
   const plain = await call(await makeEnv(), "GET /data/*", A, ["GET", "/api/data/party"]);
   assert.equal(plain.status, 200, "the public read is unchanged");
-  assert.notEqual(plain.headers.get("Cache-Control"), "no-store");
+  assert.equal(plain.headers.get("Cache-Control"), "no-store", "member documents are never held in a cache (index.js memberPath), so the plain read is no-store too; the point of this test is that it is 200 and the projection, not the stored document");
 });

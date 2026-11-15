@@ -102,7 +102,7 @@ function masksFor(members, rows) {
   if (!rows) return members.map(() => ALL);
   const find = matcher(rows, members);
   return members.map((m) => {
-    if (!isObj(m)) return 0;
+    if (!isObj(m)) return ALL; // a member row that is not an object cannot be matched to a sheet: fail closed
     const own = find(m);
     if (!own.length) return ALL; // a document member no sheet can be matched to: their visibility is unknown, so nothing of theirs is shown
     let mask = 0;
@@ -116,9 +116,12 @@ function masksFor(members, rows) {
 // (settled, settled_extra, open: "Tank: ... Healers: ...", "Gap: Alchemy", "Three starting zones, one square") and the glossary (its examples are the table's own:
 // "such as Undead, Troll or Tauren", "a Mage who studies Frost") are withheld whole and `withheld` carries the one plain line. polls, play and the links hold nothing of a member and stay.
 export function projectForAnonymous(partyDoc, sheets) {
-  if (!isObj(partyDoc) || !Array.isArray(partyDoc.members)) return partyDoc;
+  // A document that is not an object, or whose `members` is not a list, cannot be filtered member by member: it is withheld whole (fail closed), never returned as stored.
+  if (!isObj(partyDoc)) return withhold({}, { members: [], settled: [], settled_extra: [], open: [], glossary: [] });
+  if (!Array.isArray(partyDoc.members)) return withhold({ ...partyDoc }, { members: [], settled: [], settled_extra: [], open: [], glossary: [] });
   const st = stateOf(partyDoc, sheets);
-  const members = partyDoc.members.map((m, i) => (st.masks[i] && isObj(m) ? strip(m, docKeysFor(st.masks[i])) : m));
+  // a member row that is not an object is dropped: there is nothing to strip, and nothing of it is shown
+  const members = partyDoc.members.flatMap((m, i) => (!isObj(m) ? [] : st.masks[i] ? [strip(m, docKeysFor(st.masks[i]))] : [m]));
   const out = { ...partyDoc, members };
   if (st.union) return withhold(out, { settled: [], settled_extra: [], open: [], glossary: [] });
   return out;
@@ -169,25 +172,29 @@ export function sheetsHideAnything(sheets) {
 const withhold = (doc, replace) => ({ ...doc, ...replace, withheld: WITHHELD_LINE });
 
 export function projectDecide(doc, partyDoc, sheets) {
-  if (!isObj(doc) || !stateOf(partyDoc, sheets).union) return doc;
+  if (isObj(doc) && !stateOf(partyDoc, sheets).union) return doc;
+  doc = isObj(doc) ? doc : {}; // not an object: withheld, never passed on
   // people (every entry is one member's choices), party (roles, buffs, what nobody has): all member-derived. Same shapes, empty, so the page never reads a missing key.
   return withhold(doc, { people: [], party: { brackets: [], role_lines: [], buffs: [], nobody: { classes: [], professions: [], secondaries: [], buffs: [] }, lines: [] } });
 }
 
 export function projectTonight(doc, partyDoc, sheets) {
-  if (!isObj(doc) || !stateOf(partyDoc, sheets).union) return doc;
+  if (isObj(doc) && !stateOf(partyDoc, sheets).union) return doc;
+  doc = isObj(doc) ? doc : {};
   // people (member, class_key, step) and week_one.trainers (keyed by the party's classes) are member-derived.
   return withhold(doc, { people: [], week_one: isObj(doc.week_one) ? { ...doc.week_one, trainers: {} } : doc.week_one });
 }
 
 export function projectGuidedAtlas(doc, partyDoc, sheets) {
-  if (!isObj(doc) || !stateOf(partyDoc, sheets).union) return doc;
+  if (isObj(doc) && !stateOf(partyDoc, sheets).union) return doc;
+  doc = isObj(doc) ? doc : {};
   // classes (one entry per class at the table: the start zone, the trainer, the town) is member-derived; the dungeon, the meeting place and the level cap are not.
   return withhold(doc, { classes: {} });
 }
 
 export function projectClient(doc, partyDoc, sheets) {
-  if (!isObj(doc) || !stateOf(partyDoc, sheets).union) return doc;
+  if (isObj(doc) && !stateOf(partyDoc, sheets).union) return doc;
+  doc = isObj(doc) ? doc : {};
   // classes (spell tables of the classes at the table), racials (races at the table), synergy and buffs.list / buffs.rules (what the table's classes give each other)
   // are member-derived. The level cap, the build, the legacy challenges, the flags and the buff levels and marks are not.
   return withhold(doc, { classes: {}, racials: {}, synergy: [], buffs: isObj(doc.buffs) ? { ...doc.buffs, list: [], rules: [] } : doc.buffs });
@@ -200,8 +207,10 @@ export function projectLaunch(doc, sheets, ownerSlug = null) {
   const hides = (r) => {
     if (!rows) return true;
     if (ownerSlug && r.slug === ownerSlug) return false;
-    const s = rows.find((x) => r.slug && x.slug === r.slug) || rows.find((x) => r.name && String(x.name || "").toLowerCase() === String(r.name).toLowerCase());
-    return !!s && !!(maskOf(s) & BIT.launch_state);
+    // every sheet of the matching tier counts, as masksFor does: a second sheet of one person cannot unhide the first
+    const bySlug = r.slug ? rows.filter((x) => x.slug === r.slug) : [];
+    const own = bySlug.length ? bySlug : r.name ? rows.filter((x) => String(x.name || "").toLowerCase() === String(r.name).toLowerCase()) : [];
+    return own.some((s) => !!(maskOf(s) & BIT.launch_state));
   };
   const fix = (list) => list.map((r) => { if (!(isObj(r) && "state" in r && hides(r))) return r; const { state, ...rest } = r; return rest; });
   if (Array.isArray(doc)) return fix(doc);

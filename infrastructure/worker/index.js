@@ -39,7 +39,8 @@ import { upsertMember } from "./members.js";
 import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
-import { isPublicAtlasDoc, isPublicDataDoc, publicDataDoc } from "./public-docs.js";
+import { defaultDocRow } from "./default-docs.js";
+import { isPublicAtlasDoc, isPublicDataDoc, publicDataDoc, dataCachePath } from "./public-docs.js";
 import { feedOn, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isDeniedKvKey, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
@@ -185,7 +186,14 @@ export function restoreCacheControl(resp) {
   return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers });
 }
 
+// Member documents, /state and /bootstrap (PARTY_CACHE_PATHS) are never held in the isolate memory or in caches.default, and are sent no-store. A purge clears only the isolate and the data
+// centre that handled the write, so a copy held anywhere else kept serving a value the member had just hidden for up to the TTL (seen on the real preview, 2026-11-15: plain GET /data/party.json
+// returned the hidden values 3 s after the hide). Every read of these paths is a fresh projection of the stored rows (about 3 to 5 D1 reads), so a hide is in force on the next request, everywhere.
+const memberPath = (path) => PARTY_CACHE_PATHS.includes(path);
+export const MEMBER_NO_STORE = "no-store";
+
 async function getCachedResponse(origin, path) {
+  if (memberPath(path)) return null;
   const local = getIsolateCache(path);
   if (local) return local;
   try {
@@ -197,6 +205,7 @@ async function getCachedResponse(origin, path) {
 }
 
 function setCachedResponse(ctx, origin, path, resp, ttlMs = ISOLATE_CACHE_TTL_MS) {
+  if (memberPath(path)) return;
   putIsolateCache(path, resp, ttlMs);
   try {
     const cacheKey = new Request(`${origin}${path}`, { method: "GET" });
@@ -227,7 +236,7 @@ export async function purgeWorkerCache(origin, paths = []) {
 // GET /data/* caches under the path as requested, so the two spellings are two cache entries (review catalogue F-12).
 // A hide changes every document that carries member data (public-party.js MEMBER_DOCS), so every one of them is purged, both spellings. The cache itself is keyed by the
 // decoded document name (docCachePath in the /data route), so /data/part%79 and //party are the same entry as /data/party.
-export const PARTY_CACHE_PATHS = Object.freeze(["/api/bootstrap", "/api/state", ...MEMBER_DOC_KEYS.flatMap((n) => [`/api/data/${n}`, `/api/data/${n}.json`])]);
+export const PARTY_CACHE_PATHS = Object.freeze(["/api/bootstrap", "/api/state", ...MEMBER_DOC_KEYS.flatMap((n) => [dataCachePath(n), `${dataCachePath(n)}.json`])]);
 
 // Every message to the room passes here, so this is where a message that carries member data is projected for anonymous readers (public-party.js):
 // the sheet list, and the party, decide and tonight documents. A message that carries none costs nothing extra.
@@ -254,14 +263,16 @@ export async function broadcastToRoom(env, payload) {
 //    sheet that says "everything visible". That is only true if they never hid anything, so the sheet_events log is replayed for them, and a stored sheet that
 //    belongs to nobody in the document (the old name of a rename) hides its hidden fields on every such row (the link is unknowable: fail closed).
 //  - strict: a failed read throws instead of falling back to a visible-everything list, so the caller (loadPublicInputs) can fail closed.
-async function hideFromEvents(env, rows, known, partyDoc, strict) {
+async function hideFromEvents(env, rows, known, partyDoc, strict, memo = null) {
   const added = rows.filter((r) => !known.has(r));
   if (!added.length) return rows;
   const ALLNAMES = SHEET_FIELD_NAMES;
   const hideAll = (r) => ({ ...r, fields: { ...Object.fromEntries(ALLNAMES.map((k) => [k, { value: null, visible: false, source: "board" }])), ...Object.fromEntries(Object.entries(r.fields || {}).map(([k, v]) => [k, { ...v, visible: false }])) } });
   let events;
   try {
-    events = (await env.DB.prepare("SELECT slug, name, field, visible FROM sheet_events ORDER BY id ASC").all()).results || [];
+    // memo: a sheet write retries its compute on a lost race, and the log is read once per write (the subrequest budget). A hide recorded in between lands in the stored sheets the retry reads, not here.
+    events = (memo && memo.events) || (await env.DB.prepare("SELECT slug, name, field, visible FROM sheet_events ORDER BY id ASC").all()).results || [];
+    if (memo) memo.events = events;
   } catch (err) {
     if (strict) throw err;
     return rows.map((r) => (known.has(r) ? r : hideAll(r)));
@@ -386,6 +397,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
   // event.visible and event.valJson are set in compute() from the fresh read on every attempt, before the event row is bound.
   const event = { slug, name: name || slug, field, valJson, visible: true, source: source || "board", at: now };
   let stale = false, changed = true, stored = null;
+  const eventsMemo = {};
 
   // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
   // recomputes everything from the fresh documents; running out of retries throws KvConflictError and nothing was written.
@@ -394,7 +406,11 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
     compute: async (cur, partyDoc) => {
       // Reconcile first: a person who is in the party document but has no stored sheet gets theirs (race, class, zone) before this write adds its
       // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
-      const currentParty = reconcileSheetsWithDoc(Array.isArray(cur) && cur.length > 0 ? cur : (await buildPartySheetsFromD1(env, { persist: false, partyDoc })).party, partyDoc);
+      // The rows reconcile adds (a person added or renamed through the document) are all-visible by construction. That is only true if they never hid anything, so they get the same
+      // events / orphaned-sheet rule the read path applies (hideFromEvents) BEFORE anything is persisted: otherwise this write would store an all-visible sheet for a renamed member who had hidden fields.
+      const base = Array.isArray(cur) && cur.length > 0 ? cur : (await buildPartySheetsFromD1(env, { persist: false, partyDoc })).party;
+      const reconciled = reconcileSheetsWithDoc(base, partyDoc);
+      const currentParty = reconciled === base ? reconciled : await hideFromEvents(env, reconciled, new Set(base), partyDoc, false, eventsMemo);
       // Same identity as the reconcile above: a write that arrives under a renamed document member's new slug lands on the person's existing
       // sheet (which takes the new slug and name) instead of starting a second one-field sheet. Events keyed by the old slug stay as history.
       let memberSheet = sheetForWrite(currentParty, partyDoc, slug, name);
@@ -1075,7 +1091,7 @@ const worker = {
             at: now,
           });
 
-          await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+          await purgeWorkerCache(url.origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
           await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
 
           return jsonResp({ ok: true, id: seq, seq, at: now }, 200, cors);
@@ -1118,7 +1134,7 @@ const worker = {
               200,
               {
                 ...cors,
-                "Cache-Control": "public, max-age=10, s-maxage=30, stale-while-revalidate=60",
+                "Cache-Control": MEMBER_NO_STORE,
               }
             );
             setCachedResponse(ctx, url.origin, "/api/state", resp, 30000);
@@ -1464,7 +1480,7 @@ const worker = {
           }
           resp = jsonResp(webBoardLinksDeep(bundle), 200, {
             ...cors,
-            "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
+            "Cache-Control": MEMBER_NO_STORE,
           });
           setCachedResponse(ctx, url.origin, "/api/bootstrap", resp, 60000);
         } else {
@@ -1523,7 +1539,9 @@ const worker = {
           if (!resp) {
             // D1_FEED (default off): stats is computed from D1 and cached 5 minutes; null means serve the stored row as before.
             const fed = path.startsWith("/data/") && (await feedOn(env)) ? await serveFeedDoc(env, raw) : null;
-            const row = fed || (await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first());
+            // A document with no row falls back to the copy bundled with the Worker (default-docs.js: `client`, which seed-d1 never wrote), and that copy is projected like a stored row. Without it the board
+            // would read 404 for a member document and show nothing; with it the page and the privacy rule do not depend on a row existing.
+            const row = fed || (await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first()) || (path.startsWith("/data/") ? defaultDocRow(raw) : null);
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
             let etag = `"${raw}-${row.updated_at || '1'}"`;
             let docJson = row.json;
@@ -1547,7 +1565,7 @@ const worker = {
             resp = jsonResp(docJson, 200, {
               ...cors,
               ETag: etag,
-              "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
+              "Cache-Control": MEMBER_DOC_KEYS.includes(raw) ? MEMBER_NO_STORE : "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
             });
             setCachedResponse(ctx, url.origin, cachePath, resp, 60000);
           } else {
@@ -1646,7 +1664,7 @@ const worker = {
             ver: 1,
             at: now,
           });
-          await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+          await purgeWorkerCache(url.origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
           await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
           return jsonResp({ ok: true, id: seq, seq, at: now }, 200, cors);
         }
@@ -1712,7 +1730,7 @@ const worker = {
               if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
               throw e;
             }
-            await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/launch.json"]);
+            await purgeWorkerCache(url.origin, ["/api/bootstrap", dataCachePath("launch")]);
             await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
           }
           const { seq } = await insertIntent(env, {

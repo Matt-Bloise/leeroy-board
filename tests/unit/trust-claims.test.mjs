@@ -203,7 +203,8 @@ test("trust card: 'sees' says what the enumeration proves, and nothing stronger"
   assert.match(sees, /Your name and role always stay shown, and so do your sign-up answers, the meeting place, and the times your sheet and your launch row last changed./);
   assert.ok(sees.includes(`the shared planning pages (decide, buffs, the atlas guide, tonight's suggestions) go blank and show one line: ${WITHHELD_LINE}`), "the line on the card is the one the Worker sends");
   assert.match(sees, /While any member hides anything/);
-  assert.match(sees, /A change can take up to about 60 seconds to show, because pages are cached./);
+  assert.ok(sees.includes("A change is in force on the very next read of the server: the party, the shared planning pages and the sheet list are never held in a cache."), "true: index.js memberPath keeps these out of every cache and sends no-store (tests/unit/cache-control-on-hit.test.mjs)");
+  assert.ok(sees.includes("The old address matt-bloise.github.io is a frozen copy that reads the files on the site directly, so it does not follow hide switches."), "true: BoardBrain.url answers null for data/ on that host (js/brain.js LEGACY)");
   assert.ok(sees.includes("The first members' builds are also in the board's public code and in files on the site, and in older commits; hiding a field does not remove them there."), "the card says plainly where the first members' builds also are");
   assert.match(sees, /Your settings and your own sheet need your key./);
   assert.match(sees, /named on the privacy page/i);
@@ -214,7 +215,7 @@ test("trust card: 'sees' says what the enumeration proves, and nothing stronger"
   // the time the sheet changed (no line), the launch list gives name, slug and when. tests/unit/public-read-enumerate.test.mjs asserts those key sets; here they are asserted again from the card's own words.
   assert.ok(/name and role/.test(sees) && /sign-up answers/.test(sees) && /meeting place/.test(sees) && /times your sheet and your launch row last changed/.test(sees));
   const md = read("docs/privacy.md");
-  for (const needle of ["Every line of your sheet has a hide switch", WITHHELD_LINE, "about 60 seconds", "The first members' builds are also in the board's public code and in files on the site, and in older commits; hiding a field does not remove them there.", "Last changed: 15 November 2026"]) assert.ok(md.includes(needle), `docs/privacy.md says: ${needle}`);
+  for (const needle of ["Every line of your sheet has a hide switch", WITHHELD_LINE, "in force on the very next read of the server", "The first members' builds are also in the board's public code and in files on the site, and in older commits; hiding a field does not remove them there.", "Last changed: 15 November 2026"]) assert.ok(md.includes(needle), `docs/privacy.md says: ${needle}`);
   assert.ok(read("privacy/index.html").includes(WITHHELD_LINE), "the rendered page says the line");
 });
 
