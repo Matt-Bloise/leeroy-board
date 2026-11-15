@@ -66,6 +66,28 @@ export function buildAnnounceBody({ text, roleId, buttonLabel, buttonUrl } = {})
   return { ok: true, body };
 }
 
+// One bot post to a channel, with a hard timeout. Returns { ok, status }; never throws, never returns the response body, the token or ids.
+// Used by /say (inside Discord's 3 s window). POST /api/announce keeps its own inline fetch.
+export async function postChannelMessage(env, channelId, body, { timeoutMs = 2000, fetchImpl } = {}) {
+  const doFetch = fetchImpl || globalThis.fetch;
+  const ctl = typeof AbortController === "function" ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
+  try {
+    const res = await doFetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      ...(ctl ? { signal: ctl.signal } : {}),
+    });
+    await res.arrayBuffer().catch(() => {});
+    return { ok: res.ok, status: res.status };
+  } catch {
+    return { ok: false, status: 0 };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // Ephemeral /start reply: four plain lines and a link button.
 export function buildStartReply(siteUrl = "https://leeroy.party/") {
   const lines = SLASH_COPY.startLines(siteUrl);
