@@ -22,7 +22,7 @@ export const LISTEN_KINDS = Object.freeze(["mention", "reply", "chatter"]);
 export const QUIET_COMMAND_NAME = "quiet";
 export const QUIET_COMMAND_DEFINITION = {
   name: QUIET_COMMAND_NAME,
-  description: "Tell Leeroy to stay out of this channel's chat (he still answers when you tag him), or let him back in",
+  description: "Tell Leeroy to stay out of this channel's chat (he still answers a tag), or let him back in",
   options: [
     {
       name: "state",
@@ -63,7 +63,7 @@ export async function verifyListen(secret, timestamp, rawBody, signature, nowSec
 const clean = (v, max) => String(v ?? "").replace(/\u0000/g, "").slice(0, max);
 
 // One forwarded Discord message. Returns { ok: true, ev } or { ok: false, why }. Strict: unknown kinds, bad ids and bot authors are refused.
-//   { id, guild_id, channel_id, author_id, bot?: boolean, kind: 'mention'|'reply'|'chatter', content, ref_text? }
+//   { id, guild_id, channel_id, parent_id? (a thread's channel), author_id, bot?: boolean, kind: 'mention'|'reply'|'chatter', content, ref_text? }
 // Mentions of any user or role are removed from the content here (the forwarder strips the bot's own already); Leeroy never repeats a ping.
 export function parseListenEvent(obj) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return { ok: false, why: "shape" };
@@ -73,5 +73,5 @@ export function parseListenEvent(obj) {
   const strip = (s, max) => clean(s, max * 2).replace(/<@[!&]?\d+>|<#\d+>|@everyone|@here/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
   const content = strip(obj.content, LISTEN_CONTENT_CHARS);
   const ref = obj.ref_text == null ? "" : strip(obj.ref_text, LISTEN_REF_CHARS);
-  return { ok: true, ev: { id: obj.id, guild_id: obj.guild_id, channel_id: obj.channel_id, author_id: obj.author_id, kind: obj.kind, content, ref_text: ref } };
+  return { ok: true, ev: { id: obj.id, guild_id: obj.guild_id, channel_id: obj.channel_id, parent_id: isSnow(obj.parent_id) ? obj.parent_id : "", author_id: obj.author_id, kind: obj.kind, content, ref_text: ref } };
 }

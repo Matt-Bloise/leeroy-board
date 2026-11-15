@@ -1710,7 +1710,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       const on = getOpt("state") === "on";
       const done = await setQuiet(env, String(interaction.channel_id || ""), on);
       const content = !done ? "I could not change that just now. Try again in a moment."
-        : on ? "Fine. I will stay out of this channel's chat: I will not read it or chime in. Tag me or reply to me and I still answer. /quiet off lets me back in."
+        : on ? "Fine. From now on I will not read this channel's chat or chime in (anything said before stays in my memory). Tag me or reply to me and I still answer. /quiet off lets me back in."
         : "I am back. I may read this channel and chime in when I have a real answer. /quiet on shuts me up again.";
       return new Response(JSON.stringify({ type: 4, data: { content, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
     }

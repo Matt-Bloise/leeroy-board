@@ -39,8 +39,9 @@ export async function listenerActive(env) {
 export async function isQuiet(env, channel) {
   try {
     return Boolean(await env.DB.prepare("SELECT 1 AS q FROM listen_quiet WHERE channel = ?").bind(String(channel)).first());
-  } catch {
-    return false; // table missing (migration not applied): no channel is quiet
+  } catch (e) {
+    // Table missing (migration not applied): nobody could have run /quiet, so no channel is quiet. Any other failure fails CLOSED: a muted channel is never read on a bad day.
+    return !/no such table/i.test(String((e && e.message) || e));
   }
 }
 
@@ -56,10 +57,17 @@ export async function setQuiet(env, channel, on) {
 }
 
 // Claim the message id. true: first delivery. false: seen before (or the table is missing: do nothing rather than answer twice).
+// The stored key is a salted hash of the Discord message id, so a row cannot be looked up in Discord (which would give its author and time) and survives an erase harmlessly.
+async function msgKey(env, id) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`listen:${String((env && env.USER_SALT) || "")}:${id}`));
+  return [...new Uint8Array(buf)].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function claim(env, ev) {
   try {
+    if (!env.USER_SALT) return false; // no salt: the key would be guessable, so do nothing
     const r = await env.DB.prepare("INSERT OR IGNORE INTO listen_events (msg_id, at, channel, kind, decision, posted) VALUES (?, ?, ?, ?, 'claimed', 0)")
-      .bind(ev.id, new Date().toISOString(), ev.channel_id, ev.kind).run();
+      .bind(await msgKey(env, ev.id), new Date().toISOString(), ev.channel_id, ev.kind).run();
     return Boolean(r && r.meta && r.meta.changes > 0);
   } catch {
     return false;
@@ -68,7 +76,7 @@ async function claim(env, ev) {
 
 async function decide(env, id, decision, { askId = null, posted = false } = {}) {
   try {
-    await env.DB.prepare("UPDATE listen_events SET decision = ?, ask_id = ?, posted = ? WHERE msg_id = ?").bind(String(decision).slice(0, 40), askId, posted ? 1 : 0, id).run();
+    await env.DB.prepare("UPDATE listen_events SET decision = ?, ask_id = ?, posted = ? WHERE msg_id = ?").bind(String(decision).slice(0, 40), askId, posted ? 1 : 0, await msgKey(env, id)).run();
   } catch {}
 }
 
@@ -83,7 +91,7 @@ export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = 
 
   if (ev.kind === "chatter") {
     if (!ev.content) { await decide(env, ev.id, "empty"); return "empty"; }
-    if (await isQuiet(env, ev.channel_id)) { await decide(env, ev.id, "quiet"); return "quiet"; }
+    if ((await isQuiet(env, ev.channel_id)) || (ev.parent_id && (await isQuiet(env, ev.parent_id)))) { await decide(env, ev.id, "quiet"); return "quiet"; }
     if (!(await groupMemoryOn(env))) { await decide(env, ev.id, "memory-off"); return "memory-off"; }
     const n = await appendGroupLog(env, [{ at: new Date().toISOString(), channel: ev.channel_id, author_slug: member.slug, kind: "message", text: ev.content, reply_to: ev.id, source: "listener" }]);
     const d = n ? "logged" : "not-stored";
@@ -107,7 +115,7 @@ export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = 
   let budget = null;
   try { ({ budget } = await askWallPlan(env, { isMember: true, userPart: await hashId(ev.author_id), preview: false })); } catch {}
   try {
-    await answerWithAi({ env, origin, intentId, by: member.name, memberSlug: member.slug, question, provider: resolveAiProvider(env), share, budget, isMember: true, channel: ev.channel_id });
+    await answerWithAi({ env, origin, intentId, by: member.name, memberSlug: member.slug, question, provider: resolveAiProvider(env), share, budget, isMember: true, channel: ev.channel_id, noFanout: true });
   } catch {
     console.warn(JSON.stringify({ evt: "listen_answer_failed" }));
   }
@@ -133,11 +141,33 @@ export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = 
   return res.ok ? "posted" : "post-failed";
 }
 
+// The body as text, or null when it is over `max` BYTES. The declared length is checked first and the stream is cancelled the moment the running count passes the limit,
+// so an unsigned caller cannot make the Worker buffer a large body.
+export async function readBounded(req, max) {
+  const declared = Number(req.headers.get("Content-Length"));
+  if (Number.isFinite(declared) && declared > max) return null;
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) { try { await reader.cancel(); } catch {} return null; }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { all.set(c, off); off += c.byteLength; }
+  return new TextDecoder().decode(all);
+}
+
 export async function handleListen(req, env, ctx, origin) {
   const mode = await listenerActive(env);
   if (!mode) return json({ error: "not found" }, 404); // off: the route does not exist
-  const raw = await req.text();
-  if (raw.length > LISTEN_MAX_BODY) return json({ error: "too large" }, 413);
+  const raw = await readBounded(req, LISTEN_MAX_BODY);
+  if (raw === null) return json({ error: "too large" }, 413);
   const ok = await verifyListen(env.LISTENER_SECRET, req.headers.get("X-Listen-Timestamp"), raw, req.headers.get("X-Listen-Signature"), Math.floor(Date.now() / 1000));
   if (!ok) return json({ error: "unauthorized" }, 401);
   let body;
