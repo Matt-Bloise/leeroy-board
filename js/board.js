@@ -276,7 +276,11 @@ const API = (() => {
     return API_OK.test(u.origin) ? u.origin : null;
   } catch (e) { return null; }
 })();
-const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r : fetch(url, opt)), () => fetch(url, opt)) : fetch(url, opt); };
+/* The five documents that carry member data. The static file of each is the WHOLE party, so when the API is set and does not answer 200 it is never read in the API's place:
+   the caller gets the failure and shows MEMBER_DOWN where the section was. Every other document keeps the static fallback. */
+const MEMBER_DOC_RE = /^data\/(party|decide|tonight|guided-atlas|client)\.json/;
+const MEMBER_DOWN = "This part of the board could not load. Try again in a moment.";
+const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; const closed = !!to && MEMBER_DOC_RE.test(url); return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok || closed ? r : fetch(url, opt)), (e) => (closed ? Promise.reject(e) : fetch(url, opt))) : fetch(url, opt); };
 const BF = (() => {
   const B = ((document.currentScript || {}).src || "").match(/[?&]v=([0-9a-f]+)/), stale = new Set(), file = (u) => String(u).split("?")[0], key = (u) => `bd:${B ? B[1] : "dev"}:${file(u)}`;
   /* boot: drop cached copies stamped by an older build (their key is never read again) */
@@ -295,14 +299,14 @@ const BF = (() => {
         return j;
       } catch (e) { err = e; } finally { clearTimeout(t); }
     }
-    if (!soft) { try { const c = localStorage.getItem(key(url)); if (c) { const j = JSON.parse(c); stale.add(file(url)); return j; } } catch (e) {} }
+    if (!soft && !MEMBER_DOC_RE.test(file(url))) { try { const c = localStorage.getItem(key(url)); if (c) { const j = JSON.parse(c); stale.add(file(url)); return j; } } catch (e) {} }
     throw err;
   };
   const note = (...names) => (names.some((n) => [...stale].some((f) => f.endsWith(`/${n}.json`))) ? h("p", { class: "stale-note", role: "status", text: "Showing the last saved copy." }) : null);
-  const fail = (box, what, retry, manual) => {
+  const fail = (box, what, retry, manual, plain) => {
     if (!box) return;
     const go = h("button", { type: "button", class: "retry-btn", text: "Try again" });
-    box.replaceChildren(h("p", { class: "data-fail", role: "status", text: `Could not load ${what}.` }), go);
+    box.replaceChildren(h("p", { class: "data-fail", role: "status", text: plain || `Could not load ${what}.` }), go);
     const run = () => { go.disabled = true; go.textContent = "Trying"; Promise.resolve().then(retry).catch(() => {}).then(() => { if (go.isConnected) { go.disabled = false; go.textContent = "Try again"; } }); };
     go.addEventListener("click", run);
     if (!manual) setTimeout(() => { if (go.isConnected && !go.disabled) run(); }, 10000);
@@ -3523,7 +3527,7 @@ function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.
 const FIRST_RUN = Object.freeze({ go: "Show me what is next", purpose: Object.freeze(["This is the party board for our World of Warcraft: Forever group.", "It tells you what to do next, shows who is playing what, and collects the group's votes.", "Whatever you post in Discord (forms, build threads, votes) shows up here.", "Pick who you are below, or just look around."]) });
 function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
-  const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) { if (box && P && !T) BF.fail(box, "the steps for tonight", reloadOpt); return; }
+  const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) { if (box && P && !T) BF.fail(box, "the steps for tonight", reloadOpt, 0, MEMBER_DOWN); return; }
   const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); renderBuffsDeep(); } catch (e) {} };
   if (!me) {
     const sel = { slug: null }, say = h("p", { class: "nx-say tn-first-say", id: "tn-first-say", role: "status", "aria-live": "polite" });
@@ -3741,10 +3745,10 @@ async function boot(mode, sdk) {
   } catch (e) {
     setClockLabel("The data files did not load", "");
     const again = () => dataGet("party").then(() => location.reload());
-    BF.fail($("#footer"), "the board's data", again, 1);
+    BF.fail($("#footer"), "the board's data", again, 1, MEMBER_DOWN);
     $("#footer").append(h("small", { text: `Could not read the board's data: ${e.message}.` }));
     document.querySelectorAll(".tile-body").forEach((b) => b.replaceChildren(h("span", { class: "tile-line", text: "Not loaded." })));
-    [...document.querySelectorAll(".panel")].filter((pn) => pn.id !== "panel-library").forEach((pn) => { const bx = h("div", { class: "data-box data-down" }); pn.insertBefore(bx, pn.firstChild); BF.fail(bx, "this scene's data", again, 1); });
+    [...document.querySelectorAll(".panel")].filter((pn) => pn.id !== "panel-library").forEach((pn) => { const bx = h("div", { class: "data-box data-down" }); pn.insertBefore(bx, pn.firstChild); BF.fail(bx, "this scene's data", again, 1, MEMBER_DOWN); });
     route();
     return;
   }

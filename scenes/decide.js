@@ -191,7 +191,7 @@ function pick(w, quiet) {
 }
 function fail(e) {
   const main = $("#dc-main"); if (!main || DV.data) return;
-  if (window.BoardFetch) window.BoardFetch.fail(main, "the decisions", () => get().then(() => render())); else main.replaceChildren(h("p", { class: "dc-sum", text: "The decision data did not load. A refresh may help." }));
+  if (window.BoardFetch) window.BoardFetch.fail(main, "the decisions", () => get().then(() => render()), 0, "This part of the board could not load. Try again in a moment."); else main.replaceChildren(h("p", { class: "dc-sum", text: "The decision data did not load. A refresh may help." }));
 }
 const shown = () => { const p = $("#dc-main .dc-person"); return p ? p.dataset.who : null; };
 K.on("scene", (k) => {

@@ -48,6 +48,7 @@ import { guestIpKey } from "./guest-key.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { publicParty, partyForMember } from "./sheet-privacy.js";
 import { sheetValueProblem, ADMIN_SHEET_FIELDS, nextLevelField } from "./sheet-values.js";
+import { VOCAB_LIST } from "./sheet-vocab.js";
 import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
@@ -456,6 +457,9 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // Every route this Worker answers, as "METHOD pattern" (":name" is one path segment, a trailing "*" is a prefix, ANY is every
 // method). A description only: dispatch below does not read it. tests/unit/authz.test.mjs checks it against the handlers in
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
+// FNV-1a of a string, base 36: a short tag for a projected body (ETag marker). Not a secret and not a security boundary.
+export function projectionTag(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); }
+
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
@@ -570,7 +574,16 @@ const worker = {
           if (!SHEET_FIELDS.includes(field)) {
             return jsonResp({ error: `Unknown sheet field: ${field}` }, 400, cors);
           }
-          const problem = sheetValueProblem(field, body.value, body, { allowClear: true }); // the owner may clear a level (value null)
+          let problem = sheetValueProblem(field, body.value, body, { allowClear: true }); // the owner may clear a level (value null)
+          // A value the line already stores is never refused: a stored production value can pre-date the vocabulary, and re-sending it (or hiding the line) must work.
+          // Only a vocabulary line is looked up, and only after the vocabulary refused, so the normal write costs no extra read.
+          if (problem && VOCAB_LIST[field] && body.value !== undefined && body.value !== null) {
+            try {
+              const cur = (await buildPartySheetsFromD1(env, { persist: false })).party.find((p) => p.slug === m.slug);
+              const stored = cur && cur.fields && cur.fields[field];
+              if (stored && stored.value !== undefined && JSON.stringify(stored.value) === JSON.stringify(body.value)) problem = null;
+            } catch { /* unreadable: the refusal stands */ }
+          }
           if (problem) return jsonResp({ error: problem }, 400, cors);
           // Only a boolean `visible` changes the field's visibility; without one the field keeps what it has (a write of a value never un-hides).
           // { field, visible } with no value key is a visibility change for every field: the stored value stays. { value: null } still clears.
@@ -1512,13 +1525,15 @@ const worker = {
             const fed = path.startsWith("/data/") && (await feedOn(env)) ? await serveFeedDoc(env, raw) : null;
             const row = fed || (await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first());
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
-            const etag = `"${raw}-${row.updated_at || '1'}"`;
+            let etag = `"${raw}-${row.updated_at || '1'}"`;
             let docJson = row.json;
             if (typeof docJson === "string" && path.startsWith("/data/")) {
               try {
                 let pubDoc = publicDataDoc(raw, JSON.parse(docJson), row.updated_at);
                 if (MEMBER_DOC_KEYS.includes(raw)) pubDoc = projectDataDoc(raw, pubDoc, await loadPublicInputs(env, raw === "party" ? { partyDoc: pubDoc } : {}));
                 docJson = JSON.stringify(pubDoc);
+                // The stored row did not change but what is served did (a member hid or showed a line): the tag of a member document carries a hash of the projected body, so a full and a withheld body never share an ETag.
+                if (MEMBER_DOC_KEYS.includes(raw)) etag = `"${raw}-${row.updated_at || '1'}-p${projectionTag(docJson)}"`;
               } catch {
                 // an unparsable stats row cannot be filtered, so it is not served (it may hold stats.recent); nor is a member document that cannot be projected
                 if (raw === "stats" || MEMBER_DOC_KEYS.includes(raw)) return jsonResp({ error: `Document ${raw} is unreadable` }, 500, cors);

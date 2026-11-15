@@ -17,6 +17,7 @@
 //   loadPublicInputs(env, opts)              reads the stored party row and the sheets once, for the callers that have neither in hand
 //   anyHidden / sheetsHideAnything           the question rule 2 asks (the ask prompt has no party document in hand)
 import { sheetForDocMember } from "./sheet-match.js";
+import { slugify } from "./member-model.js";
 
 // The sheet fields a member can hide, as bits: every line of the sheet has a hide switch. `level`, `launch_state` and `goals` are not in the party document and derive nothing.
 const BIT = { race: 1, class: 2, spec_path: 4, spec_at_40: 8, professions: 16, plan_zone: 32, level: 64, launch_state: 128, goals: 256 };
@@ -43,12 +44,14 @@ export const SHEET_FIELD_NAMES = Object.freeze(FIELDS.slice());
 
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 
-// Which sheet fields this sheet hides, as a bitmask (only an explicit visible:false hides; a junk row or junk fields hide nothing).
+// Which sheet fields this sheet hides, as a bitmask. Fails closed, the same rule as ask-build.js isVisible: a field is public ONLY when its entry is an object with
+// visible === true. Any other entry (null, a bare value, a list, visible missing or not a boolean) is hidden, and a sheet whose `fields` is not an object hides everything.
+// Every writer stores a boolean `visible` (recordSheetEventInD1, the seed, the event replay) and the production rows all carry one, so real data is unaffected.
 function maskOf(sheet) {
   const f = sheet && sheet.fields;
-  if (!isObj(f)) return 0;
+  if (!isObj(f)) return ALL;
   let mask = 0;
-  for (const k of FIELDS) { const v = f[k]; if (isObj(v) && v.visible === false) mask |= BIT[k]; }
+  for (const k of FIELDS) if (Object.hasOwn(f, k)) { const v = f[k]; if (!(isObj(v) && v.visible === true)) mask |= BIT[k]; }
   return mask;
 }
 
@@ -59,11 +62,23 @@ function indexSheets(sheets) {
   const rows = sheets.filter((s) => isObj(s));
   return rows.length === sheets.length ? sheets : rows;
 }
+// Which sheets belong to a party-document member: those with their slug (the document has no slug key, so it is the slug of the name, as party-source.js sheetMemberFromDoc
+// and reconcile derive it); else those with the same name (case-insensitive); else the one sheetForDocMember finds by normalised name. Every sheet of the winning tier counts
+// (masksFor ORs them, so a second sheet of one person cannot unhide the first). No sheet at all: the empty list, which masksFor reads as hide everything.
 function matcher(rows, members) {
-  // sheetForDocMember is the one identity rule (tests/unit/sheets-reconcile.test.mjs pins it to party-source.js); a lookup table keeps it O(n) for a big party.
-  const exact = new Map();
-  for (const s of rows) { const k = String(s.name || "").toLowerCase(); if (!exact.has(k)) exact.set(k, s); }
-  return (m) => exact.get(String(m && m.name || "").toLowerCase()) || sheetForDocMember(rows, members, m) || null;
+  const bySlug = new Map(), byName = new Map();
+  const add = (map, k, s) => { if (!k) return; const l = map.get(k); if (l) l.push(s); else map.set(k, [s]); };
+  for (const s of rows) { add(bySlug, typeof s.slug === "string" ? s.slug : "", s); add(byName, String(s.name || "").toLowerCase(), s); }
+  return (m) => {
+    if (!isObj(m)) return [];
+    const slug = typeof m.slug === "string" && m.slug ? m.slug : typeof m.name === "string" ? slugify(m.name) : "";
+    const a = bySlug.get(slug);
+    if (a) return a;
+    const b = byName.get(String(m.name || "").toLowerCase());
+    if (b) return b;
+    const c = sheetForDocMember(rows, members, m);
+    return c ? [c] : [];
+  };
 }
 
 function strip(obj, keys) {
@@ -86,7 +101,14 @@ function sheetKeysFor(mask) {
 function masksFor(members, rows) {
   if (!rows) return members.map(() => ALL);
   const find = matcher(rows, members);
-  return members.map((m) => (isObj(m) ? maskOf(find(m)) : 0));
+  return members.map((m) => {
+    if (!isObj(m)) return 0;
+    const own = find(m);
+    if (!own.length) return ALL; // a document member no sheet can be matched to: their visibility is unknown, so nothing of theirs is shown
+    let mask = 0;
+    for (const s of own) mask |= maskOf(s);
+    return mask;
+  });
 }
 
 // The party document an anonymous reader may see. Non-mutating (the stored row and any cached copy are never touched); members that hide nothing are
@@ -113,7 +135,7 @@ export function projectSheets(sheets, ownerSlug = null) {
     const gone = new Set(sheetKeysFor(maskOf(s)));
     let fields = null;
     for (const [k, f] of Object.entries(s.fields)) {
-      if (gone.has(k) || (isObj(f) && f.visible === false)) { if (!fields) { fields = { ...s.fields }; } delete fields[k]; }
+      if (gone.has(k) || !(isObj(f) && f.visible === true)) { if (!fields) { fields = { ...s.fields }; } delete fields[k]; }
     }
     return fields ? { ...s, fields } : s;
   });
@@ -238,7 +260,7 @@ export function writeSheetValueToDoc(partyDoc, sheets, sheet, field, value, prio
   const rows = indexSheets(sheets) || [];
   const find = matcher(rows, partyDoc.members);
   // An unchanged value is not copied again, except into a card that lacks the key (a row an older version stripped when the field was hidden heals on the next write).
-  for (const m of partyDoc.members) if (isObj(m) && find(m) === sheet && (!same || m[key] === undefined)) m[key] = String(value);
+  for (const m of partyDoc.members) if (isObj(m) && find(m).includes(sheet) && (!same || m[key] === undefined)) m[key] = String(value);
   return partyDoc;
 }
 

@@ -23,7 +23,7 @@ To sign you in, to show the group's board, to answer your questions, and to stop
 ## Who can see it
 
 - Anyone with the link can read the public board pages. The party list, sign-ups and timeline are open to anyone who asks the server. They have no sign-in. If your character or sign-up is on the board, a stranger could read it. Every line of your sheet has a hide switch (race, class, spec path, spec at 40, professions, plan zone, level, launch night and goals). A line you hide is removed from the sheet list and the party list, together with the lines that come from it (hide your class and your spec, colour and build line go too). Your name and role always stay shown, and so do your sign-up answers, the meeting place, and the times your sheet and your launch row last changed. The size and roles of the party stay visible. While any member hides anything, the shared planning pages (decide, buffs, the atlas guide, tonight's suggestions) go blank and show one line: Part of this is hidden because a member keeps their build private. A change can take up to about 60 seconds to show, because pages are cached.
-- The first members' builds are also written into the board's public code and older commits of the repo. Hiding a field does not remove them there.
+- The first members' builds are also in the board's public code and in files on the site, and in older commits; hiding a field does not remove them there.
 - A scan of those open pages on 8 November 2026 found no emails, tokens or secrets.
 - Matt and the group admins can see names, roles, builds and sign-ups.
 - Answers marked shared are visible to the group.

@@ -3,10 +3,10 @@
 const K = window.__boardKit; if (!K || typeof document === "undefined") return;
 const HERE = (document.currentScript && document.currentScript.src) || null;
 const SCENES = {
-  sheet: () => [new URL("../scenes/sheet.css?v=cbc6d93e41", HERE), new URL("../scenes/sheet.js?v=94b2fefe0a", HERE)],
+  sheet: () => [new URL("../scenes/sheet.css?v=cbc6d93e41", HERE), new URL("../scenes/sheet.js?v=e2a75e075b", HERE)],
   import: () => [new URL("../scenes/import.css?v=8db4829667", HERE), new URL("../scenes/import.js?v=00379e9b01", HERE)],
   chamber: () => [new URL("../scenes/chamber.css?v=ceca5fbe60", HERE), new URL("../scenes/chamber.js?v=9e50294446", HERE)],
-  decide: () => [new URL("../scenes/decide.css?v=1768b64335", HERE), new URL("../scenes/decide.js?v=bb02bcd345", HERE)],
+  decide: () => [new URL("../scenes/decide.css?v=1768b64335", HERE), new URL("../scenes/decide.js?v=f73da6187f", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=1c5e2abb08", HERE), new URL("../scenes/probe.js?v=24d1f46113", HERE)],
   data: () => [new URL("../scenes/data.css?v=ee39216ed8", HERE), new URL("../scenes/data.js?v=d10660b289", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=0c70badf8e", HERE), new URL("../scenes/walk.js?v=fef65c1b6a", HERE)],

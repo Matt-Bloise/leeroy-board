@@ -237,7 +237,7 @@ async function write(m, f, value, visible) {
   const B = BB(), x = fieldsFor(m)[f], at = new Date().toISOString(), vis = visible === undefined ? x.visible !== false : visible;
   if (f === "level" && value !== null && !(Number.isInteger(value) && value >= 1 && value <= PS.voc.lists.levelMax)) { say(SAY.bad(LABEL[f])); return { ok: false }; }
   const rec = { ...(value === undefined ? {} : { value }), visible: vis, at };
-  devSet(m, f, rec);
+  { const prev = dev(m)[f]; devSet(m, f, value === undefined && prev && prev.value !== undefined ? { ...rec, value: prev.value } : rec); } // a visibility-only write keeps the value this device holds
   if (f === "launch_state" && value !== undefined) MEM.set(`launch-${pslug(m)}`, value);
   PS.edit = null; snd("stamp");
   let r = { ok: false, local: true, why: "nowhere to send" };
@@ -251,7 +251,8 @@ async function write(m, f, value, visible) {
   render(); K.emit("sheet", pslug(m), f);
   return r;
 }
-function toggle(m, f) { const x = fieldsFor(m)[f]; return write(m, f, x.text ? x.value : undefined, !(x.visible !== false)); }
+/* The hide switch changes visibility only: no value goes with it, so the Worker keeps the stored one (even a stored value that is not on the vocabulary, which a value write would refuse). */
+function toggle(m, f) { const x = fieldsFor(m)[f]; return write(m, f, undefined, !(x.visible !== false)); }
 
 function sheetView(m) {
   const mine = isMe(m), F = fieldsFor(m), B = BB(), st = B && B.status ? B.status() : null;

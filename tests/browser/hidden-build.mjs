@@ -118,9 +118,17 @@ try {
     ok(`${t} the wall tile of the roles does not say "All five have picked a spec"`, !/have picked a spec/.test(await panelText("#ts-five")));
     // the sheet page: every option of every list is on the vocabulary, with a whole party withheld
     await openHash(page, `five.sheet-${slug(party0.members[3].name)}`);
-    const opts = await page.evaluate(() => Array.from(document.querySelectorAll("#ps-sheet select option")).map((o) => o.value).filter(Boolean));
-    const known = new Set([...Object.keys(SHEET_VOCAB.race), ...Object.keys(SHEET_VOCAB.class), ...Object.keys(SHEET_VOCAB.spec), ...Object.keys(SHEET_VOCAB.professions), ...Object.keys(SHEET_VOCAB.plan_zone), "queue", "in", "out", "later"]);
-    ok(`${t} the sheet page offers only vocabulary values (${opts.length} options seen)`, opts.every((o) => known.has(o)), opts.filter((o) => !known.has(o)).join(","));
+    // the lists only exist while a line is being edited, and only on the viewer's own sheet: the signed-in run opens the editor of every line in turn and reads its options
+    const readOpts = () => page.evaluate(() => Array.from(document.querySelectorAll("#ps-sheet select option")).map((o) => o.value).filter(Boolean));
+    const opts = [];
+    if (member) {
+      const lines = await page.locator("#ps-sheet .ps-edit").count();
+      for (let i = 0; i < lines; i++) { await page.locator("#ps-sheet .ps-edit").nth(i).click().catch(() => {}); await page.waitForTimeout(200); opts.push(...(await readOpts())); }
+      ok(`${t} the signed-in sheet has editable lines (${lines})`, lines >= 5, String(lines));
+      ok(`${t} the editors of the sheet were opened and options were seen (${opts.length}); zero options is a failure, not a pass`, opts.length >= 20, String(opts.length));
+    }
+    const known = new Set([...Object.keys(SHEET_VOCAB.race), ...Object.keys(SHEET_VOCAB.class), ...Object.keys(SHEET_VOCAB.spec), ...Object.keys(SHEET_VOCAB.professions), ...Object.keys(SHEET_VOCAB.plan_zone), "queue", "in", "done"]);
+    if (member) ok(`${t} the sheet page offers only vocabulary values (${opts.length} options seen)`, opts.length > 0 && opts.every((o) => known.has(o)), opts.length === 0 ? "0 options seen" : opts.filter((o) => !known.has(o)).join(","));
     ok(`${t} no page error and no console error`, errors.length === 0, errors.slice(0, 3).join(" | "));
     await ctx.close();
   }

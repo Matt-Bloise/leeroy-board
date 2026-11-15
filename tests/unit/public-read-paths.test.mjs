@@ -677,7 +677,7 @@ test("a sheet of a person the party document does not list still withholds when 
   assert.equal(anyHidden(partyDoc(), rows), true);
   assert.equal(projectDecide(decideDoc(), partyDoc(), rows).withheld, WITHHELD_LINE);
   assert.equal(anyHidden(partyDoc(), sheetList(NOBODY())), false);
-  assert.equal(anyHidden(partyDoc(), [{ slug: "a", name: "A", fields: { race: { value: "orc", visible: true } } }]), false, "a shown field hides nothing");
+  assert.equal(anyHidden(partyDoc(), [...sheetList(NOBODY()), { slug: "a", name: "A", fields: { race: { value: "orc", visible: true } } }]), false, "a shown field hides nothing");
 });
 test("the composites do not mutate their input, and the line is one constant that the site never copies", () => {
   const sheets = sheetList(hideOne("race")), docs = [partyDoc(), decideDoc(), tonightDoc(), atlasDoc(), clientDoc()], before = JSON.stringify(docs);

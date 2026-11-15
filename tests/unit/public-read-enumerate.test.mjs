@@ -53,11 +53,41 @@ const ROUTE_KIND = {
   "PUT /wiki/page": R, "GET /bootstrap": P, "GET /library/*": N, "GET /data/*": P, "PUT /data/*": P, "GET /atlas/*": N, "PUT /atlas/*": R,
   "POST /intent": P, "POST /refresh": N, "GET /": N, "GET /health": N,
 };
+const ODD_QUERY = "full=1&raw=1&admin=1&debug=1&x=1";
 const DISCORD_RUN = ["ack", "answer", "ask", "build", "countdown", "dates", "didyouknow", "help", "intents", "journey", "launch", "leeroy", "library", "map", "page", "quiz", "sheet", "signup", "start", "tonight", "tooltip", "vote"];
 
 test("every route of ROUTES is on the allow-list as projected, none or refused; a new route fails until it is classified", () => {
   assert.deepEqual(Object.keys(ROUTE_KIND).sort(), [...ROUTES].sort());
   for (const v of Object.values(ROUTE_KIND)) assert.ok([P, N, R].includes(v));
+});
+
+// The dispatcher matches some routes by regular expression, which ROUTES lists as ":name" patterns. Read the dispatcher itself: every path literal, every prefix and every
+// regex it matches must be a ROUTES entry, and every regex is expanded into the concrete paths it accepts, which are then read anonymously like any other route (below).
+const INDEX_SRC = readFileSync(new URL("../../infrastructure/worker/index.js", import.meta.url), "utf8");
+const DISPATCH = INDEX_SRC.slice(INDEX_SRC.indexOf("const path = url.pathname"));
+const REGEX_ROUTES = [...DISPATCH.matchAll(/path\.match\((\/\^[^\n]*?\$\/)\)/g)].map((m) => m[1]);
+const ROUTE_PATHS = new Set(ROUTES.map((r) => r.split(" ")[1]));
+// /^\/config\/([^/]+)$/ -> ["/config/1"]; a character-class group becomes "1", an optional alternation group "(\/approve|\/reject)?" becomes "", "/approve", "/reject"
+function expandRegex(src) {
+  const body = src.slice(2, -2).replace(/\\\//g, "/");
+  let outs = [""];
+  for (let i = 0; i < body.length;) {
+    const g = /^\(((?:[^()\\[]|\\.|\[[^\]]*\](?:\{[^}]*\})?)*)\)(\?)?/.exec(body.slice(i));
+    if (g) { const inner = g[1]; const alts = inner.startsWith("[") || !inner.includes("|") ? ["1"] : inner.split("|").map((a) => a.replace(/\\\//g, "/")).concat(g[2] ? [""] : []); outs = outs.flatMap((o) => alts.map((a) => o + a)); i += g[0].length; }
+    else { outs = outs.map((o) => o + body[i]); i++; }
+  }
+  return outs;
+}
+test("the dispatcher's own path literals, prefixes and regexes are all ROUTES entries; every regex is expanded and each path it accepts is read like any route", () => {
+  assert.ok(REGEX_ROUTES.length >= 2, `regex routes found in index.js: ${REGEX_ROUTES.length}`);
+  for (const lit of new Set([...DISPATCH.matchAll(/path === "(\/[^"]*)"/g)].map((m) => m[1]))) assert.ok(ROUTE_PATHS.has(lit), `index.js matches ${lit} but ROUTES lacks it`);
+  for (const pre of new Set([...DISPATCH.matchAll(/path\.startsWith\("(\/[^"]*)"\)/g)].map((m) => m[1]))) assert.ok([...ROUTE_PATHS].some((r) => r.startsWith(pre)), `index.js matches the prefix ${pre} but ROUTES lacks it`);
+  for (const src of REGEX_ROUTES) {
+    const paths = expandRegex(src), rx = new RegExp(src.slice(1, -1));
+    assert.ok(paths.length >= 1);
+    for (const p of paths) assert.ok(rx.test(p), `${p} must be accepted by ${src}`);
+    assert.ok([...ROUTE_PATHS].some((r) => new RegExp("^" + r.replace(/:[a-z]+/g, "[^/]+").replace("*", ".*") + "$").test(paths[0])), `${src} has no ROUTES entry`);
+  }
 });
 
 // ---- the fixtures -----------------------------------------------------------------------------------------------------------------------------
@@ -195,8 +225,21 @@ for (const fx of FIXTURES) {
     else if (path === "/library/*") for (const n of NAMES.library) spell(`/library/${n}`);
     else spell(path.replace(":key", "name_map").replace(":id", "1").replace(":doc", "party"));
     if (path === "/state" || path === "/bootstrap") spell(`${path}?full=1&roster=1&admin=1&raw=1&slug=${fx.slugs[fx.hider]}`);
+    // every spelling again with odd query switches: a read must not change what it shows because of a query string nobody listed (a debug, raw or admin switch)
+    for (const [m, p] of [...out]) out.push([m, `${p}${p.includes("?") ? "&" : "?"}${ODD_QUERY}`]);
     return out.map(([m, p]) => [m, p, m === "GET" ? undefined : "{}"]);
   };
+  T("every path a regex route of the dispatcher accepts is read anonymously, plain and with odd query switches, in every method: no hidden value, no string derived from one, and a refusal", async () => {
+    const env = await makeEnv(fx);
+    let n = 0;
+    for (const src of REGEX_ROUTES) for (const path of expandRegex(src)) for (const method of ["GET", "POST", "PUT", "DELETE"]) for (const q of ["", `?${ODD_QUERY}`]) {
+      const r = await call(env, method, path + q, { body: method === "GET" ? undefined : "{}" });
+      assert.deepEqual(leaksIn(fx, `${method} ${path}${q} (${r.status})`, r.text, r.headers), []);
+      assert.ok([401, 403, 404, 405, 426, 503].includes(r.status), `${method} ${path}${q} answered ${r.status} to an anonymous caller`);
+      n++;
+    }
+    assert.ok(n >= 16);
+  });
   for (const [route, kind] of Object.entries(ROUTE_KIND)) {
     T(`anonymous ${route} [${kind}]: no hidden value, no string derived from one, in any body or header${kind === R ? "; the route refuses" : ""}`, async () => {
       const env = await makeEnv(fx);

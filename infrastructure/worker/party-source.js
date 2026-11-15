@@ -6,7 +6,7 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { loadConfigKey } from "./config.js";
 
 export const PARTY_MEMBERS = [
-  { slug: "santa", name: "Santa", race: "tauren", class: "druid", spec_path: "feral-tank", professions: ["leatherworking", "skinning"], plan_zone: "mulgore" },
+  { slug: "santa", name: "Santa", race: "tauren", class: "druid", spec_path: "feral-combat", professions: ["leatherworking", "skinning"], plan_zone: "mulgore" },
   { slug: "bible-boi", name: "Bible Boi", race: "undead", class: "priest", spec_path: "discipline", professions: ["mining", "engineering"], plan_zone: "tirisfal-glades" },
   { slug: "street-rat", name: "Street Rat", race: "undead", class: "paladin", spec_path: "retribution", spec_at_40: "holy", professions: ["blacksmithing", "mining"], plan_zone: "tirisfal-glades" },
   { slug: "bloise", name: "Bloise", race: "undead", class: "mage", spec_path: "frost", spec_at_40: "fire", professions: ["tailoring", "enchanting"], plan_zone: "tirisfal-glades" },

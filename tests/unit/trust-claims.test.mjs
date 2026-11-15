@@ -204,7 +204,7 @@ test("trust card: 'sees' says what the enumeration proves, and nothing stronger"
   assert.ok(sees.includes(`the shared planning pages (decide, buffs, the atlas guide, tonight's suggestions) go blank and show one line: ${WITHHELD_LINE}`), "the line on the card is the one the Worker sends");
   assert.match(sees, /While any member hides anything/);
   assert.match(sees, /A change can take up to about 60 seconds to show, because pages are cached./);
-  assert.match(sees, /The first members' builds are also written into the board's public code and older commits of the repo, and hiding a field does not remove them there./);
+  assert.ok(sees.includes("The first members' builds are also in the board's public code and in files on the site, and in older commits; hiding a field does not remove them there."), "the card says plainly where the first members' builds also are");
   assert.match(sees, /Your settings and your own sheet need your key./);
   assert.match(sees, /named on the privacy page/i);
   assert.ok(!sees.includes("no control hides those"), "level and goals have a hide switch");
@@ -214,7 +214,7 @@ test("trust card: 'sees' says what the enumeration proves, and nothing stronger"
   // the time the sheet changed (no line), the launch list gives name, slug and when. tests/unit/public-read-enumerate.test.mjs asserts those key sets; here they are asserted again from the card's own words.
   assert.ok(/name and role/.test(sees) && /sign-up answers/.test(sees) && /meeting place/.test(sees) && /times your sheet and your launch row last changed/.test(sees));
   const md = read("docs/privacy.md");
-  for (const needle of ["Every line of your sheet has a hide switch", WITHHELD_LINE, "about 60 seconds", "older commits of the repo. Hiding a field does not remove them there", "Last changed: 15 November 2026"]) assert.ok(md.includes(needle), `docs/privacy.md says: ${needle}`);
+  for (const needle of ["Every line of your sheet has a hide switch", WITHHELD_LINE, "about 60 seconds", "The first members' builds are also in the board's public code and in files on the site, and in older commits; hiding a field does not remove them there.", "Last changed: 15 November 2026"]) assert.ok(md.includes(needle), `docs/privacy.md says: ${needle}`);
   assert.ok(read("privacy/index.html").includes(WITHHELD_LINE), "the rendered page says the line");
 });
 
@@ -257,7 +257,7 @@ test("privacy page: says what stays public in the repo, what the AI company gets
   const md = read("docs/privacy.md");
   assert.match(md, /a board for a small group of friends/);
   assert.doesNotMatch(md, /private board/);
-  assert.match(md, /first members' builds are also written into the board's public code and older commits of the repo\. Hiding a field does not remove them there/);
+  assert.ok(md.includes("The first members' builds are also in the board's public code and in files on the site, and in older commits; hiding a field does not remove them there."));
   assert.match(md, /when you ask privately, your own hidden sheet fields/);
   assert.match(md, /A party card posted in Discord in October 2026 used profile pictures/);
   assert.doesNotMatch(read("docs/subprocessors.md") + read("docs/legal/dpa-template.md"), /avatar|guild roles/i);
