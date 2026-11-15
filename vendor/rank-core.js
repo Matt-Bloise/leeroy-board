@@ -12,7 +12,8 @@ export function questionWords(q, stop = STOP) {
 }
 export function expandWords(words, synonyms = SYNONYMS) {
   const expanded = new Set(words);
-  for (const w of words) for (const s of synonyms[w] || []) expanded.add(s);
+  // Own keys only: a question word such as "constructor" is a word, not a property of the synonym table.
+  for (const w of words) for (const s of (Object.prototype.hasOwnProperty.call(synonyms, w) && synonyms[w]) || []) expanded.add(s);
   return expanded;
 }
 // The text a fact is matched on: dotted key as words, then the value, lower case. Aliases are appended per page in rank();

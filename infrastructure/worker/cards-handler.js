@@ -84,7 +84,7 @@ async function applyAndSave({ env, ctx, member, byName, patches, deps, now }) {
       doc = r.doc;
     }
     await deps.recompute(doc);
-    entry = doc.entries.find((e) => String(e.name || "").toLowerCase() === byName.toLowerCase());
+    entry = doc.entries.find((e) => e && typeof e === "object" && !Array.isArray(e) && String(e.name || "").toLowerCase() === byName.toLowerCase());
     return { doc };
   }, { tries: 5, now: () => new Date(now).toISOString() });
   const doc = saved.doc;

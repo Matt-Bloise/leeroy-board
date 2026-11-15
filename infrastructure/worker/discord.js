@@ -402,6 +402,9 @@ const signupRejection = (what) =>
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
 
+// Own keys only: a value like "constructor" or "__proto__" must not reach Object.prototype.
+const hasTally = (bucket, key) => typeof key === "string" && key !== "" && Object.hasOwn(bucket, key);
+
 export async function recomputeSignupTallies(signupsDoc) {
   const entries = Array.isArray(signupsDoc.entries) ? signupsDoc.entries : [];
   const meetOpts = (signupsDoc.options && signupsDoc.options.meet) || ["Valley of Strength", "The Crossroads"];
@@ -425,15 +428,16 @@ export async function recomputeSignupTallies(signupsDoc) {
   };
 
   for (const e of entries) {
+    if (!e || typeof e !== "object" || Array.isArray(e)) continue; // a null or non-object row is kept in the doc but never tallied
     const name = e.name || "Someone";
-    if (e.pack && tallies.pack[e.pack]) {
+    if (hasTally(tallies.pack, e.pack)) {
       tallies.pack[e.pack].count++;
       tallies.pack[e.pack].names.push(name);
     }
     if (e.meet) {
       const meetLabel =
         e.meet === "vos" ? "Valley of Strength" : e.meet === "xroads" ? "The Crossroads" : e.meet;
-      if (tallies.meet[meetLabel] && meetLabel !== "other") {
+      if (hasTally(tallies.meet, meetLabel) && meetLabel !== "other") {
         tallies.meet[meetLabel].count++;
         tallies.meet[meetLabel].names.push(name);
       } else {
@@ -444,11 +448,11 @@ export async function recomputeSignupTallies(signupsDoc) {
         }
       }
     }
-    if (e.rsvp && tallies.rsvp[e.rsvp]) {
+    if (hasTally(tallies.rsvp, e.rsvp)) {
       tallies.rsvp[e.rsvp].count++;
       tallies.rsvp[e.rsvp].names.push(name);
     }
-    if (e.when && tallies.when[e.when]) {
+    if (hasTally(tallies.when, e.when)) {
       tallies.when[e.when].count++;
       tallies.when[e.when].names.push(name);
     }
