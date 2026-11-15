@@ -7,7 +7,8 @@ import { readFileSync } from "node:fs";
 import { answerWithAi, buildAnswerCacheKey, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
-import { lintResearchAnswer } from "../../infrastructure/worker/answer-lint.js";
+import { lintResearchAnswer, splitSentenceText } from "../../infrastructure/worker/answer-lint.js";
+import { RESEARCH_DOWN_ANSWER } from "../../infrastructure/worker/research/provider.js";
 import { ABSTAIN_LINE } from "../../infrastructure/worker/self-rag.js";
 import { NOT_PUBLISHED_LINE } from "../../infrastructure/worker/ask-build.js";
 import { RESEARCH_RULES, RESEARCH_VOICE_RULES, RESEARCH_STRUCTURE_RULES, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "../../infrastructure/worker/research/rules.js";
@@ -452,6 +453,61 @@ test("round 3 (12): the outage line carries no Sources/confidence tag; the wrang
   const line = toml.split("\n").find((l) => l.startsWith("ASK_RESEARCH"));
   assert.match(line, /Workers AI only/);
   assert.ok(!/stub handles nothing/.test(line));
+});
+
+// ---- round 4 ----
+
+test("round 4 (1): factual negatives about the game are answers, not refusals; only the assistant/library being unable is a refusal", async () => {
+  const cases = [
+    ["**No, a hunter cannot use wands.** Hunters use bows, guns and crossbows; wands are for casters.", /hunter cannot use wands/],
+    ["**You can't respec for free.** The cost starts at 1 gold and climbs.", /can't respec for free/],
+    ["**Warriors cannot use wands.**", /Warriors cannot use wands/],
+    ["**You can't go wrong with frost for levelling.** A frost mage cannot be caught easily and does not have mana trouble.", /can't go wrong with frost/],
+    ["**Frost.** You do not have to drink as often.", /do not have to drink/],
+  ];
+  for (const [reply, expect] of cases) {
+    const r = await ask(ABSTAIN_Q, { respond: () => `${reply}${SOURCES}` });
+    assert.equal(r.aiCalls, 1, reply);
+    assert.match(r.answer, expect, reply);
+    assert.ok(!/out of reach/i.test(r.answer), r.answer);
+  }
+  for (const s of ["Rogues can't wear plate.", "You cannot trade soulbound items.", "Priests do not have a charge.", "That item is not available to Horde.", "Mages cannot tank."]) {
+    assert.equal(usableAnswer(s), true, s);
+    assert.equal(stripRefusals(s), s, s);
+    assert.ok(!lintResearchAnswer(`${s}\n-# Sources: general · likely`).failures.includes("refusal"), s);
+  }
+  for (const s of ["I can't help with that.", "I cannot find anything on this.", "I don't have any information on that.", "The library does not cover that yet.", "No information is available on this."]) assert.equal(usableAnswer(s), false, s);
+});
+
+test("round 4 (2): an answer that starts with a long code fence keeps its prose; the fence is closed, never a bare ellipsis", async () => {
+  const macro = Array.from({ length: 120 }, () => "/cast Frostbolt").join("\n");
+  const r = await ask(ABSTAIN_Q, { respond: () => `\`\`\`\n${macro}\n\`\`\`\nUse this macro for levelling.${SOURCES}` });
+  assert.ok(r.answer.length <= RESEARCH_FINAL_CHARS, String(r.answer.length));
+  assert.match(r.answer, /Use this macro for levelling/);
+  assert.equal((r.answer.match(/```/g) || []).length % 2, 0, "the fence is closed");
+  assert.match(r.answer, /\/cast Frostbolt/);
+  const t = trimToSentences(`\`\`\`\n${macro}\n\`\`\`\nUse this macro for levelling.`, 400);
+  assert.ok(t.length <= 400 && /Use this macro/.test(t) && (t.match(/```/g) || []).length % 2 === 0 && t !== "…", t);
+});
+
+test("round 4 (3): italic banter alone is not an answer; the advice clause after a refusal clause stays; bullets and '5 * 3' survive trimming; long star runs are linear; outage lint fires on the real line; Sources lines with slashes still get the confidence check", () => {
+  assert.equal(usableAnswer("*Oh, you sweet summer child.*"), false);
+  assert.ok(lintResearchAnswer("*Oh, you sweet summer child.*\n-# Sources: general · unconfirmed").failures.includes("no_answer"));
+  assert.equal(usableAnswer("_Go to Blackrock Depths._"), true);
+  assert.match(stripRefusals("Blizzard has not published yet the Forever numbers, so treat Frost as the safe pick."), /Treat Frost as the safe pick\.$/);
+  const bullets = trimToSentences("* first bullet is here and long enough to count\n* second bullet is here and long enough too\n* third bullet fills the rest of the space", 100);
+  assert.match(bullets, /^\* first bullet/m);
+  assert.match(trimToSentences("Compute 5 * 3 now please. Another long sentence follows here and here.", 40), /5 \* 3/);
+  const t0 = Date.now();
+  splitSentenceText("*".repeat(20000));
+  splitSentenceText("a. " + "* ".repeat(10000));
+  stripRefusals("*".repeat(20000));
+  labelClassic("a. " + "*".repeat(20000) + " 9999", "");
+  trimToSentences("*".repeat(20000) + " b. " + "*".repeat(20000), 500);
+  assert.ok(Date.now() - t0 < 1500, `took ${Date.now() - t0}ms`);
+  assert.ok(lintResearchAnswer(`${RESEARCH_DOWN_ANSWER}\n-# Sources: general · unconfirmed`).failures.includes("outage_line"));
+  assert.ok(lintResearchAnswer(RESEARCH_DOWN_ANSWER).failures.includes("outage_line"));
+  for (const src of ["wowhead/classic guides", "and/or"]) assert.ok(lintResearchAnswer(`**Take Frost.**\n-# Sources: ${src}`).failures.includes("no_confidence_word"), src);
 });
 
 // ---- voice pass: the original Leeroy (archaeology 2026-11-15 sections 2b and 4) ----

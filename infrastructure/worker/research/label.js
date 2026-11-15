@@ -8,7 +8,7 @@
 // Blind spots (see the W4a report): a wrong number that equals a grounded number, "a dozen"/fractions, lower-case or single-word names, a false claim with no number or capitalised name.
 import { unsupportedIn, allowedValues, sourceIdsOf } from "../self-rag.js";
 import { badPhrases, HOUSE } from "../ask-build.js";
-import { isRefusalSentence, contentSentences, splitBanter } from "../answer-lint.js";
+import { isRefusalSentence, refusalRemainder, contentSentences, splitBanter, splitSentenceText } from "../answer-lint.js";
 import { RESEARCH_DOWN_ANSWER } from "./provider.js";
 
 export const CLASSIC_TAG = "Classic value, not confirmed for Forever";
@@ -90,7 +90,7 @@ function protect(line) {
   const plain = (s) => restore(s).replace(/\[([^\[\]\n]*)\]\([^)\n]*\)/g, "$1").replace(/`([^`\n]*)`/g, "$1");
   return { text, restore, plain };
 }
-const splitProtected = (t) => t.split(/(?<=[.!?][*_"')\]]*)\s+/);
+const splitProtected = splitSentenceText; // bounded: a line over 5000 characters is one piece
 export function splitSentences(line) {
   const p = protect(line);
   return splitProtected(p.text).map(p.restore);
@@ -113,7 +113,9 @@ function balanceMarkdown(text) {
   s = s.split("\n").map((l) => {
     if (isFence(l)) return l;
     let x = balanceBold(l);
-    if ((x.replace(/\*\*/g, "").match(/\*/g) || []).length % 2) x = x.replace(/(?<!\*)\*(?!\*)/g, "");
+    // Only a "*" that touches text can be an italic marker; a bullet ("* item") and a spaced operator ("5 * 3") are left alone.
+    const italicLike = /(?<=[^*\s])\*(?!\*)|(?<!\*)\*(?=[^*\s])/g;
+    if ((x.replace(/\*\*/g, "").match(italicLike) || []).length % 2) x = x.replace(italicLike, "");
     return x;
   }).join("\n");
   return s.trim();
@@ -128,8 +130,9 @@ export function stripRefusals(text) {
     if (isFence(line)) { inFence = !inFence; out.push(line); continue; }
     if (inFence || isFooter(line)) { out.push(line); continue; }
     const parts = splitSentences(line);
-    const ok = parts.filter((s) => !isRefusalSentence(s));
-    if (ok.length === parts.length) out.push(line);
+    // A refusal sentence goes; if it also carries advice after a comma ("..., so treat Frost as the safe pick."), the advice clause stays.
+    const ok = parts.map((s) => (isRefusalSentence(s) ? refusalRemainder(s) : s)).filter(Boolean);
+    if (ok.length === parts.length && ok.every((s, i) => s === parts[i])) out.push(line);
     else if (ok.length) out.push(balanceBold(ok.join(" ")));
   }
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -224,10 +227,28 @@ export function trimToSentences(text, budget) {
       const u = [rows[i]];
       while (++i < rows.length) { u.push(rows[i]); if (isFence(rows[i])) break; }
       if (i + 1 < rows.length && /^\(.*Classic.*\)$/.test(rows[i + 1])) u.push(rows[++i]);
-      units.push([u.join("\n")]);
-    } else units.push(isTableRow(rows[i]) ? [rows[i]] : splitSentences(rows[i]));
+      units.push({ parts: [u.join("\n")], fence: u });
+    } else units.push({ parts: isTableRow(rows[i]) ? [rows[i]] : splitSentences(rows[i]) });
   }
-  for (const parts of units) {
+  for (let ui = 0; ui < units.length; ui++) {
+    let { parts } = units[ui];
+    const { fence } = units[ui];
+    // A fenced block too big for what is left is cut INSIDE: its opening line, as many code lines as fit, a closing fence, and its tag line; the prose around it is kept.
+    if (fence && used + (out.length ? 1 : 0) + parts[0].length > budget) {
+      const last = fence[fence.length - 1];
+      const hasTag = !isFence(last) && /^\(.*Classic.*\)$/.test(last);
+      const tail = hasTag ? "\n" + last : "";
+      const body = hasTag ? fence.slice(0, -1) : fence;
+      const closed = body.length > 1 && isFence(body[body.length - 1]);
+      const code = body.slice(1, closed ? -1 : undefined);
+      const next = units[ui + 1] && units[ui + 1].parts[0] ? Math.min(units[ui + 1].parts[0].length + 1, Math.floor(budget / 3)) : 0;
+      const room = budget - used - (out.length ? 1 : 0) - next - tail.length - 4; // 4 = newline plus a closing fence
+      const keptCode = [];
+      let n = body[0].length;
+      for (const c of code) { if (n + 1 + c.length > room) break; keptCode.push(c); n += 1 + c.length; }
+      if (body[0].length > room) continue; // not even the opening line fits: the block is dropped whole
+      parts = [[body[0], ...keptCode].join("\n") + "\n" + (closed ? body[body.length - 1] : "```") + tail];
+    }
     const kept = [];
     for (const s of parts) {
       const add = (kept.length ? 1 : 0) + s.length + (out.length && !kept.length ? 1 : 0);
