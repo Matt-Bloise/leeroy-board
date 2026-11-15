@@ -20,22 +20,38 @@ export function invalidateConfigCache(key) {
   else cache.clear();
 }
 
+async function readConfigRow(env, key) {
+  try {
+    const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(key).first();
+    if (!row) return { status: "absent", value: null };
+    return { status: "ok", value: JSON.parse(row.json) };
+  } catch {
+    return { status: "error", value: null };
+  }
+}
+
 export async function loadConfigKey(env, key) {
   if (!CONFIG_KEYS.includes(key)) return null;
   const hit = cache.get(key);
   const now = Date.now();
   if (hit && now - hit.at < TTL_MS) return hit.value;
-  let value = null;
-  try {
-    const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(key).first();
-    value = row ? JSON.parse(row.json) : null;
-  } catch {
-    value = null;
-  }
-  cache.set(key, { value, at: now });
-  return value;
+  const read = await readConfigRow(env, key);
+  cache.set(key, { value: read.value, at: now, failed: read.status === "error", absent: read.status === "absent" });
+  return read.value;
 }
 
+// For a caller that must tell "row absent" from "read failed or row corrupt" (a security gate that opens when the row is absent).
+// Returns { status: "absent" | "ok" | "error", value }. A failed read is never served from the cache as absent and is not cached by this helper.
+export async function loadConfigKeyStrict(env, key) {
+  if (!CONFIG_KEYS.includes(key)) return { status: "error", value: null };
+  const hit = cache.get(key);
+  const now = Date.now();
+  if (hit && !hit.failed && now - hit.at < TTL_MS) return hit.absent ? { status: "absent", value: null } : { status: "ok", value: hit.value };
+  const read = await readConfigRow(env, key);
+  if (read.status !== "error") cache.set(key, { value: read.value, at: now, failed: false, absent: read.status === "absent" });
+  else cache.delete(key);
+  return read;
+}
 // Shape check used by PUT. Returns an error string, or null when valid.
 export function validateConfigValue(key, value) {
   if (key === "name_map") {

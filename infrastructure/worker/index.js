@@ -972,7 +972,7 @@ const worker = {
           try {
             parsed = JSON.parse(r.body);
           } catch {
-            parsed = { raw: r.body };
+            parsed = { unreadable: true }; // never echo the stored text: a row that is not JSON may still hold a hidden value
           }
           return {
             seq: r.seq,

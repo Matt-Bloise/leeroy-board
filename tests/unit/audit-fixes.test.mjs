@@ -63,6 +63,7 @@ let idSeq = 0;
 const nextId = () => String(900000000000000000n + BigInt(++idSeq));
 async function discordEnv(extra = {}) {
   const env = await makeEnv({ DISCORD_PUBLIC_KEY: signer.publicKeyHex, ...extra });
+  env.DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('discord_roster', ?, 'x')").run(JSON.stringify({ guildId: "200000000000000001" })); // admin rights are bound to the roster guild
   env.DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('discord_members', ?, 'x')").run(JSON.stringify([
     { slug: "santa", name: "Santa", match: ["santa"], id: SANTA },
     { slug: "bob", name: "Bob", match: ["bob"], id: BOB },
