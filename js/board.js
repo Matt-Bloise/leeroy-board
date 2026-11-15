@@ -351,8 +351,9 @@ let offlineLoad = false;
 /* The line sits above the phone bottom bar (and its coin), never over it, and the page keeps room for it: a fixed line over the bar made Next, The five, My sheet, Leeroy and More untappable during an outage. */
 function placeOffline() {
   const el = $("#offline-line"), de = document.documentElement; if (!el || !el.textContent) return;
-  const bar = $("#bottombar"), br = bar && bar.getBoundingClientRect(); let top = innerHeight;
-  if (br && br.width > 0 && br.height > 0) { top = br.top; bar.querySelectorAll("button").forEach((b) => { const r = b.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.bottom > innerHeight / 2) top = Math.min(top, r.top); }); }
+  const bar = $("#bottombar"), br = bar && bar.getBoundingClientRect(), sc = bar && bar.closest("#scene"); let top = innerHeight;
+  const seen = !!sc && !sc.inert && !bar.closest("[inert], [hidden]") && getComputedStyle(sc).visibility !== "hidden" && parseFloat(getComputedStyle(sc).opacity) >= 0.5; /* a bar in a faded, inert or hidden scene (the first-run close un-hides #scene at 0.01 opacity) is not a bar the line must clear */
+  if (seen && br && br.width > 0 && br.height > 0) { top = br.top; bar.querySelectorAll("button").forEach((b) => { const r = b.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.bottom > innerHeight / 2) top = Math.min(top, r.top); }); }
   const lift = top < innerHeight ? Math.ceil(innerHeight - top) + 2 : 0;
   el.style.setProperty("--offline-lift", `${lift}px`); de.classList.toggle("offline-lifted", lift > 0);
   de.style.setProperty("--offline-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);

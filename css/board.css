@@ -2020,4 +2020,4 @@ html.offline-lifted .offline-line { padding-bottom: 8px; }
 .offline-line:empty { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; box-shadow: none; background: none; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 html.offline body { padding-bottom: var(--offline-h, 0px); }
 html.offline .sheet-body { padding-bottom: calc(32px + var(--offline-h, 0px)); }
-html.offline.phone-shell #scene #sheet-body { padding-bottom: calc(64px + var(--offline-h, 0px)); }
+html.offline.phone-shell #scene #sheet-body { padding-bottom: calc(64px + var(--offline-h, 0px)); grid-auto-rows: minmax(min-content, 1fr); } /* the grid track must grow with a panel taller than the body, or the end padding is not added to the scroll extent (the Tonight panel at 390 and 360) */

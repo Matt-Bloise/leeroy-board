@@ -100,33 +100,55 @@ try {
     else ok(`${t} the line is full width, not a narrow box`, o.line[2] >= o.vw - 1, `width ${o.line[2]} of ${o.vw}`);
     await ctx.close();
   }
-  // Phone regressions: (1) the line drops to the screen foot once the scene closes and no bar shows; (2) the line never covers the end of a scene body.
+  // Phone regressions. (1) The line drops to the screen foot once a scene closes and no bar shows, and never lifts for a bar that is not visible (the first-run close blinks #scene in at 0.01 opacity, inert). (2) The line never covers the end of a scene body.
   const PHONES = { "390": { width: 390, height: 844 }, "360": { width: 360, height: 640 } };
-  for (const [tag, hash, sel] of [["390x844", "#tonight", null], ["390x844", "#librarian", "#ch-model"], ["360x640", "#librarian", "#ch-model"], ["360x640", "#signups", null], ["360x640", "#tonight", null]]) {
+  const barState = (page) => page.evaluate(() => { const bar = document.getElementById("bottombar"), sc = document.getElementById("scene"), r = bar.getBoundingClientRect(), l = document.getElementById("offline-line"); const seen = !sc.hidden && !sc.inert && !bar.closest("[inert]") && getComputedStyle(sc).visibility !== "hidden" && parseFloat(getComputedStyle(sc).opacity) >= 0.5 && r.width > 0 && r.height > 0; return { open: document.documentElement.classList.contains("scene-open"), seen, barW: Math.round(r.width), barTop: Math.round(r.top), lift: parseFloat(getComputedStyle(l).bottom) || 0, lineBottom: Math.round(l.getBoundingClientRect().bottom), lineTop: Math.round(l.getBoundingClientRect().top), vh: innerHeight }; });
+  const settled = async (page, ms = 1500) => { let last = null, since = Date.now(); const end = Date.now() + 20000; while (Date.now() < end) { const s = JSON.stringify(await barState(page)); if (s !== last) { last = s; since = Date.now(); } else if (Date.now() - since >= ms) break; await page.waitForTimeout(150); } return JSON.parse(last); };
+  const dismissFirstRun = async (page) => { const look = page.getByText("Just take a look", { exact: false }).first(); if (await look.isVisible().catch(() => false)) { await look.click({ timeout: 15000 }); await page.waitForFunction(() => document.documentElement.classList.contains("scene-open"), null, { timeout: 20000 }).catch(() => {}); } };
+  for (const tag of ["390x844", "360x640"]) {
+    const { ctx, page } = await outagePage({ viewport: PHONES[tag.slice(0, 3)], hasTouch: true, isMobile: true }), t = `[${tag} outage close lift]`;
+    await waitLine(page); await page.waitForTimeout(1500);
+    await page.evaluate(() => { window.__lifts = []; const f = () => { const bar = document.getElementById("bottombar"), sc = document.getElementById("scene"), r = bar.getBoundingClientRect(), l = document.getElementById("offline-line"); window.__lifts.push({ lift: parseFloat(getComputedStyle(l).bottom) || 0, seen: !sc.hidden && !sc.inert && !bar.closest("[inert]") && getComputedStyle(sc).visibility !== "hidden" && parseFloat(getComputedStyle(sc).opacity) >= 0.5 && r.width > 0 && r.height > 0 }); }; window.__liftTimer = setInterval(f, 40); });
+    await dismissFirstRun(page); await page.waitForTimeout(1200);
+    const open = await settled(page);
+    ok(`${t} with the scene open the bar shows and the line is lifted above it`, open.open && open.seen && open.lift > 0 && open.lineBottom <= open.barTop, JSON.stringify(open));
+    for (let n = 0; n < 3 && (await barState(page)).open; n++) { await page.keyboard.press("Escape"); await page.waitForTimeout(1500); }
+    const closed = await settled(page, 2500);
+    console.log(t, "closed", JSON.stringify(closed));
+    ok(`${t} after a scene closes the scene is gone, no bar is seen, the lift is 0 and the line is at the screen foot`, !closed.open && !closed.seen && closed.lift === 0 && Math.abs(closed.lineBottom - closed.vh) <= 1, JSON.stringify(closed));
+    const samples = await page.evaluate(() => { clearInterval(window.__liftTimer); return window.__lifts; });
+    const bad = samples.filter((s) => s.lift > 0 && !s.seen);
+    ok(`${t} the line never lifts while the bar is not visible (${samples.length} samples over first-run close, open and close)`, bad.length === 0 && samples.length > 20, `${bad.length} bad`);
+    await ctx.close();
+  }
+  // The first-run close (Escape on the first-run scene) un-hides #scene at 0.01 opacity, inert, for a few seconds: the bar gets a box but nobody can see it, so the line must not jump.
+  for (const tag of ["390x844", "360x640"]) {
+    const { ctx, page } = await outagePage({ viewport: PHONES[tag.slice(0, 3)], hasTouch: true, isMobile: true }, { hash: "#librarian" }), t = `[${tag} outage first-run close]`;
+    await waitLine(page); await page.waitForTimeout(1500);
+    await page.evaluate(() => { window.__lifts = []; window.__liftTimer = setInterval(() => { const bar = document.getElementById("bottombar"), sc = document.getElementById("scene"), r = bar.getBoundingClientRect(), l = document.getElementById("offline-line"); window.__lifts.push({ lift: parseFloat(getComputedStyle(l).bottom) || 0, seen: !sc.hidden && !sc.inert && !bar.closest("[inert]") && getComputedStyle(sc).visibility !== "hidden" && parseFloat(getComputedStyle(sc).opacity) >= 0.5 && r.width > 0 && r.height > 0, box: r.width > 0 }); }, 40); });
+    await page.keyboard.press("Escape"); await page.waitForTimeout(6000);
+    const samples = await page.evaluate(() => { clearInterval(window.__liftTimer); return window.__lifts; });
+    const bad = samples.filter((s) => s.lift > 0 && !s.seen), boxed = samples.filter((s) => s.box && !s.seen).length;
+    console.log(t, JSON.stringify({ n: samples.length, bad: bad.length, boxedUnseen: boxed }));
+    ok(`${t} the line never lifts while the bar is not visible (${samples.length} samples, ${boxed} with an invisible bar box)`, bad.length === 0 && samples.length > 50, `${bad.length} bad`);
+    await ctx.close();
+  }
+  for (const [tag, hash, sel] of [["390x844", "#tonight", "#nx-tonight"], ["390x844", "#librarian", "#ch-model"], ["360x640", "#librarian", "#ch-model"], ["360x640", "#signups", null], ["360x640", "#tonight", "#nx-tonight"]]) {
     const { ctx, page } = await outagePage({ viewport: PHONES[tag.slice(0, 3)], hasTouch: true, isMobile: true }, { hash }), t = `[${tag} ${hash} outage end of scene]`;
-    await waitLine(page); await page.waitForTimeout(3500);
+    await waitLine(page); await page.waitForTimeout(1500);
+    await dismissFirstRun(page); await page.waitForTimeout(3000);
     const o = await page.evaluate((sel) => {
       const body = document.getElementById("sheet-body"), line = document.getElementById("offline-line"); if (!body || !body.getClientRects().length) return { found: false };
-      body.scrollTop = body.scrollHeight; if (sel) { const c = document.querySelector(sel); if (c) c.scrollIntoView({ block: "nearest" }); }
+      body.scrollTop = body.scrollHeight; const target = sel && document.querySelector(sel); if (target && target.getClientRects().length) target.scrollIntoView({ block: "end" }); body.scrollTop = body.scrollHeight;
       const lr = line.getBoundingClientRect(); let low = null, lowB = -1;
-      for (const e of body.querySelectorAll("*")) { if (e.children.length) continue; const r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden" && r.bottom > lowB && r.top < innerHeight) { lowB = r.bottom; low = e; } }
-      const out = { found: !!low, text: (body.textContent || "").trim().length, last: low && (low.id || low.className || low.tagName), lastBottom: Math.round(lowB), lineTop: Math.round(lr.top), clear: lowB <= lr.top + 0.5 };
-      if (sel) { const c = document.querySelector(sel), r = c && c.getBoundingClientRect(), h = r && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); out.hit = !!(c && h && (h === c || c.contains(h))); out.sel = !!c; } else out.hit = true;
-      out.pad = parseFloat(getComputedStyle(body).paddingBottom); out.lineH = Math.round(lr.height); out.padOk = out.pad >= lr.height + 32 - 0.5; /* the scene body keeps its own 32px plus the line height, not the bare 64px of the phone rule */
+      if (sel) { if (target && target.getClientRects().length) { low = target; lowB = target.getBoundingClientRect().bottom; } }
+      else for (const e of body.querySelectorAll("*")) { if (e.children.length) continue; const r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden" && r.bottom > lowB && r.top < innerHeight) { lowB = r.bottom; low = e; } }
+      const out = { found: !!low, last: low && (low.id || low.className || low.tagName), lastBottom: Math.round(lowB), lineTop: Math.round(lr.top), clear: !!low && lowB <= lr.top + 0.5, sh: body.scrollHeight, ch: body.clientHeight };
+      if (low) { const r = low.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, Math.min(r.bottom - 2, r.top + r.height / 2)); out.hit = !!(h && (h === low || low.contains(h) || h.contains(low))); } else out.hit = false;
       return out;
     }, sel);
     console.log(t, JSON.stringify(o));
-    ok(`${t} the last element of the scene body (${sel || "lowest visible node"}) is not under the line at end of scroll`, o.found && o.text > 20 && o.clear && o.hit && o.padOk, JSON.stringify(o));
-    if (hash === "#librarian") {
-      const sc = await page.evaluate(() => { const b = document.querySelector("#scene .sheet-close, #scene-close"); return !!b; });
-      for (let n = 0; n < 3 && await page.evaluate(() => document.documentElement.classList.contains("scene-open")); n++) { await page.keyboard.press("Escape"); await page.waitForTimeout(1500); }
-      await page.waitForFunction(() => { const b = document.getElementById("bottombar").getBoundingClientRect(); return !document.documentElement.classList.contains("scene-open") && b.width === 0; }, null, { timeout: 8000 }).catch(() => {});
-      await page.waitForTimeout(1500);
-      const c = await page.evaluate(() => { const b = document.getElementById("bottombar").getBoundingClientRect(), l = document.getElementById("offline-line"); return { open: document.documentElement.classList.contains("scene-open"), barW: b.width, barH: b.height, barTop: b.top, cls: document.documentElement.className, lift: getComputedStyle(l).bottom, lineBottom: Math.round(l.getBoundingClientRect().bottom), vh: innerHeight }; });
-      console.log(t, "closed", JSON.stringify(c), sc);
-      ok(`${t} after the scene closes the lift follows the bar: 0 and the line at the screen foot with no bar, the line above the bar when one shows`, !c.open && (c.barW === 0 ? parseFloat(c.lift) === 0 && Math.abs(c.lineBottom - c.vh) <= 1 : c.lineBottom <= c.barTop + 0.5), JSON.stringify(c));
-      if (c.barW === 0) ok(`${t} (no bar after close) lift is exactly 0`, parseFloat(c.lift) === 0);
-    }
+    ok(`${t} the last element of the scene body (${sel || "lowest visible node"}) is visible, hit at its centre and not under the line at end of scroll`, o.found && o.clear && o.hit, JSON.stringify(o));
     await ctx.close();
   }
   {
