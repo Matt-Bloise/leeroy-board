@@ -84,3 +84,19 @@ export const filterGlossary = (list) => (Array.isArray(list) ? list : []).filter
 export const SERVED = Object.freeze(filterGlossary(GLOSSARY));
 export const bundledGlossary = () => GLOSSARY.map((g) => ({ ...g, forms: [...g.forms] }));
 export const servedGlossary = () => SERVED.map((g) => ({ ...g, forms: [...g.forms] }));
+
+// ---- the Library glossary blob ---------------------------------------------------------------------------------------------------------------------------------
+// GET /api/library/glossary.json is served from the D1 row lib_blobs.glossary.json, which only the deploy's library seed replaces (continue-on-error, only when data/library
+// changed) and which older deploys left with entries that name the vocabulary. So the stored text is never served as it is: it passes the same drop-at-load rule as the party
+// glossary. A body that is not JSON, or has no `terms` list, is replaced by the bundled glossary. The result is a string, ready to serve.
+export const LIBRARY_GLOSSARY_BLOB = "glossary.json";
+// Bumped when this rule changes: the Worker caches the filtered body under a key that carries it, so a copy cached by an earlier deploy (unfiltered, up to 4 h) is never read.
+export const LIBRARY_GLOSSARY_CACHE_PATH = "/api/library/glossary.json?served=filtered-1";
+export function libraryGlossaryBody(storedJson) {
+  let parsed = null;
+  try { parsed = JSON.parse(String(storedJson)); } catch { parsed = null; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray(parsed.terms)) {
+    return JSON.stringify({ generated: parsed && typeof parsed === "object" && !Array.isArray(parsed) ? String(parsed.generated || "") : "", terms: servedGlossary() });
+  }
+  return JSON.stringify({ ...parsed, terms: filterGlossary(parsed.terms) });
+}
