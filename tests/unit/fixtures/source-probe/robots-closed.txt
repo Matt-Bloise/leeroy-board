@@ -1,0 +1,6 @@
+# fictional robots file: closed to everyone except one named agent
+User-agent: *
+Disallow: /
+
+User-agent: SomeOtherBot
+Allow: /
