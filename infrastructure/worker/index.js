@@ -34,7 +34,8 @@ import { gauge, handleGauge } from "./gauge.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
-import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
+import { loadBudget, dailyCap, utcDayKey, hashId } from "./budget.js";
+import { askWallPlan } from "./research/no-wall.js";
 import { upsertMember } from "./members.js";
 import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
@@ -1770,7 +1771,8 @@ const worker = {
           };
           await broadcastToRoom(env, { type: "intent", item: intentItem });
 
-          const askBudget = askBudgetKeys({ userPart: isGuest ? guestHash : await hashId(memberSlug), guest: isGuest });
+          // ASK_RESEARCH on: a signed-in member is never walled (answerWithAi skips the verdict); a guest keeps the rate limit above and gets the guests' own budget keys (research/no-wall.js). Flag off: exactly askBudgetKeys.
+          const { budget: askBudget } = await askWallPlan(env, { isMember: !isGuest, userPart: isGuest ? guestHash : await hashId(memberSlug), guest: isGuest, preview: isPrPreview });
           ctx.waitUntil(
             answerWithAi({
               env,
