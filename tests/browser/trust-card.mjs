@@ -34,7 +34,7 @@ async function run(browser, size, opts) {
   const text = (await card.innerText().catch(() => "")).replace(/\s+/g, " ");
   const lines = await card.locator(".tr-line").count();
   ok(`${tag} four lines, each with a Why`, lines === 4 && (await card.locator(".tr-why").count()) === 4 && (text.match(/Why:/g) || []).length === 4, `${lines} lines`);
-  ok(`${tag} names what is read, stored, seen, deleted`, /display name/i.test(text) && /avatar/i.test(text) && /roles/i.test(text) && /builds/i.test(text) && /stored/i.test(text) && /who can see/i.test(text) && /delete/i.test(text));
+  ok(`${tag} names what is read, stored, seen, deleted`, /discord name/i.test(text) && /anyone with the link/i.test(text) && /builds/i.test(text) && /stored/i.test(text) && /who can see/i.test(text) && /delete/i.test(text));
   const erase = card.locator(".tr-erase");
   ok(`${tag} erase line is marked coming soon and is not a live link`, /coming soon/i.test(await erase.innerText().catch(() => "")) && (await card.locator("a[href]").count()) === 0);
   ok(`${tag} card is inside the viewport width, no horizontal overflow`, await card.evaluate((el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth + 0.5 && document.documentElement.scrollWidth - window.innerWidth <= 1; }));

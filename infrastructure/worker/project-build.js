@@ -71,7 +71,7 @@ export async function projectBuild(env, { discordUserId, displayName, guildId, h
     const nextParty = {
       ...partyDoc,
       members: has ? partyDoc.members.map((m) => (String(m.name).toLowerCase() === lower ? plan.partyEntry : m)) : [...partyDoc.members, plan.partyEntry],
-    };
+    }; // stored whole; a rebuilt card is projected on every read like any other (public-party.js)
 
     const at = now.toISOString();
     const created = !tenant;

@@ -15,10 +15,13 @@ let cached = null;
 // The Worker serves /api/data/<x>, /api/library/<x> and /api/atlas/<x> from D1 rows seeded from the repo's data/ files, byte for byte the same JSON
 // (checked when the snapshot was recorded), so the stub reads those from data/ instead of duplicating 1.5 MB in the snapshot.
 const DATA = path.join(here, "..", "..", "data");
+const MEMBER_DOCS = new Set(["party", "decide", "tonight", "client", "guided-atlas"]);
 export function repoDoc(key) {
   const m = key.match(/^\/(data|library|atlas)\/([A-Za-z0-9._-]+)$/);
   if (!m) return null;
-  const f = path.join(DATA, m[1] === "data" ? "" : m[1], m[2]);
+  let f = path.join(DATA, m[1] === "data" ? "" : m[1], m[2]);
+  // the five member documents are asked for WITHOUT an extension (js/board.js memberUrl: <brain>/data/<name>); the Worker answers them with nobody hiding, i.e. the repo file of the same name
+  if (m[1] === "data" && !/\./.test(m[2]) && MEMBER_DOCS.has(m[2])) f = path.join(DATA, m[2] + ".json");
   return existsSync(f) ? { status: 200, type: "application/json; charset=utf-8", body: readFileSync(f, "utf8") } : null;
 }
 export function loadSnapshot(file = SNAPSHOT_PATH) { return (cached ||= JSON.parse(readFileSync(file, "utf8"))); }

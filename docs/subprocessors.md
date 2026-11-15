@@ -5,7 +5,7 @@
 | Vendor | Role | Data | Where used | Status | Location / safeguards |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | Cloudflare | Hosting (Pages), Worker, D1, Durable Objects, logs, cron | All stored data; request metadata including IP | Whole service | Active | (to confirm) |
-| Discord | Login (OAuth) and bot interactions | Discord id, name, avatar, guild and roles | `POST /discord`, `POST /auth/discord` | Active | (to confirm) |
+| Discord | Login (OAuth) and bot interactions | Discord id, name and guild id; whether Discord says you can manage the server (read, not stored) | `POST /discord`, `POST /auth/discord` | Active | (to confirm) |
 | Blizzard Entertainment | Game data and attribution; character verification if built | Battle.net identifier (optional, proposed) | Planned in ADR 0001 | Not built (unverified) | (to confirm) |
 | Google | Optional attached sign-in identity | Google account id | Planned in ADR 0001 | Not built (unverified) | (to confirm) |
 | Google (Gemini) | AI answers | Question and context | `worker/ai-models.js` provider `gemini` | Configured if `GEMINI_API_KEY` is set (unverified) | (to confirm) |
