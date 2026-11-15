@@ -219,6 +219,11 @@ export async function purgeWorkerCache(origin, paths = []) {
   } catch {}
 }
 
+// Every cached URL the party document is served from, purged after any party write (sheet edit, Discord /build). js/board.js apiFetch
+// requests /api/data/party (no ".json"); the public API also answers /api/data/party.json; /api/state and /api/bootstrap embed the party.
+// GET /data/* caches under the path as requested, so the two spellings are two cache entries (review catalogue F-12).
+export const PARTY_CACHE_PATHS = Object.freeze(["/api/bootstrap", "/api/state", "/api/data/party", "/api/data/party.json"]);
+
 export async function broadcastToRoom(env, payload) {
   try {
     const id = env.BOARD_ROOM.idFromName("global");
@@ -387,7 +392,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
   const currentParty = saved.sheets;
 
   if (changed) {
-    await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
+    await purgeWorkerCache(origin, PARTY_CACHE_PATHS);
     await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
   }
   return { party: currentParty, at: now, visible: stored ? stored.visible !== false : event.visible, stale, changed, stored };
