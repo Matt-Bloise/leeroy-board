@@ -77,10 +77,14 @@ async function readBody(request, max) {
   return { text };
 }
 
+const DISCORD_APP_ID = "1561857940174938114";
+
 async function login(request, env, ip, now, deps) {
   if (!request.headers.get("Origin")) return [403, { error: "origin not allowed" }];
   if (!saltOk(env)) return [503, saltErrorBody(saltProblems(env, ["USER_SALT"]))];
-  if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET) return [500, { error: "worker not configured" }];
+  // The client id is public (it is the app id); default it like POST /token does, so the Activity sign-in works without a var.
+  const clientId = env.DISCORD_CLIENT_ID || DISCORD_APP_ID;
+  if (!env.DISCORD_CLIENT_SECRET) return [500, { error: "worker not configured" }];
   if (hit(logins, ip, now, ACCOUNT.loginPerMin)) return [429, { error: "rate_limited" }, { "Retry-After": "60" }];
   const b = await readBody(request, ACCOUNT.bodyMax);
   if (b.error) return [b.status, { error: b.error }];
@@ -92,7 +96,7 @@ async function login(request, env, ip, now, deps) {
   try {
     const r = await send(DISCORD_TOKEN_URL, {
       method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: "authorization_code", code }),
+      body: new URLSearchParams({ client_id: clientId, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: "authorization_code", code }),
     });
     if (!r.ok) return [502, { error: "sign-in failed" }];
     const d = await r.json().catch(() => null);
