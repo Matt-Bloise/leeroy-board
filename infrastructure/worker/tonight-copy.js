@@ -1,4 +1,5 @@
 import { SLASH_COPY } from "./slash-copy.js";
+import { raceClass } from "./member-model.js";
 // Copy for `/tonight`. Dates are the ones in data/tonight.json (events); a test keeps them in step.
 export const LAUNCH_EPOCH = 1793833200; // Wed, Nov 4, 2026, 6 PM ET
 export const NEXT_DATED = { label: "Raids open", when: "Wed, Dec 9", epoch: 1796857200 };
@@ -10,11 +11,11 @@ export function nextDated(now) { return DATED_AFTER_LAUNCH.find((e) => e.epoch >
 export function tonightLines({ now, byName, party, signups, boardUrl }) {
   const members = (party && party.members) || [], entries = (signups && signups.entries) || [];
   const inList = entries.filter((e) => e.rsvp === "in").map((e) => e.name);
-  // A hidden sheet field is deleted from the party document, so race/class can be missing: print only what is a non-empty string, and skip a member with no usable name.
+  // /tonight gets the PROJECTED party document: a hidden race or class is absent. Print only what is a non-empty string, and skip a member with no usable name.
   const str = (v) => (typeof v === "string" && v.trim() ? v.trim() : "");
   const shown = (Array.isArray(members) ? members : []).filter((m) => m && typeof m === "object" && str(m.name)).map((m) => {
-    const sheet = [str(m.race), str(m.class)].filter(Boolean).join(" ");
-    return sheet ? `${str(m.name)} (${sheet})` : str(m.name);
+    const build = { race: str(m.race), class: str(m.class) }, hasBoth = !!(build.race && build.class);
+    return `${str(m.name)} (${hasBoth ? raceClass(build) : "Build hidden"})`; // a member who hides race or class (or both) is never printed bare, and a part is never printed alone
   });
   // Roster line, capped so the whole reply stays inside Discord's 2000-char content limit; a cut says "and N more".
   const rosterLine = (budget) => {

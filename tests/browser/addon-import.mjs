@@ -28,6 +28,7 @@ async function run(browser, [label, opts]) {
       if (b.field === "level" && !globalThis.__lvOk) return json(route, { error: "busy" }, 429);
       return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() });
     }
+    if (m === "GET" && /\/api\/data\/[a-z-]+(?:\.json)?$/.test(u.pathname)) return route.fallback(); // the member documents: the API stub answers them (the board reads <brain>/data/<name>)
     return route.abort();
   });
   await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" } }), { waitUntil: "load" });
@@ -159,12 +160,13 @@ async function contexts(browser, [label, opts]) {
   let hold = null; /* { gate, used, started }: the next POST waits on the gate */
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
   await ctx.addInitScript(([key]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", "bloise"); localStorage.setItem("board-key", key); localStorage.setItem("board-wl", "1"); } catch (e) {} }, [KEY]);
-  await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": true }; await json(route, j); });
+  await ctx.route("**/data/client*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": true }; await json(route, j); });
   await ctx.route("**/api/**", async (route) => {
     const u = new URL(route.request().url()), m = route.request().method();
     if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: "bloise", name: "Bloise", user: "abcd1234", expires_at: 4102444800, characters: CHARS });
     if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
     if (m === "POST" && u.pathname.endsWith("/api/sheet")) { const b = route.request().postDataJSON(); posts.push(b); if (hold && !hold.used) { hold.used = true; await hold.gate; } else await new Promise((r) => setTimeout(r, 400)); return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() }); }
+    if (route.request().method() === "GET" && /\/api\/data\/[a-z-]+(?:\.json)?$/.test(new URL(route.request().url()).pathname)) return route.fallback(); // the member documents: the API stub answers them
     return route.abort();
   });
   await ctx.route("**/js/addon-import.js*", (route) => route.abort());
