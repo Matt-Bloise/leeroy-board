@@ -61,9 +61,15 @@ const SECRET_PATTERNS = [
   ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/],
   ["slack-token", /\bxox[baprs]-[A-Za-z0-9-]{10,}/],
   ["basic-auth", /\bAuthorization:\s*Basic\s+[A-Za-z0-9+\/]{8,}={0,2}/i],
-  ["hex-token", /(?<![0-9A-Fa-f])[0-9A-Fa-f]{32,}(?![0-9A-Fa-f])/],
+  // The header form is matched in any case ("authorization: bearer ..."); the bare word "Bearer" above stays case-sensitive.
+  ["auth-bearer", /\bauthorization\s*:\s*bearer\s+[A-Za-z0-9._~+\/=-]{20,}/i],
   ["private-key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
 ];
+// Bare hex: 40+ hex characters with at least 12 distinct characters and at least one letter (an md5, 32 zeros or a run of digits is not a token). A hex-shaped string is REDACTED
+// (never a reason to stop the send): see redactHex. It is a "secret" only for scanSecrets, which the callers run after redactHex.
+const HEX_RUN_RE = /(?<![0-9A-Fa-f])[0-9A-Fa-f]{40,}(?![0-9A-Fa-f])/g;
+const isHexToken = (m) => new Set(m.toLowerCase()).size >= 12 && /[a-fA-F]/.test(m);
+export const redactHex = (text) => String(text ?? "").replace(HEX_RUN_RE, (m) => (isHexToken(m) ? "[hex]" : m));
 // 15+ digits, ASCII or fullwidth (U+FF10 to U+FF19).
 const FW0 = String.fromCharCode(0xff10);
 const FW9 = String.fromCharCode(0xff19);
@@ -90,18 +96,28 @@ export function scanSecrets(text, env, { extra = [], ids = true } = {}) {
   const kinds = [];
   for (const v of secretValues(env, extra)) if (s.includes(v)) { kinds.push("env-secret"); break; }
   for (const [kind, re] of SECRET_PATTERNS) if (re.test(s)) kinds.push(kind);
+  for (const m of s.match(HEX_RUN_RE) || []) if (isHexToken(m)) { kinds.push("hex-token"); break; }
   if (ids && LONG_ID_TEST.test(s)) kinds.push("long-id");
   return kinds;
 }
 
 export const redactIds = (text) => String(text ?? "").replace(LONG_ID_RE, "[id]");
 
-// Replaces every secret shape and env secret value in text with "[redacted]" (used on prompt parts that are not the asker's own question: sheet fields, sign-ups, library, persona).
-export function redactSecrets(text, env, extra = []) {
-  let s = String(text ?? "");
-  for (const v of secretValues(env, extra)) s = s.split(v).join("[redacted]");
-  for (const [, re] of SECRET_PATTERNS) s = s.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`), "[redacted]");
-  return s;
+// A secret-shaped line is DROPPED whole, never partly redacted (a half-redacted webhook URL or key still leaks the rest). A line holding a private key BEGIN marker takes everything up to the
+// END marker, or the rest of the text when there is none. Used on prompt parts that are not the asker's own typed text (sign-ups, the tonight title, library and persona text); sheet fields are
+// dropped whole one level up (research/claude.js researchParty).
+const BEGIN_KEY_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+const END_KEY_RE = /-----END [A-Z ]*PRIVATE KEY-----/;
+export function dropSecretLines(text, env, extra = []) {
+  const out = [];
+  let inKey = false;
+  for (const line of String(text ?? "").split("\n")) {
+    if (inKey) { if (END_KEY_RE.test(line)) inKey = false; continue; }
+    if (BEGIN_KEY_RE.test(line)) { inKey = !END_KEY_RE.test(line); continue; }
+    if (scanSecrets(line, env, { extra, ids: false }).length) continue;
+    out.push(line);
+  }
+  return out.join("\n");
 }
 
 function secretError(kinds) {
@@ -111,28 +127,33 @@ function secretError(kinds) {
 }
 
 // ---- (c) pings --------------------------------------------------------------------------------------------------------------------------------------
-// Every "@everyone" / "@here" is broken whatever follows it ("@everyonelol", "@here1"), with a fullwidth at-sign, with zero-width characters or up to three spaces between
-// the @ and the word. The break is one zero-width space after the @ (idempotent: an already broken ping is rewritten to the same text).
+// Every "@everyone" / "@here" is broken whatever follows it ("@everyonelol", "@here1"), with a fullwidth at-sign, with zero-width characters or up to three spaces or newlines between the @
+// and the word. The break is one zero-width space after the @, inserted IN PLACE (whitespace is kept) and only when none is there yet (idempotent). An e-mail address
+// ("bob@hereford.co.uk": a letter or digit before the @ and a domain after the word) is left alone. <#id> channel links do not ping and are left alone.
 const ZWSP = String.fromCharCode(0x200b);
 const FW_AT = String.fromCharCode(0xff20);
 const ZERO_WIDTH = `${ZWSP}-${String.fromCharCode(0x200f)}${String.fromCharCode(0x2060)}${String.fromCharCode(0xfeff)}`;
-const PING_WORD_RE = new RegExp(`([@${FW_AT}])[${ZERO_WIDTH}\\s]{0,3}(?=every\\s{0,3}one|here)`, "gi");
+const PING_WORD_RE = new RegExp(`(?<before>[A-Za-z0-9]?)([@${FW_AT}])(?<gap>[${ZERO_WIDTH}\\s]{0,3})(?<word>every\\s{0,3}one|here)(?<after>[A-Za-z0-9-]*\\.[A-Za-z]{2,})?`, "gi");
+const HAS_ZW = new RegExp(`[${ZERO_WIDTH}]`);
 export function defangPings(text) {
   return String(text ?? "")
-    .replace(PING_WORD_RE, (_m, at) => `${at}${ZWSP}`)
-    .replace(/<@([!&]?)(\d+)>/g, `<${ZWSP}@$1$2>`)
-    .replace(/<#(\d+)>/g, `<${ZWSP}#$1>`);
+    .replace(PING_WORD_RE, (m, before, at, gap, word, after, _off, _str, g) => {
+      if (before && g.after) return m; // looks like an e-mail address
+      return HAS_ZW.test(gap) ? m : `${before}${at}${ZWSP}${gap}${word}${g.after || ""}`;
+    })
+    .replace(/<@([!&]?)(\d+)>/g, `<${ZWSP}@$1$2>`);
 }
 
 // ---- the real-names prompt --------------------------------------------------------------------------------------------------------------------------
-// `friend` lists the asker's own typed text (the question, the previous question, the earlier turns, the asker string): a secret THERE stops the send. A secret anywhere else in the
-// prompt (a sheet field, a sign-up, the tonight title, library or persona text) is redacted to "[redacted]" and the ask goes on. Ids become "[id]" and pings are defanged in both halves;
-// a final scan fails closed on anything left. Returns { system, user }. Throws OUTBOUND_SECRET.
+// `friend` lists the asker's own typed text (the question, the previous question, the earlier turns, the asker string): a key or token shape THERE stops the send. Hex-shaped strings (redactHex)
+// are replaced by "[hex]" everywhere and never stop the ask. A secret-shaped line anywhere else in the prompt (sign-up, tonight title, library, persona) is dropped whole (dropSecretLines).
+// Ids become "[id]" and pings are defanged in both halves; a final scan of the whole result fails closed on anything left (a shape that spans a line break). Returns { system, user }.
+// Throws OUTBOUND_SECRET.
 export function prepareRealPrompt({ system, user }, env, extra = [], { friend = [] } = {}) {
-  const typed = scanSecrets(friend.filter((x) => typeof x === "string").join("\n"), env, { extra, ids: false });
+  const typed = scanSecrets(redactHex(friend.filter((x) => typeof x === "string").join("\n")), env, { extra, ids: false });
   if (typed.length) throw secretError([...new Set(typed)]);
-  const sys = defangPings(redactIds(redactSecrets(system, env, extra)));
-  const usr = defangPings(redactIds(redactSecrets(user, env, extra)));
+  const sys = defangPings(redactIds(dropSecretLines(redactHex(system), env, extra)));
+  const usr = defangPings(redactIds(dropSecretLines(redactHex(user), env, extra)));
   const left = scanSecrets(`${sys}\n${usr}`, env, { extra, ids: false });
   if (left.length) throw secretError([...new Set(left)]);
   return { system: sys, user: usr };
@@ -146,7 +167,7 @@ export function guardSecretsInBody(bodyObject, env, extra = []) {
 
 // Real-mode reply: null (discard, honest degraded line) when it carries a secret; otherwise pings defanged and ids redacted.
 export function cleanRealReply(raw, env, extra = []) {
-  const text = String(raw ?? "");
+  const text = redactHex(raw);
   if (!text.trim()) return null;
   if (scanSecrets(text, env, { extra, ids: false }).length) return null;
   return defangPings(redactIds(text));

@@ -980,7 +980,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets0 = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     // Research mode: names on the sheets join the roster as keys, and a free-text field that fails the strict guard is dropped before any block is rendered (research/claude.js).
-    const rparty = research ? researchParty(sheets0, stateMap, { real: researchReal }) : null; // RESEARCH_NAMES "real": nothing is dropped for a name (the Claude path sends real names)
+    const rparty = research ? researchParty(sheets0, stateMap, { real: researchReal, env }) : null; // RESEARCH_NAMES "real": nothing is dropped for a name (the Claude path sends real names)
     const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
     const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
@@ -1332,6 +1332,7 @@ export async function answerWithAi({
     // so choosing a different model does not skip the caps.
     let rawAnswer, model, provider;
     let fallbackNote = "";
+    let guestUntokenised = false; // a guest whose prompt could not be tokenised: library facts only, labelled +degraded
     let degraded = false; // ASK_RESEARCH member: Claude could not answer, so the row is marked +degraded (never silent)
     let libOnly = false; // research guest with a spent budget: library facts only
     const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
@@ -1396,7 +1397,7 @@ export async function answerWithAi({
       // A member's friend text never reaches Workers AI (or any other provider) under ASK_RESEARCH: no Claude answer means the honest degraded line below.
       if (!rawAnswer && research && memberNoWall) throw new Error("research: Claude gave no answer");
       // A guest whose prompt could not be tokenised gets library facts only: the raw prompt (real names) never goes to Workers AI.
-      if (!rawAnswer && research && !memberNoWall && !(priv && priv.ok)) throw new Error("research: the prompt could not be tokenised");
+      if (!rawAnswer && research && !memberNoWall && !(priv && priv.ok)) { guestUntokenised = true; researchNote = " [guard:tokenise]"; throw new Error("research: the prompt could not be tokenised"); }
       if (!rawAnswer) {
       const deadlineMs = askDeadlineMs(env);
       const waiMs = research ? researchTimeoutMs(Date.now() - t0, ASK_CHOSEN_TIMEOUT_MS, deadlineMs) : ASK_CHOSEN_TIMEOUT_MS;
@@ -1433,7 +1434,7 @@ export async function answerWithAi({
       if (research ? provider !== "workers-ai" : chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
     } catch (providerErr) {
       fallbackNote = ` (after ${chosenProvider}: ${shortProviderError(providerErr)})`;
-      if (research && memberNoWall) {
+      if (research && (memberNoWall || guestUntokenised)) {
         // Degraded (ASK_RESEARCH, member): Claude (compose, then the Haiku-class retry) could not answer. No Workers AI, no Gemini, no other provider ever sees the question.
         // An honest in-voice line, plus the library's own facts when the question matches the library. The row is marked +degraded so it is never silent.
         degraded = true;

@@ -20,7 +20,7 @@ import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
 import { researchMembers, researchMembersFor, genericAliases } from "../privacy/roster-config.js";
 import { RESEARCH_MAX_TOKENS } from "./rules.js";
-import { prepareRealPrompt, guardSecretsInBody, cleanRealReply, scanSecrets, defangPings } from "./real-names.js";
+import { prepareRealPrompt, guardSecretsInBody, cleanRealReply, scanSecrets, defangPings, redactHex } from "./real-names.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 2000000;
 export const CLAUDE_TIMEOUT_MS = 9000; // one budget for the first call and the model-id retry together; Workers AI keeps its own 12s after it, inside the 24s ask deadline
@@ -159,7 +159,7 @@ const strings = (v, out = []) => {
 
 // Called by buildAnswerInputs in research mode, BEFORE the prompt blocks are rendered. Returns the sheets to render (free-text fields that fail the guard removed),
 // the member list for the name map, and `mandatory`: raw strings that must pass the guard before Claude is called. Never throws: { failed: true } means skip Claude.
-export function researchParty(sheets, stateMap, { real = false } = {}) {
+export function researchParty(sheets, stateMap, { real = false, env = null } = {}) {
   try {
     const list = Array.isArray(sheets) ? sheets : [];
     const members = researchMembersFor(list);
@@ -173,6 +173,7 @@ export function researchParty(sheets, stateMap, { real = false } = {}) {
       for (const [k, f] of Object.entries(s.fields)) {
         const text = fieldString(f);
         if (!text) { fields[k] = f; continue; }
+        if (scanSecrets(redactHex(text), env, { ids: false }).length) { dropped++; continue; } // anything secret-shaped: the whole field is dropped, in both modes, and the ask goes on
         if (classifyField(k) === "structured") { mandatory.push(text); fields[k] = f; }
         else if (real || passes(text)) fields[k] = f; // RESEARCH_NAMES "real": the name guard does not run, so no free-text field is dropped for a name
         else dropped++;
@@ -290,10 +291,10 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
       for (const seg of priv.partySegments) guardUserText([seg], priv.roster);
     } catch (e) { return { reason: guardReason(e) }; }
     if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
-    sendSystem = defangPings(priv.system); // pings with trailing characters ("@everyonelol") pass the name guard, so they are defanged here in tokenised mode too
-    sendUser = defangPings(priv.user);
+    sendSystem = defangPings(redactHex(priv.system)); // pings with trailing characters ("@everyonelol") pass the name guard, so they are defanged here in tokenised mode too
+    sendUser = defangPings(redactHex(priv.user));
     roster = priv.roster;
-    cleanReply = (raw) => (scanSecrets(raw, env, { ids: false }).length ? null : priv.clean(raw)); // a secret in the reply stops it in both modes
+    cleanReply = (raw) => { const r0 = redactHex(raw); return scanSecrets(r0, env, { ids: false }).length ? null : priv.clean(r0); }; // a secret in the reply stops it in both modes
   }
 
   const budgetStart = Date.now(); // the 9 s / 6 s budgets start here, so the reservation write is inside them

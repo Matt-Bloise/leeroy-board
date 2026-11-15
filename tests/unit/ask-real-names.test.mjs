@@ -285,9 +285,11 @@ for (const names of ["real", "tokenised"]) {
   });
 }
 test("(c) unit: defangPings breaks every Discord ping form and leaves ordinary text", () => {
+  // CHANGED (second Fable read, fix 4): <#id> channel links do not ping and are left alone; an e-mail address (mail@here.example) is left alone too.
   const t = defangPings("@everyone @here <@1> <@!2> <@&3> <#4> at-home @heretic mail@here.example");
-  assert.ok(!/@everyone|<@[!&]?\d|<#\d/.test(t));
-  assert.ok(!/@here(?![a-z])/.test(t.replace("mail@\u200bhere", "")));
+  assert.ok(!/@everyone|<@[!&]?\d/.test(t));
+  assert.ok(t.includes("<#4>") && t.includes("mail@here.example"));
+  assert.ok(!/@here(?![a-z])/.test(t.replace("mail@here.example", "")));
   assert.match(t, /@\u200beveryone/);
   assert.equal(defangPings("plain text"), "plain text");
 });
