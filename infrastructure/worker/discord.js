@@ -634,7 +634,21 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
 
 // Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
-  const res = await handleDiscordInteractionInner(req, env, ctx, origin);
+  const state = { verified: false, type: null };
+  let res;
+  try {
+    res = await handleDiscordInteractionInner(req, env, ctx, origin, state);
+  } catch (err) {
+    // Before the signature is verified, or for a PING, keep the old behaviour (the caller's 500). Afterwards Discord must get an answer.
+    if (!state.verified || state.type === 1) throw err;
+    // Name and a fixed tag only: err.message can carry a slice of user input.
+    console.error("Discord interaction failed:", String((err && err.name) || "Error"), "[interaction_catch]");
+    const body = state.type === 4
+      ? { type: 8, data: { choices: [] } }
+      : { type: 4, data: { content: SLASH_COPY.interactionFailed(), flags: 64 } };
+    // Falls through to hardenInteractionBody below, so the catch reply carries allowed_mentions too.
+    res = new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
   if (res.status !== 200 || !(res.headers.get("Content-Type") || "").includes("application/json")) return res;
   try {
     const body = JSON.parse(await res.clone().text());
@@ -651,7 +665,7 @@ export function likePattern(term) {
   return `%${String(term ?? "").replace(/[\\%_]/g, "\\$&")}%`;
 }
 
-async function handleDiscordInteractionInner(req, env, ctx, origin) {
+async function handleDiscordInteractionInner(req, env, ctx, origin, state = { verified: false, type: null }) {
   const rawBody = await req.text();
   if (!env.DISCORD_PUBLIC_KEY) {
     return new Response(JSON.stringify({ error: "DISCORD_PUBLIC_KEY not configured" }), { status: 500 });
@@ -668,7 +682,9 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     return new Response("Invalid request signature", { status: 401 });
   }
 
+  state.verified = true;
   const interaction = JSON.parse(rawBody);
+  state.type = interaction.type;
 
   // Replay: a signed interaction id is accepted once. PING carries no id and is exempt. Rows older than 10 minutes are purged.
   if (interaction.type !== 1) {
@@ -1052,6 +1068,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     // 2d. `/launch`
     if (cmd === "launch") {
       if (!member) return unknownMemberResponse();
+      // After launch there is nothing to track or count down: one line that points to /ask and the board.
+      if (Date.now() >= LAUNCH_UTC) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: SLASH_COPY.launchOver(boardUrl), flags: 64 } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       const state = getOpt("state");
       const now = new Date().toISOString();
       const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'launch'").first();
@@ -1106,8 +1129,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
     // 2e. `/map`
     if (cmd === "map") {
-      const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-      const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+      const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
+      const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
       const hash = plan ? `#atlas.plan.${plan}` : place ? `#atlas.${place}` : "#atlas";
       const label = plan ? `Meeting Route Plan (${plan})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
       return new Response(
@@ -1122,7 +1145,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
                   {
                     type: 2,
                     style: 5,
-                    label: `${label} on the Atlas`,
+                    label: `${label} on the Atlas`.slice(0, 80),
                     url: `${boardUrl}/${hash}`,
                   },
                 ],
@@ -1248,7 +1271,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
                   { type: 2, style: 3, label: "I'm In!", custom_id: "signup:rsvp:in" },
                   { type: 2, style: 2, label: "Maybe", custom_id: "signup:rsvp:maybe" },
                   { type: 2, style: 4, label: "Can't Make It", custom_id: "signup:rsvp:out" },
-                  { type: 5, style: 5, label: "Open Sign-ups", url: `${boardUrl}/#signups` },
+                  { type: 2, style: 5, label: "Open Sign-ups", url: `${boardUrl}/#signups` },
                 ],
               },
             ],
