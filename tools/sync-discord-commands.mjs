@@ -61,10 +61,22 @@ export function validateManifest(body) {
   if (body.commands.length === 0) throw new Error("manifest has no commands");
   const seen = new Set();
   for (const c of body.commands) {
-    if (!isObj(c) || typeof c.name !== "string" || !/^[\w-]{1,32}$/.test(c.name)) throw new Error("manifest command has no valid name");
-    if (typeof c.description !== "string") throw new Error(`manifest command ${c.name} has no description`);
-    if (c.options !== undefined && !Array.isArray(c.options)) throw new Error(`manifest command ${c.name} has malformed options`);
-    const key = `${c.type ?? 1}:${c.name}`;
+    if (!isObj(c) || typeof c.name !== "string") throw new Error("manifest command has no valid name");
+    const type = c.type ?? 1;
+    if (![1, 2, 3, 4].includes(type)) throw new Error(`manifest command ${c.name} has an unknown type`);
+    if (type === 1) {
+      // Slash command: lowercase word characters and hyphens, 1 to 32, and a description.
+      if (!/^[\w-]{1,32}$/.test(c.name) || c.name !== c.name.toLowerCase()) throw new Error("manifest command has no valid name");
+      if (typeof c.description !== "string") throw new Error(`manifest command ${c.name} has no description`);
+      if (c.options !== undefined && !Array.isArray(c.options)) throw new Error(`manifest command ${c.name} has malformed options`);
+    } else {
+      // User (2) and message (3) context-menu commands and the primary entry point (4): names may have capitals and spaces (1 to 32
+      // characters), there are no options, and the description must be empty or absent.
+      if (c.name.length < 1 || c.name.length > 32 || c.name !== c.name.trim()) throw new Error("manifest command has no valid name");
+      if (c.options !== undefined && !(Array.isArray(c.options) && c.options.length === 0)) throw new Error(`manifest context-menu command ${c.name} must not have options`);
+      if (c.description !== undefined && c.description !== "") throw new Error(`manifest context-menu command ${c.name} must have an empty description`);
+    }
+    const key = `${type}:${c.name}`;
     if (seen.has(key)) throw new Error(`manifest lists ${c.name} twice`);
     seen.add(key);
   }

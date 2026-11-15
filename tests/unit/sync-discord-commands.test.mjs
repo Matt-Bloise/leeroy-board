@@ -287,3 +287,51 @@ test("the deploy runs the command sync as a non-failing step after the Worker de
   assert.ok(i > idx(/^Sync Worker Secrets/), "after the secret sync");
   assert.ok(i > idx(/^Post-deploy health check/), "after the health check, so the manifest is the new version's");
 });
+
+// ---- the real production manifest (fetched 2026-11-15 from /api/discord/commands) -----------------------------------------------------------
+// It holds two message context-menu commands (type 3) named "Ask Leeroy" and "Fix this fact": capitals and spaces are valid for types 2 and 3,
+// and they carry no description. The first production run failed with "manifest command has no valid name" because the validator applied the
+// slash-command rules to every command.
+import { validateManifest } from "../../tools/sync-discord-commands.mjs";
+const REAL = JSON.parse(readFileSync(new URL("../fixtures/discord/live-manifest-2026-11-15.json", import.meta.url), "utf8"));
+const MENUS = REAL.commands.filter((c) => c.type === 3);
+
+test("the real manifest validates: 25 commands, two message context-menu commands", () => {
+  assert.equal(REAL.commands.length, 25);
+  assert.deepEqual(MENUS.map((c) => c.name).sort(), ["Ask Leeroy", "Fix this fact"]);
+  assert.equal(validateManifest(REAL).length, 25);
+});
+
+test("validation is per type: slash names stay strict, context-menu names may have capitals and spaces", () => {
+  const slash = (name) => ({ commands: [{ name, description: "d" }] });
+  for (const bad of ["Ask Leeroy", "has space", "UPPER", "", "x".repeat(33), "a.b"]) assert.throws(() => validateManifest(slash(bad)), /valid name/, bad);
+  for (const type of [2, 3]) {
+    assert.doesNotThrow(() => validateManifest({ commands: [{ name: "Ask Leeroy", type }] }));
+    assert.throws(() => validateManifest({ commands: [{ name: "x".repeat(33), type }] }), /valid name/);
+    assert.throws(() => validateManifest({ commands: [{ name: "", type }] }), /valid name/);
+    assert.throws(() => validateManifest({ commands: [{ name: "Ask Leeroy", type, options: [{ name: "o", description: "d", type: 3 }] }] }), /context-menu|options/);
+    assert.throws(() => validateManifest({ commands: [{ name: "Ask Leeroy", type, description: "must be empty" }] }), /description/);
+  }
+  assert.throws(() => validateManifest({ commands: [{ name: "ask", type: 1 }] }), /description/);
+  assert.throws(() => validateManifest({ commands: [{ name: "Ask Leeroy", type: 99 }] }), /type/);
+});
+
+test("with the real manifest the sync writes only what is missing and never touches the two context-menu commands", async () => {
+  // Discord already holds every command except /say, in the shape it hands back (ids, version, null localizations, description "").
+  const live = REAL.commands.filter((c) => c.name !== "say").map((c) => asDiscord(c, { type: c.type ?? 1, description: c.description ?? "" }));
+  const w = world({ manifest: REAL, live });
+  const r = await go(w);
+  assert.equal(r.code, 0, r.text);
+  assert.deepEqual(postedNames(w), ["say"]);
+  assert.match(r.text, /created: say/);
+  assert.ok(!w.calls.some((c) => c.method === "PUT" || c.method === "DELETE"));
+  for (const m of MENUS) assert.ok(!r.text.includes(`updated: ${m.name}`) && !postedNames(w).includes(m.name));
+});
+
+test("with the real manifest and Discord already in sync, nothing is posted", async () => {
+  const live = REAL.commands.map((c) => asDiscord(c, { type: c.type ?? 1, description: c.description ?? "" }));
+  const w = world({ manifest: REAL, live });
+  const r = await go(w);
+  assert.equal(r.code, 0, r.text);
+  assert.equal(w.posts().length, 0);
+});
