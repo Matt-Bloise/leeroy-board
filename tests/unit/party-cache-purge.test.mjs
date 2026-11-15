@@ -68,14 +68,14 @@ test("F-12: a sheet write purges every party URL, and the next read of each (pri
       assert.equal(raceIn(await r.text()), "Human", `${p} starts with the stored race`);
     }
     edge.deleted.length = 0;
-    const w = await call(env, "POST", "/api/sheet", { field: "race", value: "Gnome", visible: true });
+    const w = await call(env, "POST", "/api/sheet", { field: "race", value: "gnome", visible: true }); // a slug on the board's list (sheet-vocab.js)
     assert.equal(w.status, 200, "the sheet write is accepted");
     for (const p of PARTY_URLS) assert.ok(edge.deleted.includes(p), `${p} was not purged; purged: ${edge.deleted.join(", ")}`);
     // after the write each URL answers with the new party at once, not after the cache expires
     for (const p of READ_URLS) {
       const r = await call(env, "GET", p);
       assert.equal(r.status, 200, `${p} answers after the write`);
-      assert.equal(raceIn(await r.text()), "Gnome", `${p} still serves the old party`);
+      assert.equal(raceIn(await r.text()), "gnome", `${p} still serves the old party`);
     }
   } finally {
     globalThis.caches = realCaches;

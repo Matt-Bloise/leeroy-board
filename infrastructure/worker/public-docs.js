@@ -17,6 +17,9 @@ export const PUBLIC_ATLAS_DOCS = new Set(["marks", "links"]);
 
 const clean = (name) => String(name == null ? "" : name).trim();
 
+// The edge-cache key of a document read (GET /api/data/<name>). The route keys by the DECODED name with no .json, so every purge goes through this one helper.
+export const dataCachePath = (name) => `/api/data/${clean(name)}`;
+
 export function isPublicDataDoc(name) {
   return PUBLIC_DATA_DOCS.has(clean(name));
 }
