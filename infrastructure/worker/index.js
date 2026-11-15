@@ -1533,7 +1533,10 @@ const worker = {
 
       // 3. GET /library/:name -> Edge-cached library JSON blob from D1 `lib_blobs`
       if (req.method === "GET" && path.startsWith("/library/")) {
-        const name = decodeURIComponent(path.slice("/library/".length));
+        let name;
+        try { name = decodeURIComponent(path.slice("/library/".length)); } catch { return jsonResp({ error: "Library blob not found" }, 404, cors); }
+        // Blob names never hold whitespace or control characters. Those would be stripped when the cache key is built, so a trailing space or %00 could otherwise land on another blob's cache key.
+        if (/[\s\u0000-\u001f\u007f]/.test(name)) return jsonResp({ error: "Library blob not found" }, 404, cors);
         // seed.stamp is the deploy seed's bookkeeping row, not a Library document.
         if (name === "seed.stamp") return jsonResp({ error: `Library blob ${name} not found` }, 404, cors);
         // The glossary is the one blob that is filtered on the way out (party-glossary.js): the stored row may hold text that names the vocabulary. Its cache entry has its own key

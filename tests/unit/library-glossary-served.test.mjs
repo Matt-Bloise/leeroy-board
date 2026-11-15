@@ -111,3 +111,34 @@ test("the library file in the repo passes the rule untouched, and its stamp is t
   assert.deepEqual(JSON.parse(libraryGlossaryBody(JSON.stringify(file))).terms, file.terms, "nothing in the repo copy is dropped");
   assert.equal(file.generated, "2026-11-15T15:00:00.000Z");
 });
+
+// Review follow-ups: a blob name with whitespace or a control character is stripped when the cache key is built, so it used to land on the OLD
+// unfiltered key. Such names are now a plain 404 before any cache lookup. The served body is a whitelist projection, and never an empty glossary.
+test("a glossary name with trailing whitespace or a control character never reads the old cache key", async () => {
+  const cache = fakeCache();
+  globalThis.caches = cache;
+  await purgeWorkerCache(ORIGIN, LIBRARY_PURGE_PATHS);
+  cache.store.set(`${ORIGIN}/api/library/glossary.json`, { body: JSON.stringify(OLD), status: 200, headers: [["content-type", "application/json"], ["cache-control", "public, max-age=3600, s-maxage=14400"]] });
+  for (const odd of ["glossary.json%20", "glossary.json%20%20", "glossary.json%00", "glossary.json%01", "glossary.json%09", "glossary.json%0A", "glossary.json%0D", "glossary.json%1F", "glos%09sary.json", "%0Aglossary.json", "glossary%0D.json"]) {
+    const res = await get(makeEnv(), `/library/${odd}`);
+    assert.equal(res.status, 404, odd);
+    assert.ok(!/troll|undead|tauren/i.test(await res.text()), `${odd} serves none of the old text`);
+  }
+  assert.equal((await get(makeEnv(), "/library/%")).status, 404, "a malformed escape is a 404, not a 500");
+});
+
+test("the served glossary keeps only term, forms and def, and an all-dropped list falls back to the bundled glossary", async () => {
+  const extra = { generated: "2026-11-15T15:00:00.000Z", note: "x", terms: [{ term: "aggro", forms: ["aggro"], def: "Enemy attention.", extra: "party-shaped", id: 7 }] };
+  const env = makeEnv();
+  env.DB.raw.prepare("UPDATE lib_blobs SET json = ?, stamp = 's3' WHERE name = 'glossary.json'").run(JSON.stringify(extra));
+  const cache = fakeCache(); globalThis.caches = cache;
+  await purgeWorkerCache(ORIGIN, LIBRARY_PURGE_PATHS);
+  const body = JSON.parse(await (await get(env)).text());
+  assert.deepEqual(Object.keys(body).sort(), ["generated", "terms"], "no other top-level field leaves the Worker");
+  assert.deepEqual(Object.keys(body.terms[0]).sort(), ["def", "forms", "term"], "no other entry field leaves the Worker");
+  const env2 = makeEnv();
+  env2.DB.raw.prepare("UPDATE lib_blobs SET json = ?, stamp = 's4' WHERE name = 'glossary.json'").run(JSON.stringify({ generated: "g", terms: [{ term: "troll", forms: ["troll"], def: "A race." }] }));
+  await purgeWorkerCache(ORIGIN, LIBRARY_PURGE_PATHS);
+  const fb = JSON.parse(await (await get(env2)).text());
+  assert.ok(fb.terms.length > 0, "an all-dropped list is replaced by the bundled glossary, never served empty");
+});

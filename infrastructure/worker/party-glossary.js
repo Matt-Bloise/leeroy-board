@@ -98,5 +98,7 @@ export function libraryGlossaryBody(storedJson) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray(parsed.terms)) {
     return JSON.stringify({ generated: parsed && typeof parsed === "object" && !Array.isArray(parsed) ? String(parsed.generated || "") : "", terms: servedGlossary() });
   }
-  return JSON.stringify({ ...parsed, terms: filterGlossary(parsed.terms) });
+  // Whitelist projection: only the three fields the board reads leave the Worker, and an empty result is replaced by the bundled glossary.
+  const kept = filterGlossary(parsed.terms).map((e) => ({ term: e.term, forms: e.forms, def: e.def }));
+  return JSON.stringify({ generated: String(parsed.generated || ""), terms: kept.length ? kept : servedGlossary() });
 }
