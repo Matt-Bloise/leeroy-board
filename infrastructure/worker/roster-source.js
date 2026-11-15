@@ -18,13 +18,13 @@ let step2Override = null;
 export function setStep2ReadyForTests(v) { step2Override = v === null || v === undefined ? null : Boolean(v); }
 const step2Ready = () => (step2Override === null ? ROSTER_STEP2_READY : step2Override);
 
-// One roster decision per request. rosterScope(env) returns a shallow copy of env that carries its own memo; fetch and scheduled use it for the whole request, so
+// One roster decision per request. rosterScope(env) returns an object that delegates to env and carries its own memo; fetch and scheduled use it for the whole request, so
 // the flag is asked of Flagship at most once per request (a binding call with a 100 ms timeout) however many places need the roster. An env that was not scoped
 // (a direct call from a test or another entry point) is not memoised.
 const memo = new WeakMap();
 export function rosterScope(env) {
   if (!env || typeof env !== "object") return env;
-  const scoped = { ...env };
+  const scoped = Object.create(env); // delegates every read to env (no property is copied, so a throwing getter is not triggered here)
   memo.set(scoped, { p: null });
   return scoped;
 }
