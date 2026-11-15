@@ -21,6 +21,7 @@ const ctx = { waitUntil() {}, passThroughOnException() {} };
 const AT = "2026-11-12T00:00:00.000Z";
 const SLUG = "red-fox", NAME = "Red Fox", DISCORD_ID = "100000000000000042";
 const MEMBER_KEY = "member-key-for-tests-0123456789ab", KEY_SALT = "salt-for-tests-0123456789", ADMIN_TOKEN = "admin-token-for-tests-0123456789";
+const GUILD = "400000000000000004";
 const MARKER = "zqih";
 const HIDDEN = `${MARKER}-secret-race`;
 
@@ -32,6 +33,7 @@ async function makeEnv() {
   const kv = (k, v) => DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run(k, JSON.stringify(v), AT);
   kv("party", { members: [{ name: NAME, class_key: "paladin", class: "Paladin", race: "Human" }] });
   kv("party_sheets", [{ slug: SLUG, name: NAME, fields: { class: { value: "paladin", visible: true, source: "board", at: AT } }, updated: AT }]);
+  kv("discord_roster", { guildId: GUILD });
   kv("discord_members", [{ slug: SLUG, name: NAME, match: ["red fox"], id: DISCORD_ID }]);
   DB.raw.prepare("INSERT INTO members (slug, key_hash, created_at) VALUES (?, ?, ?)").run(SLUG, await sha256Hex(`${KEY_SALT}:${MEMBER_KEY}`), AT);
   const room = { fetch: async () => new Response(JSON.stringify({ ok: true })) };
@@ -42,10 +44,10 @@ async function makeEnv() {
 const intentRows = (env) => env.DB.raw.prepare("SELECT seq, kind, body FROM intents ORDER BY seq").all();
 const addRow = (env, kind, body) => env.DB.raw.prepare("INSERT INTO intents (at, slug, kind, body, ver) VALUES (?, ?, ?, ?, 1)").run(AT, SLUG, kind, typeof body === "string" ? body : JSON.stringify(body));
 
-async function discordCmd(env, name, permissions, options = []) {
+async function discordCmd(env, name, permissions, options = [], { guild = GUILD, top = {} } = {}) {
   const member = { nick: NAME, user: { id: DISCORD_ID, username: "redfox" } };
   if (permissions !== undefined) member.permissions = permissions;
-  const res = await quiet(() => handleDiscordInteraction(env.signer.signedRequest({ type: 2, id: "1", application_id: "2", token: "t", channel_id: "3", guild_id: "4", member, data: { name, options } }), env, ctx, ORIGIN));
+  const res = await quiet(() => handleDiscordInteraction(env.signer.signedRequest({ type: 2, id: "1", application_id: "2", token: "t", channel_id: "3", guild_id: guild, member, ...top, data: { name, options } }), env, ctx, ORIGIN));
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.type, 4);
@@ -180,4 +182,100 @@ test("helpers: redactIntentBody and sheetIntentBody", () => {
   assert.deepEqual(redactIntentBody({ journey: "curious" }), { journey: "curious" });
   assert.deepEqual(sheetIntentBody("a", "x", false, "board"), { field: "a", visible: false, source: "board" });
   assert.deepEqual(sheetIntentBody("a", "x", true, "board"), { field: "a", value: "x", visible: true, source: "board" });
+});
+
+// ---- follow-ups: /sheet and /launch hides, guild binding, spoofed permissions, unparseable rows ----
+
+test("Discord /sheet of an already-hidden field stores an intent with no value", async () => {
+  const env = await makeEnv();
+  await memberApi(env, "POST", "/sheet", { field: "race", value: "undead", visible: false });
+  const res = await discordCmd(env, "sheet", undefined, [{ name: "field", type: 3, value: "race" }, { name: "value", type: 3, value: `orc ${HIDDEN}` }]);
+  assert.ok(res.data.content);
+  for (const r of intentRows(env)) assert.ok(!r.body.includes(MARKER) && !r.body.includes("orc") && !r.body.includes("undead"), `no hidden value in intent ${r.seq}`);
+  const last = JSON.parse(intentRows(env).at(-1).body);
+  assert.deepEqual(last, { field: "race", visible: false, source: "discord" });
+  assert.ok(!(await (await adminApi(env, "GET", "/intents?after=0")).text()).includes(MARKER), "GET /intents");
+  assert.ok(!(await discordCmd(env, "intents", "32")).data.content.includes(MARKER), "/intents");
+});
+
+test("Discord /sheet of a visible field still stores the value", async () => {
+  const env = await makeEnv();
+  await discordCmd(env, "sheet", undefined, [{ name: "field", type: 3, value: "race" }, { name: "value", type: 3, value: "orc" }]);
+  assert.deepEqual(JSON.parse(intentRows(env).at(-1).body), { field: "race", value: "orc", visible: true, source: "discord" });
+});
+
+test("Discord /launch with a hidden launch_state stores an intent with no state", async () => {
+  const env = await makeEnv();
+  await memberApi(env, "POST", "/sheet", { field: "launch_state", value: "queue", visible: false });
+  const realNow = Date.now;
+  Date.now = () => Date.UTC(2026, 10, 1); // /launch only works before launch
+  try {
+    await discordCmd(env, "launch", undefined, [{ name: "state", type: 3, value: "done" }]);
+  } finally { Date.now = realNow; }
+  const row = intentRows(env).find((r) => r.kind === "launch");
+  assert.ok(row, "a launch intent was stored");
+  assert.ok(!row.body.includes("done") && !row.body.includes("queue"), row.body);
+  assert.equal(JSON.parse(row.body).visible, false);
+});
+
+test("Discord /launch with a visible launch_state still stores the state", async () => {
+  const env = await makeEnv();
+  const realNow = Date.now;
+  Date.now = () => Date.UTC(2026, 10, 1);
+  try {
+    await discordCmd(env, "launch", undefined, [{ name: "state", type: 3, value: "done" }]);
+  } finally { Date.now = realNow; }
+  assert.deepEqual(JSON.parse(intentRows(env).find((r) => r.kind === "launch").body), { state: "done" });
+});
+
+test("/intents and /ack admin rights are bound to the roster guild", async () => {
+  const env = await makeEnv();
+  addRow(env, "journey", { journey: "curious" });
+  const other = { guild: "500000000000000005" };
+  const text = (await discordCmd(env, "intents", "32", [], other)).data.content;
+  assert.ok(!text.includes("Mailbox") && !text.includes("curious") && !/total pending/.test(text));
+  assert.match(text, /admin/i);
+  // /ack from another guild with Administrator does not clear the whole mailbox (the row is another member's).
+  env.DB.raw.prepare("UPDATE intents SET slug = 'someone-else'").run();
+  await discordCmd(env, "ack", "8", [{ name: "up_to", type: 4, value: 99 }], other);
+  assert.equal(intentRows(env).length, 1, "foreign-guild admin cleared nothing");
+  await discordCmd(env, "ack", "8", [{ name: "up_to", type: 4, value: 99 }]);
+  assert.equal(intentRows(env).length, 0, "roster-guild admin clears the mailbox");
+});
+
+test("/intents refuses an admin when no roster guild is configured", async () => {
+  const env = await makeEnv();
+  env.DB.raw.prepare("DELETE FROM kv_state WHERE key = 'discord_roster'").run();
+  invalidateConfigCache();
+  addRow(env, "journey", { journey: "curious" });
+  assert.ok(!(await discordCmd(env, "intents", "32")).data.content.includes("curious"));
+});
+
+test("a non-admin cannot supply permissions: an option or a top-level field is ignored", async () => {
+  const env = await makeEnv();
+  addRow(env, "journey", { journey: "curious" });
+  addRow(env, "sheet", { field: "race", value: HIDDEN, visible: false, source: "board" });
+  env.DB.raw.prepare("UPDATE intents SET slug = 'someone-else'").run();
+  const forged = [
+    { options: [{ name: "permissions", type: 3, value: "8" }], top: {} },
+    { options: [{ name: "permissions", type: 3, value: "32" }], top: {} },
+    { options: [], top: { permissions: "8" } },
+    { options: [], top: { permissions: "4398046511103", app_permissions: "8" } },
+  ];
+  for (const { options, top } of forged) {
+    const text = (await discordCmd(env, "intents", "0", options, { top })).data.content;
+    assert.ok(!text.includes("Mailbox") && !text.includes("curious") && !text.includes(MARKER), JSON.stringify({ options, top }));
+    assert.match(text, /admin/i);
+    await discordCmd(env, "ack", "0", [...options, { name: "up_to", type: 4, value: 99 }], { top });
+    assert.equal(intentRows(env).length, 2, "a forged permission cleared nothing");
+  }
+});
+
+test("GET /intents never echoes an unparseable row", async () => {
+  const env = await makeEnv();
+  addRow(env, "sheet", `not json ${HIDDEN}`);
+  const res = await adminApi(env, "GET", "/intents?after=0");
+  const text = await res.text();
+  assert.ok(!text.includes(MARKER) && !text.includes("raw"), text);
+  assert.equal(JSON.parse(text).intents.length, 1);
 });

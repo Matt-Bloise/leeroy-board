@@ -63,9 +63,19 @@ import {
 import { loadRoster } from "./party-source.js";
 import { tonightLines, LAUNCH_EPOCH } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
-import { partyForMember, redactIntentBody } from "./sheet-privacy.js";
+import { partyForMember, redactIntentBody, sheetIntentBody } from "./sheet-privacy.js";
 import { sheetValueProblem } from "./sheet-values.js";
 import { canManageGuild } from "./setup-command.js";
+
+// Staff for the roster server only: Manage Server or Administrator in interaction.member.permissions (the field Discord signs; nothing a
+// user types is read), AND the interaction comes from the guild configured in discord_roster. An admin of any other server that installs
+// the bot is not staff here. Fails closed when no roster guild is configured.
+async function isRosterAdmin(env, interaction) {
+  if (!canManageGuild(interaction.member && interaction.member.permissions)) return false;
+  const roster = await loadConfigKey(env, "discord_roster");
+  const rosterGuild = roster && roster.guildId != null ? String(roster.guildId) : "";
+  return /^[0-9]{5,25}$/.test(rosterGuild) && String(interaction.guild_id || "") === rosterGuild;
+}
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
 import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
 
@@ -1037,7 +1047,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           );
         }
         const now = new Date().toISOString();
-        await recordSheetEventInD1(env, origin, {
+        const saved = await recordSheetEventInD1(env, origin, {
           slug: target.slug,
           name: target.name,
           field,
@@ -1048,7 +1058,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         await insertIntent(env, {
           slug: target.slug,
           kind: "sheet",
-          body: { field, value, source: "discord" },
+          body: sheetIntentBody(field, value, saved.visible, "discord"), // a field that is hidden stays hidden: its intent carries no value
           ver: 1,
           at: now,
         });
@@ -1120,7 +1130,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
           .bind(JSON.stringify(rows), now)
           .run();
-        await recordSheetEventInD1(env, origin, {
+        const savedLaunch = await recordSheetEventInD1(env, origin, {
           slug: member.slug,
           name: byName,
           field: "launch_state",
@@ -1131,7 +1141,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         await insertIntent(env, {
           slug: member.slug,
           kind: "launch",
-          body: { state },
+          body: savedLaunch.visible === false ? { field: "launch_state", visible: false } : { state }, // hidden launch_state: no value in the mailbox
           ver: 1,
           at: now,
         });
@@ -1638,7 +1648,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     // 2r. `/intents`
     if (cmd === "intents") {
       // Staff only, like GET /intents: the mailbox holds every member's changes. Same rule as /ack's whole-mailbox clear and /setup.
-      if (!canManageGuild(interaction.member && interaction.member.permissions)) {
+      if (!(await isRosterAdmin(env, interaction))) {
         return new Response(
           JSON.stringify({ type: 4, data: { content: "That command is for server admins.", flags: 64 } }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -1707,7 +1717,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       }
 
       // Only a server admin clears the whole mailbox; any other roster member clears their own intents.
-      const adminCaller = canManageGuild(interaction.member && interaction.member.permissions);
+      const adminCaller = await isRosterAdmin(env, interaction);
       const res = adminCaller
         ? await env.DB.prepare("DELETE FROM intents WHERE seq <= ?").bind(upTo).run()
         : await env.DB.prepare("DELETE FROM intents WHERE seq <= ? AND slug = ?").bind(upTo, member.slug).run();
@@ -1751,7 +1761,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         sources,
         failed,
         byName,
-        isAdmin: canManageGuild(interaction.member && interaction.member.permissions),
+        isAdmin: await isRosterAdmin(env, interaction),
         now,
       });
       if (!applied.ok) {
