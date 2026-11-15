@@ -262,6 +262,8 @@ const API = (() => {
     const b = window.BoardBrain;
     if (b && typeof b.url === "function") {
       const u = b.url("");
+      /* Inside the Activity the Portal maps /api to the Worker, so the base is this page's own origin (brain.js gives "/api" there but url("") is null). Web hosts and ?api= are unchanged. */
+      if (!u && /\.discordsays\.com$/i.test(location.hostname || "") && b.url("/x") === "/api/x") return location.origin;
       if (u) {
         const o = new URL(u, location.href).origin;
         /* BoardBrain.url must not bypass the ?api= allowlist below: only the page's own origin (Discord Activity), the production Worker, pr-N preview Workers and a local Worker */
@@ -1512,7 +1514,11 @@ function externalTarget(a) {
   const raw = a.getAttribute("href") || "";
   if (/^https?:/i.test(raw)) return a.href;
   if (!a.closest("#legal-foot") || /^(?:mailto:|#)/i.test(raw)) return null;
-  try { const u = new URL(a.href); return /\.discordsays\.com$/i.test(u.hostname) ? `https://leeroy.party${u.pathname}${u.search}${u.hash}` : u.href; } catch (e) { return null; }
+  try {
+    const u = new URL(a.href, location.href);
+    if (u.origin !== location.origin) return null; /* off-host, javascript:, data:, tel:, blob:, //host and \host stay plain links, never handed to openExternalLink */
+    return /\.discordsays\.com$/i.test(u.hostname) ? `https://leeroy.party${u.pathname}${u.search}${u.hash}` : null;
+  } catch (e) { return null; }
 }
 
 const RSVP_KEYS = ["in", "maybe", "late", "out"];
@@ -3774,7 +3780,7 @@ async function boot(mode, sdk) {
 }
 /* A slow sdk.ready() (past the 4 s preview start in index.html) upgrades a preview start to Discord mode exactly once. */
 let bootDone = false, lateSdk = null, discordOn = false;
-function goDiscord(sdk) { if (discordOn || !sdk) return; discordOn = true; startDiscordPresence(sdk); }
+function goDiscord(sdk) { if (discordOn || !sdk) return; discordOn = true; startDiscordPresence(sdk); if (bootDone) KIT.emit("signups"); } /* a late upgrade re-renders the sign-ups hint so the Activity wording shows */
 function lateDiscord(sdk) { if (discordOn || !sdk) return; if (bootDone) goDiscord(sdk); else lateSdk = sdk; }
 Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });

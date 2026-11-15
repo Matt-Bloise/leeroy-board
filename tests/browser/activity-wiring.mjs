@@ -28,14 +28,23 @@ const STUB = `export class DiscordSDK {
 }
 `;
 
-async function open(browser, { delay, query = {}, stub = true, quiet = null }) {
+async function open(browser, { delay, query = {}, stub = true, quiet = null, host = null }) {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, serviceWorkers: "block", reducedMotion: "reduce" });
   await ctx.addInitScript((d) => { window.__sdkDelay = d; window.__ext = []; }, delay || 0);
+  /* Activity runs: the page is served on a fictional https://<id>.discordsays.com host (as the Developer Portal proxy does), every request answered from BASE.
+     Registered first so the API stub and the SDK stub below win for /api/ and the SDK module. */
+  if (host) await ctx.route(`https://${host}/**`, async (r) => { const u = new URL(r.request().url()); if (/^\/api\/(data|library)\//.test(u.pathname)) return r.fulfill({ status: 404, contentType: "application/json", body: '{"error":"stub"}' }); /* the page falls back to its static files; this suite is not about data reads */ if (u.pathname.startsWith("/api/")) return r.fallback(); try { r.fulfill({ response: await r.fetch({ url: new URL(u.pathname + u.search, BASE).href }) }); } catch (e) { r.abort().catch(() => {}); } });
   if (stub) await ctx.route("**/vendor/embedded-app-sdk.mjs*", (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: STUB }));
   /* this suite does not test the Worker: an origin named by ?api= answers 503 so the page uses its own data files */
   if (quiet) await ctx.route(quiet, (r) => r.fulfill({ status: 503, contentType: "application/json", body: '{"error":"stub"}' }));
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  if (host) { /* the Activity is an iframe: index.html skips the gate only for a top-level page, so the board is framed by a fictional shell page */
+    await ctx.route("https://discord.test/", (r) => r.fulfill({ status: 200, contentType: "text/html", body: `<!doctype html><iframe src="https://${host}/${Object.keys(query).length ? `?${new URLSearchParams(query)}` : ""}" style="width:1366px;height:760px;border:0"></iframe>` }));
+    await page.goto("https://discord.test/", { waitUntil: "load" });
+    const frame = await (await page.waitForSelector("iframe")).contentFrame(); await frame.waitForLoadState("load");
+    return { ctx, page: { evaluate: (...x) => frame.evaluate(...x), waitForFunction: (...x) => frame.waitForFunction(...x), waitForTimeout: (ms) => page.waitForTimeout(ms) }, errors };
+  }
   await page.goto(pageUrl(BASE, { params: query }), { waitUntil: "load" });
   return { ctx, page, errors };
 }
@@ -52,10 +61,11 @@ const footClick = (page, text) => page.evaluate((t) => {
 const boardShown = (page) => page.evaluate(() => !document.getElementById("board").hidden);
 const presence = (page) => page.evaluate(() => (document.getElementById("presence-text") || {}).textContent || "");
 
+const ACT_HOST = "123456789012345678.discordsays.com"; /* fictional */
 const browser = stubbed(await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}));
 try {
   for (const [label, delay] of [["late SDK (ready after 5 s)", 5000], ["fast SDK (ready at once)", 0]]) {
-    const { ctx, page, errors } = await open(browser, { delay });
+    const { ctx, page, errors } = await open(browser, { delay, host: ACT_HOST });
     if (delay > 4000) {
       await page.waitForTimeout(4600);
       ok(`[${label}] at 4.6 s the board is already up in preview mode`, await boardShown(page));
@@ -68,9 +78,9 @@ try {
     ok(`[${label}] presence asked Discord for participants exactly once at start`, calls === 1, `calls ${calls}`);
     const priv = await footClick(page, "Privacy");
     ok(`[${label}] a footer click is intercepted (default prevented before it reaches the frame)`, priv.prevented === true, JSON.stringify(priv));
-    ok(`[${label}] one click, one openExternalLink (no duplicate listener)`, priv.ext.length === 1 && /^https?:\/\/[^/]+\/privacy\/$/.test(priv.ext[0]), JSON.stringify(priv.ext));
+    ok(`[${label}] one click, one openExternalLink (no duplicate listener)`, priv.ext.length === 1 && priv.ext[0] === "https://leeroy.party/privacy/", JSON.stringify(priv.ext));
     const terms = await footClick(page, "Terms");
-    ok(`[${label}] Terms opens outside too, and only that one more`, terms.ext.length === 2 && /\/terms\/$/.test(terms.ext[1]), JSON.stringify(terms.ext));
+    ok(`[${label}] Terms opens outside too, and only that one more`, terms.ext.length === 2 && terms.ext[1] === "https://leeroy.party/terms/", JSON.stringify(terms.ext));
     const mail = await footClick(page, "Contact");
     ok(`[${label}] mailto is left alone`, mail.prevented === false && mail.ext.length === 2, JSON.stringify(mail));
     ok(`[${label}] no page errors`, errors.length === 0, errors.join(" | "));

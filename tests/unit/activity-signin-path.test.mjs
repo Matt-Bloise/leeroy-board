@@ -24,7 +24,7 @@ function load(host) {
   ctx.window = ctx; ctx.self = ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(read("js/brain.js"), ctx);
-  ctx.__boardKit = { api: "https://api.leeroy.party" }; /* what board.js exports; the account scene builds only when it is set */
+  ctx.__boardKit = { api: "https://api.leeroy.party" }; /* stand-in for K.api; the account scene builds only when it is set. In the Activity board.js now derives it (see activity-api-base.test.mjs) */
   vm.runInContext(read("scenes/account.js"), ctx);
   return { ctx, fetched };
 }
