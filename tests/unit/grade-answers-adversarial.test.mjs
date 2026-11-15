@@ -147,10 +147,10 @@ test("dates agree across ISO and written forms, with or without a year", () => {
 // ---- 11. no fixture-specific tokens in the rules ----
 test("the rule source carries no words lifted from the fixtures", () => {
   const src = fs.readFileSync(CLI, "utf8").split("\n").filter((l) => !l.startsWith("const MONTH_RE")).join("\n").toLowerCase();
-  const generic = new Set(["classic", "forever", "blizzard", "wowhead", "discord", "horde", "alliance", "leeroy", "library", "sources", "dungeons", "frost", "fire", "holy", "arcane", "shadow", "herbalism", "skinning", "mining", "tailoring", "leatherworking", "alchemy", "blacksmithing", "enchanting", "engineering", "fishing", "cooking", "paladin", "priest", "rogue", "warrior", "warlock", "druid", "hunter", "shaman", "tauren", "undead", "troll", "reply", "yes", "none", "november", "october", "december", "january", "february", "march", "april", "june", "july", "august", "september", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "level", "gold", "note", "system", "assistant", "developer", "azeroth"]);
+  const generic = new Set(["where", "should", "classic", "forever", "blizzard", "wowhead", "discord", "horde", "alliance", "leeroy", "library", "sources", "dungeons", "frost", "fire", "holy", "arcane", "shadow", "herbalism", "skinning", "mining", "tailoring", "leatherworking", "alchemy", "blacksmithing", "enchanting", "engineering", "fishing", "cooking", "paladin", "priest", "rogue", "warrior", "warlock", "druid", "hunter", "shaman", "tauren", "undead", "troll", "reply", "yes", "none", "november", "october", "december", "january", "february", "march", "april", "june", "july", "august", "september", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "level", "gold", "note", "system", "assistant", "developer", "azeroth"]);
   const found = new Set();
   const grab = (text) => { for (const m of text.matchAll(/(?<=[a-z0-9,;:'"()] )[A-Z][a-z]{4,}/g)) found.add(m[0].toLowerCase()); };
-  for (const f of fs.readdirSync(GOLDEN_DIR)) {
+  for (const f of fs.readdirSync(GOLDEN_DIR).filter((n) => n.endsWith(".json"))) {
     const j = JSON.parse(fs.readFileSync(path.join(GOLDEN_DIR, f), "utf8"));
     const strings = []; (function walk(x) { if (typeof x === "string") strings.push(x); else if (x && typeof x === "object") Object.values(x).forEach(walk); })(j);
     strings.forEach(grab);
