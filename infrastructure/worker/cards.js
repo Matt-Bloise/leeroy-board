@@ -143,7 +143,12 @@ export function tallyEntries(state) {
       const label = mopts.includes(e.meet) ? e.meet : e.meet === "vos" ? "Valley of Strength" : e.meet === "xroads" ? "The Crossroads" : `Elsewhere: ${sanitiseWriteIn(e.meet)}`;
       out.meet.set(label, [...(out.meet.get(label) || []), n]);
     }
-    if (e && typeof e.when === "string" && e.when) out.when.set(e.when, [...(out.when.get(e.when) || []), n]);
+    if (e && typeof e.when === "string" && e.when) {
+      // Free text (a member write takes any short string): cleaned like `meet`, and a leading heading, quote or list marker is dropped
+      // because the label starts a line in the Arriving field. The offered options (6pm, 8pm, later) print unchanged.
+      const label = sanitiseWriteIn(e.when).replace(/^[\s#>-]+/, "");
+      if (label) out.when.set(label, [...(out.when.get(label) || []), n]);
+    }
   }
   return out;
 }
@@ -297,7 +302,8 @@ export function renderBoardCard(state) {
   } else {
     const lines = entries.map((e) => {
       const bits = [rsvpLabel(e && e.rsvp)];
-      if (e && e.when) bits.push(String(e.when));
+      const when = e && e.when ? sanitiseWriteIn(e.when) : "";
+      if (when) bits.push(when);
       if (e && e.meet) bits.push(sanitiseWriteIn(e.meet));
       if (e && (e.pack === "yes" || e.pack === "no")) bits.push(`pack ${e.pack}`);
       return `**${cleanName(e && e.name)}**: ${bits.join(" · ")}`;

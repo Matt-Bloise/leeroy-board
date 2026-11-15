@@ -83,3 +83,25 @@ test("F-7 upsertSignupEntry: a malformed or zone-less stamp never wins a duplica
   const later = { entries: [{ slug: "red-fox", name: "Red Fox", rsvp: "in", updated: VALID }, { name: "Red Fox", rsvp: "out", updated: "2026-11-02T10:00:00.000Z" }] };
   assert.equal(upsertSignupEntry(later, { slug: "red-fox", name: "Red Fox" }).rsvp, "out");
 });
+
+// F-9: a free-text `when` (a member write takes any string up to 200 characters) was printed as stored in the sign-up card's Arriving field
+// and in the plain board card, so a channel mention or a masked link rendered live. `meet` was already cleaned.
+test("F-9 cards: a free-text when is cleaned like meet before it is printed; the offered options print as before", () => {
+  const HOSTILE_WHEN = ["<#123456789012345678> # x", "[soon](https://e.test)", "@everyone 9pm", "**late** ||s||", "https://e.test/a"];
+  const entries = [...HOSTILE_WHEN.map((when, i) => ({ name: `Hostile When ${i}`, rsvp: "in", when })), { name: "Plain When", rsvp: "in", when: "8pm" }];
+  const signup = renderSignupCard({ entries }).embeds[0];
+  const arriving = signup.fields.find((f) => f.name === "Arriving");
+  const board = renderBoardCard({ entries }).embeds[0].fields[0].value.replace(/^\*\*(.*?)\*\*/gm, "$1");
+  for (const text of [arriving.value, board]) {
+    assert.ok(!/[<>@\[\]*_~|`]/.test(text), JSON.stringify(text));
+    assert.ok(!/https?:\/\//i.test(text), JSON.stringify(text));
+    assert.ok(!/<#\d+>/.test(text), JSON.stringify(text));
+  }
+  assert.match(arriving.value, /^8pm: Plain When$/m);
+  assert.match(arriving.value, /^x: Hostile When 0$/m, "a when that would start a heading line loses the marker");
+  assert.ok(!/^\s*(#|>|-#)/m.test(arriving.value), arriving.value);
+  assert.match(board, /^Plain When: In · 8pm$/m);
+  // A when that cleans to nothing is not shown as an empty arrival.
+  const empty = renderSignupCard({ entries: [{ name: "Only Links", rsvp: "in", when: "https://e.test/x" }] }).embeds[0];
+  assert.equal(empty.fields.find((f) => f.name === "Arriving"), undefined);
+});
