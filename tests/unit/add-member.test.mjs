@@ -126,8 +126,8 @@ test("--apply order: read, back up, roster, then party; the token goes in a head
   try {
     const r = await applyPlan(p, { api: "https://example.test/", env: { BOARD_ADMIN_TOKEN: "test-token-not-real" }, fetchImpl, backupPath: backup });
     assert.equal(r.ok, true);
-    assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), ["GET https://example.test/api/data/party", "POST https://example.test/api/admin/members", "PUT https://example.test/api/data/party"]);
-    assert.equal(calls[0].headers.authorization, undefined);
+    assert.deepEqual(calls.map((c) => `${c.method} ${c.url}`), ["GET https://example.test/api/data/party?stored=1", "POST https://example.test/api/admin/members", "PUT https://example.test/api/data/party"]);
+    assert.equal(calls[0].headers.authorization, "Bearer test-token-not-real", "the read is of the STORED document, so it is an admin read (the public read has hidden fields cut out)");
     assert.equal(calls[1].headers.authorization, "Bearer test-token-not-real");
     assert.equal(JSON.parse(calls[2].body).members.length, 6);
     assert.equal(JSON.parse(fs.readFileSync(backup, "utf8")).members.length, 5);
