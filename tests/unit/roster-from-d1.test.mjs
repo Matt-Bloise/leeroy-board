@@ -508,3 +508,44 @@ test("PUT-time validation is the same function (validateConfigValue)", () => {
   assert.equal(typeof validateConfigValue("party_roster", { ...FICTION, version: undefined }), "string");
   assert.equal(typeof validateConfigValue("party_roster", withMembers(A, mem("other", "Alderfox"))), "string");
 });
+
+// ---- M1: the interlock cannot be opened or bypassed from inside the Worker ---------------------------------------------------------------------------------------
+function workerSources(dir = path.join(ROOT, "infrastructure/worker")) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...workerSources(p));
+    else if (/\.(js|mjs|cjs|ts)$/.test(e.name)) out.push(p);
+  }
+  return out;
+}
+const codeOnly = (src) => src.split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+
+test("interlock source guard: only roster-source.js names setStep2ReadyForTests or ROSTER_STEP2_READY", () => {
+  const files = workerSources();
+  assert.ok(files.length > 20);
+  for (const f of files) {
+    if (path.basename(f) === "roster-source.js" && path.basename(path.dirname(f)) === "worker") continue;
+    const src = fs.readFileSync(f, "utf8");
+    assert.ok(!src.includes("setStep2ReadyForTests"), `${path.relative(ROOT, f)} references setStep2ReadyForTests`);
+    assert.ok(!/ROSTER_STEP2_READY/.test(src), `${path.relative(ROOT, f)} references ROSTER_STEP2_READY`);
+  }
+});
+
+test("interlock pin: resolve() checks the constant-backed step2Ready() before the flag, and nothing else (env, KV, D1) can open it", () => {
+  const src = fs.readFileSync(path.join(ROOT, "infrastructure/worker/roster-source.js"), "utf8");
+  const code = codeOnly(src);
+  const start = code.indexOf("async function resolve(env) {");
+  const end = code.indexOf("const read = await loadConfigKeyStrict", start);
+  assert.ok(start >= 0 && end > start);
+  const head = code.slice(start, end).replace(/\/\/.*$/gm, "").replace(/\s+/g, " ").trim();
+  assert.equal(head, 'async function resolve(env) { try { if (!step2Ready()) return null; if (!(await flagOn(env, "ROSTER_FROM_D1"))) return null;');
+  // the only code lines that name the constant: its declaration and the one reader; the only setter is the test hook.
+  const refs = code.split("\n").filter((l) => /ROSTER_STEP2_READY/.test(l)).map((l) => l.trim());
+  assert.deepEqual(refs, [
+    "export const ROSTER_STEP2_READY = false;",
+    "const step2Ready = () => (step2Override === null ? ROSTER_STEP2_READY : step2Override);",
+  ]);
+  assert.equal((code.match(/step2Ready\(\)/g) || []).length, 1);
+  assert.equal((code.match(/step2Override/g) || []).length, 4); // declaration, the test setter, and two in the reader
+});

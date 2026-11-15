@@ -125,6 +125,16 @@ Small steps. Each is one PR and reversible on its own. Only step 3 writes produc
    - Privacy fails closed with the flag on: no resolved roster means no outside model call, on every entry point including cron and `waitUntil` work.
    - Write validation rejects alias and name collisions across the roster, the party document and `discord_members`, with a stated normalisation (the case and Unicode skeleton the tokeniser uses).
    - Measurable gates, with privacy-safe counters (revision, source, initialisation failures, blocked calls), not a one-day smoke test.
+   - PR 333 interplay (sheet bootstrap). The bootstrap path (`infrastructure/worker/index.js` ~374-381) turns every base roster field into a `visible: true`, `source: "board"` sheet field. With D1 as the base, admin-only row data (race, class, spec, professions) would become public sheet values. Step 2 must prove, with tests, that: hidden fields stay hidden through that path; composites are withheld when any member hides any field; `first_names` and `aliases` never reach a sheet or a public route.
+   - Reviewer-derived gates, each with a test:
+     - A per-operation roster snapshot replaces `setRosterOverride`, with a concurrency test (interleaved flag-on and flag-off requests, plus `waitUntil` work).
+     - Privacy fails closed on every entry point: no resolved roster means no outside model call.
+     - Text consumers read the same snapshot.
+     - A revision-checked fresh roster read.
+     - An auth policy for a built-in member absent from the D1 row (today this falls through to the party document or a 401, `index.js` ~77-80).
+     - `/admin/export` handling of `party_roster`.
+     - Cross-source collision validation (roster, party document, `discord_members`).
+   - Step 1 caveat: `PUT /api/config/party_roster` is live at step 1 (`config.js:13`). "Only step 3 writes production data" is procedural, not enforced by code; the flag-off default and the interlock are what keep a stray row inert.
 3. **Write the real row to D1** by hand with the admin token (`PUT /api/config/party_roster`), in the owner's shell, not in a repository. Turn the flag on. Verify every member and the default admin, an `/ask` privacy run on a warm and on a cold isolate, a cron-first run, and that `/admin/export` carries the row (it does; see Risks). Rollback: flag off, then delete the row. There is no DELETE config route, so deleting is `wrangler d1 execute <db> --remote --command "DELETE FROM kv_state WHERE key = 'party_roster'"` in the owner's shell (or overwrite it with `PUT /api/config/party_roster`).
 4. **Fictional end-to-end seed (additive).** Add `worker/sample-roster.js` and a fictional copy of the data documents and test fixtures, new files only, nothing deleted. Previews and local dev seed the sample roster into `party_roster` and the fictional documents, and run with the flag on, so they contain no real name end to end.
 5. **Switch tests, previews and local dev to the fictional seed**, one area per PR (unit tests, browser tests, the API snapshot, front-end fixtures). The A5 tests that pin data to the built-ins are changed in the same PR as the data they pin.
