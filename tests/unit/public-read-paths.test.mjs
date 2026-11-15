@@ -11,9 +11,11 @@
 // Fictional data only. No network, no AI.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
-import worker, { ROUTES, purgeWorkerCache, broadcastToRoom } from "../../infrastructure/worker/index.js";
-import { projectForAnonymous, projectSheets, projectDataDoc, projectDecide, projectTonight, projectBroadcast, loadPublicInputs, MEMBER_DOCS, CASCADE } from "../../infrastructure/worker/public-party.js";
+import { readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import worker, { ROUTES, PARTY_CACHE_PATHS, purgeWorkerCache, broadcastToRoom } from "../../infrastructure/worker/index.js";
+import { projectForAnonymous, projectSheets, projectDataDoc, projectDecide, projectTonight, projectGuidedAtlas, projectClient, projectLaunch, projectBroadcast, loadPublicInputs, MEMBER_DOCS, CASCADE } from "../../infrastructure/worker/public-party.js";
 import { PUBLIC_DATA_DOCS } from "../../infrastructure/worker/public-docs.js";
 import { loadCardState, renderBoardCard, renderSignupCard } from "../../infrastructure/worker/cards.js";
 import { buildAnswerInputs, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
@@ -53,7 +55,7 @@ const ROUTE_CLASS = {
 // The Discord commands. tonight lists the party, sheet shows another member's sheet, signup redraws the cards, ask builds a prompt with the party's builds.
 const DISCORD_CLASS = { ack: "none", answer: "none", ask: "member", build: "none", countdown: "none", dates: "none", didyouknow: "none", help: "none", intents: "none", journey: "none", launch: "none", leeroy: "none", library: "none", map: "none", page: "none", quiz: "none", sheet: "member", signup: "member", start: "none", tonight: "member", tooltip: "none", vote: "none" };
 // Public documents whose repo copy carries no member data. Every other public document must be one the projection knows (MEMBER_DOCS).
-const NON_MEMBER_DOCS = ["timeline", "client", "stats", "signups", "launch", "guided-atlas"];
+const NON_MEMBER_DOCS = ["timeline", "stats", "signups"];
 // Literal keys the Worker broadcasts as {type:"data", key}. Member documents go through the one choke point (broadcastToRoom -> projectBroadcast).
 const NON_MEMBER_BROADCAST_KEYS = ["signups", "launch", "stats"];
 
@@ -61,14 +63,44 @@ test("every route of ROUTES is classified here; a new route fails until it is", 
   assert.deepEqual(Object.keys(ROUTE_CLASS).sort(), [...ROUTES].sort());
 });
 
-test("every public document is either known to the projection or free of member data; a document that carries a class_key must be a member document", () => {
+// A member-derived shape in a document: a key that is a class or race (a class-keyed or race-keyed map: guided-atlas.classes, client.classes, client.racials), a list made of
+// class keys only (synergy.to), a {class} token in a line, or a field that is itself a build field (class_key, race, start_zone, class, spec, professions). The vocabulary comes
+// from the repo's own party document and the game's classes and races, so a new class-keyed map in a new document is found without anyone listing it.
+const BUILD_VOCAB = (() => {
+  const party = JSON.parse(readSrc("data/party.json"));
+  const keys = new Set("warrior paladin hunter rogue priest shaman mage warlock druid".split(" ")), races = new Set("orc troll tauren undead human dwarf gnome night-elf".split(" "));
+  for (const m of party.members) { if (m.class_key) keys.add(String(m.class_key).toLowerCase()); if (m.class) keys.add(String(m.class).toLowerCase()); if (m.race) races.add(String(m.race).toLowerCase()); }
+  return { keys, races };
+})();
+const BUILD_FIELDS = new Set(["class_key", "race", "start_zone", "class", "spec", "spec_status", "professions", "board_line", "role_detail"]);
+function memberShapes(node, path = "$", out = []) {
+  if (Array.isArray(node)) {
+    if (node.length && node.every((x) => typeof x === "string" && BUILD_VOCAB.keys.has(x.toLowerCase()))) out.push(`${path}: a list of class keys`);
+    node.forEach((x, i) => memberShapes(x, `${path}[${i}]`, out));
+  } else if (node && typeof node === "object") {
+    for (const [k, v] of Object.entries(node)) {
+      const lk = k.toLowerCase();
+      if (BUILD_VOCAB.keys.has(lk) || BUILD_VOCAB.races.has(lk)) out.push(`${path}.${k}: keyed by a class or race`);
+      if (BUILD_FIELDS.has(lk)) out.push(`${path}.${k}: a build field`);
+      if (lk === "from" && typeof v === "string" && BUILD_VOCAB.keys.has(v.toLowerCase())) out.push(`${path}.from: a class key`);
+      memberShapes(v, `${path}.${k}`, out);
+    }
+  } else if (typeof node === "string" && /[{]([a-z_-]+)[}]/.test(node) && [...node.matchAll(/[{]([a-z_-]+)[}]/g)].some((m) => BUILD_VOCAB.keys.has(m[1]))) out.push(`${path}: a {class} token`);
+  return out;
+}
+export const SHAPES_FOUND = {};
+test("every public document is either known to the projection or free of every member-derived shape (class-keyed and race-keyed maps, class lists, {class} tokens, build fields)", () => {
   assert.deepEqual([...PUBLIC_DATA_DOCS].sort(), [...MEMBER_DOCS, ...NON_MEMBER_DOCS].sort(), "a new public document must be classified");
   for (const name of PUBLIC_DATA_DOCS) {
-    let text = "";
-    try { text = readSrc(`data/${name}.json`); } catch { continue; }
-    const carries = /"class_key"/.test(text);
-    assert.equal(carries, MEMBER_DOCS.includes(name), `${name}: ${carries ? "carries a class_key but is not projected" : "is projected but carries no member data"}`);
+    let doc = null;
+    try { doc = JSON.parse(readSrc(`data/${name}.json`)); } catch { continue; }
+    const found = memberShapes(doc);
+    SHAPES_FOUND[name] = found.length;
+    if (!MEMBER_DOCS.includes(name)) assert.deepEqual(found.slice(0, 3), [], `${name} is classified as carrying no member data but has: ${found.slice(0, 3).join("; ")}`);
   }
+  for (const n of ["party", "decide", "tonight", "guided-atlas", "client"]) assert.ok(SHAPES_FOUND[n] > 0, `the scan finds the member shapes of ${n} (so it can fail)`);
+  // the same scan over the other allow-listed documents (the atlas pair and the library blobs the site fetches)
+  for (const n of ["marks", "links"]) { try { assert.deepEqual(memberShapes(JSON.parse(readSrc(`data/atlas/${n}.json`))).slice(0, 3), [], `atlas/${n}`); } catch (e) { if (e && e.code === "ENOENT") continue; throw e; } }
 });
 
 test("every literal broadcast key and every Discord command is classified", () => {
@@ -147,9 +179,11 @@ function partyDoc() {
 }
 function decideDoc() {
   const decisions = (i) => [
-    { key: "professions", title: "Professions", state: "declared", state_text: cDecide(i, "prof") },
+    { key: "professions", title: "Professions", state: "declared", state_text: cDecide(i, "prof"),
+      group: [{ label: "Enchanting", text: `also {${cDoc(1, "class_key")}}'s zqdgroupdrop`, status: "forever" }, { label: "Mining", text: "nobody else's zqdgroupdrop2", status: "forever" }],
+      options: [{ name: "Alchemy", lines: [{ label: "Open", text: `one of {${cDoc(2, "class_key")}}'s two open options zqdoptiondrop`, status: "forever" }] }] },
     { key: "spec40", title: "Spec at 40", state: "declared", state_text: cDecide(i, "spec") },
-    { key: "talents", title: "Talents", state: "none", state_text: cDecide(i, "talents") },
+    { key: "talents", title: "Talents", state: "none", state_text: cDecide(i, "talents"), lines: [{ label: `for the ${cDoc(0, "race")} at this table`, text: "zqdraceline", status: "forever" }] },
     { key: "locked", title: "Locked", state: "locked", state_text: cDecide(i, "locked") },
   ];
   return {
@@ -160,7 +194,7 @@ function decideDoc() {
       role_lines: [{ label: "Tank", text: "zqdrolelines", status: "forever" }],
       buffs: [{ key: "b", name: "zqdbuff", giver: cDecide(1, "classkey"), to: [cDecide(2, "classkey")] }],
       nobody: { classes: [{ name: "zqdnobodyclass", lines: [] }], professions: [{ name: "zqdnobodyprof", lines: [] }], secondaries: [{ label: "zqdsecondary" }], buffs: [{ name: "zqdnobodybuff" }] },
-      lines: [{ label: "zqdgeneric", text: "5 players" }],
+      lines: [{ label: "zqdgeneric", text: "5 players" }, { label: "zqdlinetokendrop", text: `{${cDoc(1, "class_key")}} is the healer` }],
     },
   };
 }
@@ -172,6 +206,23 @@ function tonightDoc() {
     links: {},
   };
 }
+function atlasDoc() {
+  return {
+    generated: AT, build: "1.0", starter_cap: { level: 5 },
+    classes: Object.fromEntries(NAMES.map((_, i) => [cDoc(i, "class_key"), { start: { id: `zs${i}`, name: `zqatlasstart${i}x`, zone: cDoc(i, "start_zone"), zone_name: cDoc(i, "start_zone") }, trainer: { name: `zqtrainer${i}x` }, town: { id: `zt${i}`, name: `zqtown${i}x`, trainer: `zqtowntrainer${i}x` } }])),
+    dungeon: { id: "d", name: "zqdungeonkept" }, meet: { id: "m", name: "zqmeetkept", chosen: false },
+  };
+}
+function clientDoc() {
+  return {
+    generated: AT, build: "1.0", level: 60,
+    classes: Object.fromEntries(NAMES.map((_, i) => [cDoc(i, "class"), [{ id: i, name: `zqspell${i}x` }]])),
+    racials: Object.fromEntries(NAMES.map((_, i) => [cDoc(i, "race"), [{ name: `zqracial${i}x`, kind: "active" }]])),
+    synergy: NAMES.map((_, i) => ({ from: cDoc(i, "class_key"), to: NAMES.map((__, j) => cDoc(j, "class_key")), what: `zqsynergy${i}x`, refs: [] })),
+    legacy: { total: 65 }, buffs: [], flags: {},
+  };
+}
+function launchDoc() { return NAMES.map((name, i) => ({ slug: SLUG[i], name, state: cSheet(i, "launch_state"), at: AT })); }
 function sheetList(hides = HIDES) {
   return NAMES.map((name, i) => ({
     slug: SLUG[i], name, updated: AT,
@@ -182,10 +233,10 @@ function sheetList(hides = HIDES) {
 // A database holding the whole, unprojected documents.
 async function makeEnv({ hides = HIDES, sheets } = {}) {
   invalidatePagesCache(); invalidateConfigCache();
-  await purgeWorkerCache(ORIGIN, ["/api/bootstrap", "/api/state", "/api/data/party", "/api/data/party.json", "/api/data/decide", "/api/data/tonight", "/api/data/decide.json", "/api/data/tonight.json"]);
+  await purgeWorkerCache(ORIGIN, [...PARTY_CACHE_PATHS]);
   const DB = schemaDb();
   const kv = (k, v) => DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run(k, typeof v === "string" ? v : JSON.stringify(v), AT);
-  kv("party", partyDoc()); kv("decide", decideDoc()); kv("tonight", tonightDoc());
+  kv("party", partyDoc()); kv("decide", decideDoc()); kv("tonight", tonightDoc()); kv("guided-atlas", atlasDoc()); kv("client", clientDoc()); kv("launch", launchDoc());
   kv("signups", { generated: AT, present: true, updated: AT, options: { meet: [], when: [] }, entries: [{ name: NAMES[1], rsvp: "in", pack: "no", meet: null, when: "8pm", updated: AT }, { name: NAMES[CONTROL], rsvp: "maybe", updated: AT }], tallies: {} });
   kv("party_sheets", sheets === undefined ? sheetList(hides) : sheets);
   kv("discord_members", [{ slug: "asker-x", name: "Asker X", match: ["asker x"], id: "100000000000000900" }, ...NAMES.map((name, i) => ({ slug: SLUG[i], name, match: [name.toLowerCase()], id: `10000000000000010${i}` }))]);
@@ -209,7 +260,7 @@ const discord = async (env, payload) => quiet(async () => { const res = await ha
 // ---- the table of read paths --------------------------------------------------------------------------------------------------------
 // Each entry: id, the ROUTES (or "discord:<command>") it covers, and run(env) -> [{ where, text }].
 const stored = (env, key) => env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json;
-const ANON = ["/state", "/state?full=1&roster=1&admin=1&raw=1", "/bootstrap", "/bootstrap?full=1&roster=1&admin=1", "/data/party", "/data/party.json", "/data/party?full=1&roster=1", "/data/decide", "/data/decide.json", "/data/tonight", "/data/tonight.json"];
+const ANON = ["/state", "/state?full=1&roster=1&admin=1&raw=1", "/bootstrap", "/bootstrap?full=1&roster=1&admin=1", "/data/party", "/data/party.json", "/data/party?full=1&roster=1", "/data/decide", "/data/decide.json", "/data/tonight", "/data/tonight.json", "/data/guided-atlas", "/data/guided-atlas.json", "/data/client", "/data/client.json", "/data/launch", "/data/launch.json", "/data//party", "/data/part%79", "/data//guided-atlas"];
 const READS = [
   ...ANON.map((p) => ({ id: `GET ${p}`, covers: [p.startsWith("/state") ? "GET /state" : p.startsWith("/bootstrap") ? "GET /bootstrap" : "GET /data/*"], run: async (env) => { const r = await http(env, "GET", p); assert.equal(r.status, 200, p); return [{ where: `GET ${p}`, text: r.text }]; } })),
   { id: "GET /sheet as another member", covers: ["ANY /sheet"], run: async (env) => { const r = await http(env, "GET", "/sheet", { headers: { Authorization: `Board ${ASKER_KEY}` } }); assert.equal(r.status, 200, r.text); return [{ where: "GET /sheet (a member reading the party)", text: r.text }]; } },
@@ -244,7 +295,12 @@ function leaks(text, { member } = {}) {
     if (hidden(i, "class") && text.includes(cTonight(i, "classkey"))) bad.push(`${NAMES[i]} tonight classkey`);
     if (HIDES[i].some((f) => ["class", "spec_path", "spec_at_40", "professions"].includes(f)) && text.includes(cTonight(i, "step"))) bad.push(`${NAMES[i]} tonight step`);
   }
-  for (const c of ["zqsettleddrop1x", "zqsettleddrop2x", "zqsettleddrop3x", "zqextradrop1x", "zqgapdrop", "zqdrolelines", "zqdnobodyclass", "zqdnobodyprof", "zqdbuff", "zqdnobodybuff", "zqdsecondary", "zqdnote"]) if (text.includes(c)) bad.push(c);
+  for (let i = 0; i < NAMES.length; i++) {
+    if (HIDES[i].some((f) => ["class", "race", "plan_zone"].includes(f))) for (const c of [`zqatlasstart${i}x`, `zqtown${i}x`, `zqtowntrainer${i}x`]) if (text.includes(c)) bad.push(`${NAMES[i]} atlas ${c}`);
+    if (hidden(i, "class")) for (const c of [`zqtrainer${i}x`, `zqspell${i}x`, `zqsynergy${i}x`]) if (text.includes(c)) bad.push(`${NAMES[i]} ${c}`);
+    if (hidden(i, "race") && text.includes(`zqracial${i}x`)) bad.push(`${NAMES[i]} racial`);
+  }
+  for (const c of ["zqdgroupdrop", "zqdgroupdrop2", "zqdoptiondrop", "zqdraceline", "zqdlinetokendrop", "zqsettleddrop1x", "zqsettleddrop2x", "zqsettleddrop3x", "zqextradrop1x", "zqgapdrop", "zqdrolelines", "zqdnobodyclass", "zqdnobodyprof", "zqdbuff", "zqdnobodybuff", "zqdsecondary", "zqdnote"]) if (text.includes(c)) bad.push(c);
   return bad;
 }
 test("the fixture itself is unprojected: every hidden value is in the stored rows", async () => {
@@ -425,4 +481,268 @@ test("a null or junk row in party_sheets does not break a sheet write either (th
   assert.equal(r.status, 200, r.text);
   const rows = JSON.parse(stored(env, "party_sheets"));
   assert.ok(rows.every((s) => s && typeof s === "object") && rows.some((s) => s.slug === "asker-x"));
+});
+
+// ---- round 3: guided-atlas and client, decide text, the stored read, the cache, fail closed, launch, surviving mutations --------------------------------
+const getJson = async (env, p, headers) => { const r = await http(env, "GET", p, { headers }); assert.equal(r.status, 200, `${p}: ${r.text.slice(0, 120)}`); return JSON.parse(r.text); };
+const keyFor = async (env, i) => { const k = `member-key-${i}-0123456789abcdef0123`; env.DB.raw.prepare("INSERT INTO members (slug, key_hash, created_at) VALUES (?, ?, ?)").run(SLUG[i], await sha256Hex(`${KEY_SALT}:${k}`), AT); return { Authorization: `Board ${k}` }; };
+const KEYS = (c) => Object.keys(c).sort();
+
+test("guided-atlas: a class only a hider has is not a key; a start and town survive only when a member who shows class, race and plan_zone has them", async () => {
+  const env = await makeEnv();
+  const a = await getJson(env, "/data/guided-atlas");
+  // classes: 0 shows class and hides race (start gone), 1 hides class (key gone), 2 and 3 hide spec only (whole entry), 4 hides professions (whole), 5 hides plan_zone (start gone), 6 control (whole), 7 hides all
+  assert.deepEqual(KEYS(a.classes), [0, 2, 3, 4, 5, CONTROL].map((i) => cDoc(i, "class_key")).sort());
+  for (const i of [0, 5]) assert.deepEqual(KEYS(a.classes[cDoc(i, "class_key")]), ["trainer"], `member ${i}: no start and no town`);
+  for (const i of [2, 3, 4, CONTROL]) assert.deepEqual(KEYS(a.classes[cDoc(i, "class_key")]), ["start", "town", "trainer"]);
+  assert.equal(a.dungeon.name, "zqdungeonkept"); assert.equal(a.meet.name, "zqmeetkept");
+  const text = JSON.stringify(a);
+  for (const c of [cDoc(0, "start_zone"), cDoc(5, "start_zone"), cDoc(1, "class_key"), cDoc(7, "class_key"), "zqtrainer1x", "zqtrainer7x"]) assert.ok(!text.includes(c), c);
+});
+
+test("guided-atlas: two members of one class, one hides the race: the entry stays whole because the other shows both", () => {
+  const doc = { classes: { mage: { start: { zone_name: "Elsewhere" }, town: { name: "T" }, trainer: { name: "Tr" } } } };
+  const party = { members: [{ name: "Ann Ash", class_key: "mage", race: "Gnome", start_zone: "Elsewhere" }, { name: "Bo Birch", class_key: "mage", race: "Gnome", start_zone: "Elsewhere" }] };
+  const sheet = (name, hide) => ({ slug: slugify(name), name, fields: hide ? { race: { value: "Gnome", visible: false } } : {} });
+  assert.deepEqual(projectGuidedAtlas(doc, party, [sheet("Ann Ash", true), sheet("Bo Birch", false)]).classes.mage, doc.classes.mage);
+  assert.deepEqual(KEYS(projectGuidedAtlas(doc, party, [sheet("Ann Ash", true), sheet("Bo Birch", true)]).classes.mage), ["trainer"]);
+  assert.deepEqual(projectGuidedAtlas(doc, party, null).classes, {}, "unreadable sheets: no class at all");
+});
+
+test("client: classes, racials and synergy keep only what a member who shows that field has", async () => {
+  const env = await makeEnv();
+  const c = await getJson(env, "/data/client");
+  assert.deepEqual(KEYS(c.classes), [0, 2, 3, 4, 5, CONTROL].map((i) => cDoc(i, "class")).sort());
+  assert.deepEqual(KEYS(c.racials), [1, 2, 3, 4, 5, CONTROL].map((i) => cDoc(i, "race")).sort());
+  const shownKeys = [0, 2, 3, 4, 5, CONTROL].map((i) => cDoc(i, "class_key"));
+  assert.deepEqual(c.synergy.map((x) => x.from).sort(), shownKeys.slice().sort());
+  for (const x of c.synergy) assert.deepEqual(x.to.slice().sort(), shownKeys.slice().sort(), "to lists only shown classes");
+  assert.deepEqual(projectClient(clientDoc(), partyDoc(), null).classes, {});
+});
+
+test("decide: nobody who hides professions leaves a group line, a {class} token of a member who hid class, spec or professions, or a race line behind", async () => {
+  const env = await makeEnv();
+  const d = await getJson(env, "/data/decide");
+  const text = JSON.stringify(d);
+  for (const c of ["zqdgroupdrop", "zqdgroupdrop2", "zqdoptiondrop", "zqdraceline", "zqdlinetokendrop"]) assert.ok(!text.includes(c), c);
+  for (const p of d.people) for (const x of p.decisions) assert.ok(!("group" in x), "no group on any entry once anyone hides professions");
+  assert.ok(d.people.length > 0 && d.party.lines.some((l) => l.label === "zqdgeneric"), "the rest is still there");
+  // a member who hides nothing: their own entry still names nobody else's value, and a token of a visible class survives when nobody hides professions
+  const pristine = await makeEnv({ hides: NAMES.map((_, i) => (i === 0 ? ["race"] : [])) });
+  const only = await getJson(pristine, "/data/decide");
+  assert.ok(!JSON.stringify(only).includes("zqdraceline"), "race hidden by one member: the 'for the <race> at this table' line goes");
+  assert.ok(JSON.stringify(only).includes(cDoc(1, "class_key")), "the tokens of visible classes stay");
+  const grp = only.people.flatMap((p) => p.decisions).filter((x) => "group" in x);
+  assert.ok(grp.length > 0, "with nobody hiding professions the groups stay (only text that names a hidden value goes)");
+});
+
+test("every member document, text as well as keys: a line that carries a hider's value, whoever's entry it sits in, is dropped (hand-written examples)", () => {
+  const members = [{ name: "Ann Ash", class_key: "mage", class: "Mage", race: "Gnome", spec: "Frost", start_zone: "Dun Morogh", professions: [{ name: "Alchemy" }] }, { name: "Bo Birch", class_key: "druid", class: "Druid", race: "Tauren", spec: "Feral", start_zone: "Mulgore", professions: [{ name: "Herbalism" }] }];
+  const party = { members };
+  const sheet = (name, hide) => ({ slug: slugify(name), name, fields: Object.fromEntries(hide.map((f) => [f, { value: "x", visible: false }])) });
+  const decide = { people: [{ class_key: "mage", decisions: [{ key: "spec40", lines: [{ label: "Frost, for the Tauren at this table", text: "a" }, { label: "plain", text: "kept" }, { label: "x", text: "also {druid}'s." }] }] }], party: { lines: [{ label: "Gnome racial", text: "g" }, { label: "Group", text: "5 players" }] } };
+  const out = projectDecide(decide, party, [sheet("Ann Ash", []), sheet("Bo Birch", ["race", "class"])]);
+  const text = JSON.stringify(out);
+  assert.ok(!/tauren|druid/i.test(text), text);
+  assert.ok(text.includes("kept") && text.includes("5 players") && text.includes("Gnome racial"), "lines that name only shown values stay");
+});
+
+test("tools/add-member.mjs reads the STORED party document (admin token), so hide, add a member, un-hide loses nothing", async () => {
+  const { applyPlan, buildPlan } = await import("../../tools/add-member.mjs");
+  const env = await makeEnv({ hides: NAMES.map(() => []) });
+  const ctl = await keyFor(env, CONTROL);
+  for (const f of ["class", "race", "professions"]) assert.equal((await http(env, "POST", "/sheet", { headers: ctl, body: { field: f, value: sheetValue(CONTROL, f), visible: false } })).status, 200);
+  // the public read has the control's class cut out; the stored read has it
+  assert.ok(!(await http(env, "GET", "/data/party")).text.includes(cDoc(CONTROL, "class")));
+  const anon = await http(env, "GET", "/data/party?stored=1");
+  assert.equal(anon.status, 401, "anonymous: refused");
+  assert.equal((await http(env, "GET", "/data/party?stored=1", { headers: ctl })).status, 401, "a member key: refused");
+  const storedRead = await http(env, "GET", "/data/party?stored=1", { headers: { Authorization: `Bearer ${ADMIN}` } });
+  assert.equal(storedRead.status, 200); assert.ok(storedRead.text.includes(cDoc(CONTROL, "class")) && storedRead.text.includes(cDoc(CONTROL, "race")), "the stored read is whole");
+  // run the tool's own apply path against this Worker
+  const fetchImpl = async (url, init = {}) => { const u = new URL(url); const r = await quiet(() => worker.fetch(new Request(url, { ...init, headers: { "CF-Connecting-IP": "203.0.113.77", ...(init.headers || {}) } }), env, ctx)); return r; };
+  const plan = buildPlan({ name: "Newcomer Vale", class: "mage", race: "gnome", id: "100000000000000999" }, null);
+  assert.ok(plan.ok !== false, JSON.stringify(plan.errors));
+  const res = await applyPlan(plan, { api: ORIGIN, env: { BOARD_ADMIN_TOKEN: ADMIN }, fetchImpl, backupPath: join(tmpdir(), `add-member-backup-${process.pid}.json`) });
+  const after = JSON.parse(stored(env, "party"));
+  assert.ok(res.ok, JSON.stringify(res.log));
+  assert.ok(after.members.some((m) => m.name === "Newcomer Vale"), "the member was added");
+  assert.equal(after.members[CONTROL].class, cDoc(CONTROL, "class"), "the hidden class is still in the stored row");
+  assert.equal(after.members[CONTROL].race, cDoc(CONTROL, "race"));
+  assert.deepEqual(after.members[CONTROL].professions, docValue(CONTROL, "professions"));
+  for (const f of ["class", "race", "professions"]) assert.equal((await http(env, "POST", "/sheet", { headers: ctl, body: { field: f, value: sheetValue(CONTROL, f), visible: true } })).status, 200);
+  const shown = await getJson(env, "/data/party");
+  for (const k of ["class", "race", "class_key", "professions", "spec", "color"]) assert.deepEqual(shown.members[CONTROL][k], docValue(CONTROL, k), `un-hidden: ${k} is back`);
+  try { unlinkSync(res.backup); } catch {}
+});
+
+// F4: a hide purges every member document, whatever spelling it was read under
+const SPELLINGS = (n) => [`/data/${n}`, `/data/${n}.json`, `/data//${n}`, `/data/${n.slice(0, -1)}%${n.charCodeAt(n.length - 1).toString(16)}`, `/data/%${n.charCodeAt(0).toString(16)}${n.slice(1)}.json`];
+const HIDE_FOR = { party: ["class", cDoc(CONTROL, "class")], decide: ["class", cDoc(CONTROL, "class_key")], tonight: ["class", cDoc(CONTROL, "class_key")], "guided-atlas": ["class", cDoc(CONTROL, "class_key")], client: ["class", cDoc(CONTROL, "class")], launch: ["launch_state", cSheet(CONTROL, "launch_state")] };
+for (const name of MEMBER_DOCS) {
+  test(`cache: read ${name} in every spelling, hide, read again: nothing stale (the hide purges every member document and every spelling shares one entry)`, async () => {
+    const env = await makeEnv({ hides: NAMES.map(() => []) });
+    const [field, canary] = HIDE_FOR[name];
+    const ctl = await keyFor(env, CONTROL);
+    for (const p of SPELLINGS(name)) { const r = await http(env, "GET", p); assert.equal(r.status, 200, p); assert.ok(r.text.includes(canary), `before the hide ${p} shows the value`); }
+    const value = field === "launch_state" ? "in" : sheetValue(CONTROL, field);
+    assert.equal((await http(env, "POST", "/sheet", { headers: ctl, body: { field, value, visible: false } })).status, 200);
+    for (const p of SPELLINGS(name)) { const r = await http(env, "GET", p); assert.equal(r.status, 200, p); assert.ok(!r.text.includes(canary), `after the hide ${p} is fresh`); }
+  });
+}
+test("cache: PARTY_CACHE_PATHS lists every member document, both spellings, and the two documents that embed them", () => {
+  for (const n of MEMBER_DOCS) for (const p of [`/api/data/${n}`, `/api/data/${n}.json`]) assert.ok(PARTY_CACHE_PATHS.includes(p), p);
+  assert.ok(PARTY_CACHE_PATHS.includes("/api/state") && PARTY_CACHE_PATHS.includes("/api/bootstrap"));
+});
+
+// F6: fail closed
+test("a stored sheet row that is junk, after a real hide: the hide comes from the sheet events and every read still hides it", async () => {
+  const env = await makeEnv({ sheets: [null, 5, "x"] });
+  env.DB.raw.prepare("INSERT INTO sheet_events (slug, name, field, value_json, visible, source, created_at) VALUES (?, ?, 'class', ?, 0, 'board', ?)").run(SLUG[1], NAMES[1], JSON.stringify("zqsclass1x"), AT);
+  for (const p of ["/data/party", "/state", "/bootstrap", "/data/decide", "/data/guided-atlas", "/data/client"]) {
+    const r = await http(env, "GET", p); assert.equal(r.status, 200, p);
+    assert.ok(!r.text.includes(cDoc(1, "class")) && !r.text.includes(cDoc(1, "class_key")), `${p} hides the class of the member who hid it`);
+  }
+  const party = await getJson(env, "/data/party");
+  assert.equal(party.members[0].class, cDoc(0, "class"), "a member with no hide event is shown (a new person is not hidden)");
+});
+
+test("a hider renamed by an admin PUT: the old sheet belongs to nobody in the document, its hidden fields apply to the new row", async () => {
+  const sheets = sheetList().map((s, i) => (i === 1 ? { ...s, name: "Bren Old", slug: "bren-old" } : s));
+  const env = await makeEnv({ sheets });
+  const party = await getJson(env, "/data/party");
+  const bren = party.members.find((m) => m.name === NAMES[1]);
+  assert.ok(bren && !("class" in bren) && !("class_key" in bren), "the renamed member keeps the hide");
+});
+
+test("sheet_events cannot be read and the sheets row is empty: nothing is shown (null inputs, every member reduced to name and role), not the visible-everything seed", async () => {
+  const env = await makeEnv({ sheets: [] });
+  const real = env.DB.prepare.bind(env.DB);
+  const broken = { ...env.DB, prepare: (sql) => { if (/sheet_events/i.test(sql) && /select/i.test(sql)) throw new Error("D1 down"); return real(sql); } };
+  const e2 = { ...env, DB: broken };
+  const inputs = await loadPublicInputs(e2);
+  assert.equal(inputs.sheets, null);
+  const r = await http(e2, "GET", "/data/party"); assert.equal(r.status, 200);
+  for (const m of JSON.parse(r.text).members) assert.deepEqual(Object.keys(m).sort(), ["name", "role"]);
+  for (const p of ["/state", "/bootstrap", "/data/decide", "/data/guided-atlas", "/data/client", "/data/tonight"]) assert.ok(!leaks((await http(e2, "GET", p)).text).length, p);
+  const st = JSON.parse((await http(e2, "GET", "/state")).text);
+  assert.ok(st.party.every((s) => Object.keys(s.fields).length === 0), "no sheet field for anyone");
+  // the callers that are not strict (the Discord /tonight, an authed GET /sheet) get every field hidden, not the seed
+  const { buildPartySheetsFromD1 } = await import("../../infrastructure/worker/index.js");
+  const lax = await buildPartySheetsFromD1(e2, { persist: true });
+  assert.ok(lax.party.length > 0 && lax.party.every((s) => Object.values(s.fields).every((f) => f.visible === false)));
+  assert.equal(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").get().json, "[]", "nothing was persisted from the failed read");
+});
+
+test("personMask: a stored member with no class_key (an old row a writer stripped) cannot be told apart, so its hide applies to every entry that has nobody else to pair with", () => {
+  const party = { members: [{ name: "Ann Ash", role: "tank" }, { name: "Bo Birch", role: "healer", class_key: "druid" }] };
+  const doc = { people: [{ class_key: "mage", decisions: [{ key: "professions" }, { key: "spec40" }] }, { class_key: "druid", decisions: [{ key: "professions" }] }], party: { lines: [] } };
+  const sheet = (name, f) => ({ slug: slugify(name), name, fields: { [f]: { value: "x", visible: false } } });
+  const out = projectDecide(doc, party, [sheet("Ann Ash", "professions"), sheet("Bo Birch", "level")]);
+  assert.deepEqual(out.people[0].decisions.map((d) => d.key), ["spec40"], "the entry that matches no class_key takes the union");
+  assert.deepEqual(out.people[1].decisions.map((d) => d.key), ["professions"], "the druid entry pairs with Bo by position and class_key: Ann's hide does not touch it");
+  const raceHide = projectDecide(doc, party, [sheet("Ann Ash", "race"), sheet("Bo Birch", "level")]);
+  assert.deepEqual(raceHide.people.map((p) => p.class_key), ["druid"], "race hidden on a row with no class_key: the entry with no partner goes; the paired druid entry stays");
+});
+
+// F8: launch
+test("launch: a member who hid launch_state is not in /state.launch, /data/launch, the broadcast or the Discord /launch reply; the stored row keeps it", async () => {
+  const env = await makeEnv();
+  const state = await getJson(env, "/state");
+  assert.ok(state.launch.length === NAMES.length && state.launch.find((r) => r.slug === SLUG[ALLHID]).state === undefined);
+  assert.equal(state.launch.find((r) => r.slug === SLUG[0]).state, cSheet(0, "launch_state"));
+  const doc = await getJson(env, "/data/launch");
+  assert.equal(doc.find((r) => r.slug === SLUG[ALLHID]).state, undefined);
+  assert.ok(stored(env, "launch").includes(cSheet(ALLHID, "launch_state")), "stored whole");
+  env.sent.length = 0;
+  await quiet(() => broadcastToRoom(env, { type: "data", key: "launch", data: JSON.parse(stored(env, "launch")) }));
+  assert.ok(env.sent.length === 1 && !env.sent[0].includes(cSheet(ALLHID, "launch_state")) && env.sent[0].includes(cSheet(0, "launch_state")));
+  const reply = await discord(env, slash("launch"));
+  assert.ok(!reply.includes(cSheet(ALLHID, "launch_state")), "the Discord reply");
+  assert.ok(reply.includes(cSheet(0, "launch_state")), "and it still lists the others");
+  assert.ok(stored(env, "launch").includes(cSheet(ALLHID, "launch_state")), "reading /launch did not rewrite the stored list");
+});
+test("launch: {rows:[...]} form, owner sees own row, unreadable sheets show no state", () => {
+  const rows = [{ slug: "a-a", name: "A A", state: "in" }, { slug: "b-b", name: "B B", state: "queue" }];
+  const sheets = [{ slug: "a-a", name: "A A", fields: { launch_state: { value: "in", visible: false } } }, { slug: "b-b", name: "B B", fields: {} }];
+  assert.deepEqual(projectLaunch({ rows, voice: "v" }, sheets), { rows: [{ slug: "a-a", name: "A A" }, rows[1]], voice: "v" });
+  assert.deepEqual(projectLaunch(rows, sheets, "a-a"), rows);
+  assert.deepEqual(projectLaunch(rows, null), [{ slug: "a-a", name: "A A" }, { slug: "b-b", name: "B B" }]);
+});
+
+// ---- surviving mutations ------------------------------------------------------------------------------------------------------------------
+const hideOne = (f) => NAMES.map((_, i) => (i === 3 ? [f] : []));
+test("decide.party is withheld when anyone hides class, spec_path, spec_at_40 or professions, and only then (each field on its own)", () => {
+  for (const f of ["class", "spec_path", "spec_at_40", "professions"]) assert.equal(projectDecide(decideDoc(), partyDoc(), sheetList(hideOne(f))).party.withheld, true, f);
+  for (const f of ["race", "plan_zone", "level", "launch_state", "goals"]) { const p = projectDecide(decideDoc(), partyDoc(), sheetList(hideOne(f))).party; assert.equal(p.withheld, undefined, f); assert.equal(p.brackets.length, 1, `${f}: the composition is shown`); }
+  assert.equal(projectDecide(decideDoc(), partyDoc(), sheetList(NAMES.map(() => []))).party.brackets.length, 1);
+});
+
+test("a decide entry that pairs with no stored member takes the mask of the whole party", () => {
+  const doc = { people: [{ class_key: "zq-nobody", decisions: [{ key: "spec40" }, { key: "professions" }] }], party: {} };
+  assert.deepEqual(projectDecide(doc, partyDoc(), sheetList(hideOne("race"))).people, [], "race hidden by someone: an entry nobody can be matched to goes");
+  assert.deepEqual(projectDecide(doc, partyDoc(), sheetList(hideOne("professions"))).people[0].decisions.map((d) => d.key), ["spec40"], "professions hidden by someone: its card goes");
+  assert.equal(projectDecide(doc, partyDoc(), sheetList(NAMES.map(() => []))).people.length, 1);
+  const t = { people: [{ member: 99, class_key: "zq-nobody", step: "Choose your spec" }], week_one: { trainers: {} } };
+  assert.equal(projectTonight(t, partyDoc(), sheetList(hideOne("class"))).people[0].step, null, "tonight: an unpaired entry takes the union too");
+});
+
+test("loadPublicInputs: a failed sheets read is null (fail closed), never an empty list; and the party read failing is null too", async () => {
+  const env = await makeEnv();
+  const real = env.DB.prepare.bind(env.DB);
+  const sheetsDown = { ...env, DB: { ...env.DB, prepare: (sql) => (/party_sheets/.test(sql) ? (() => { throw new Error("down"); })() : real(sql)) } };
+  const a = await loadPublicInputs(sheetsDown); assert.equal(a.sheets, null); assert.ok(a.partyDoc && a.partyDoc.members);
+  assert.ok(projectForAnonymous(a.partyDoc, a.sheets).members.every((m) => Object.keys(m).length === 2));
+  const partyDown = { ...env, DB: { ...env.DB, prepare: (sql) => (/key = 'party'/.test(sql) ? (() => { throw new Error("down"); })() : real(sql)) } };
+  const b = await loadPublicInputs(partyDown); assert.equal(b.sheets, null); assert.equal(b.partyDoc, null);
+  assert.deepEqual((await loadPublicInputs(env, { sheets: "nope" })).sheets, null);
+});
+
+test("GET /data/<member doc> that cannot be projected is an error, never the stored document", async () => {
+  for (const name of MEMBER_DOCS) {
+    const env = await makeEnv();
+    env.DB.raw.prepare("UPDATE kv_state SET json = ? WHERE key = ?").run("{not json zq" + name, name);
+    const r = await http(env, "GET", `/data/${name}`);
+    assert.equal(r.status, 500, name); assert.ok(!r.text.includes("zq" + name), name);
+  }
+});
+
+test("projectSheets: a sheet whose fields are junk (a list, a string, a number, null) serves no fields, never the junk", () => {
+  const rows = [{ slug: "a", name: "A", fields: [{ race: { value: "zq", visible: true } }] }, { slug: "b", name: "B", fields: "zqrace" }, { slug: "c", name: "C", fields: 5 }, { slug: "d", name: "D", fields: null }, { slug: "e", name: "E" }];
+  for (const r of projectSheets(rows)) assert.deepEqual(r.fields, {}, r.slug);
+  assert.deepEqual(projectSheets(rows, "a")[0].fields, rows[0].fields, "the owner's own row is returned as it is");
+});
+
+// ---- round 3, mutation survivors: text scrub of every member document, the unpaired-row rule, the failed event log on the fast path -------------
+const hideFields = (names) => (name, fields) => ({ slug: slugify(name), name, fields: Object.fromEntries(fields.map((f) => [f, { value: "x", visible: false }])) });
+const mini = { members: [{ name: "Ann Ash", class_key: "mage", class: "Mage", race: "Gnome", spec: "Frost, ice tank", role: "tank" }, { name: "Bo Birch", class_key: "druid", class: "Druid", race: "Tauren", spec: "Feral", role: "healer" }] };
+const miniSheets = (annHides) => [hideFields()("Ann Ash", annHides), hideFields()("Bo Birch", [])];
+test("every member document is scrubbed as text: a word only a hider has (the guided-atlas, tonight and party text included), and a multi-word value", () => {
+  const sheetsRace = miniSheets(["race"]), sheetsSpec = miniSheets(["spec_path"]);
+  const atlas = { classes: { druid: { start: {}, trainer: {} } }, meet: { name: "Meet where the Gnome pair start" }, dungeon: { name: "Deeps" } };
+  assert.ok(!JSON.stringify(projectGuidedAtlas(atlas, mini, sheetsRace)).includes("Gnome"), "guided-atlas text");
+  const tonight = { people: [], launch: "Launch night for the Gnome table", week_one: { trainers: {} } };
+  assert.ok(!JSON.stringify(projectTonight(tonight, mini, sheetsRace)).includes("Gnome"), "tonight text");
+  const party = { ...mini, settled: [], open: [{ title: "Meet", text: "the Gnome pair" }, { title: "Other", text: "kept text" }] };
+  const out = projectForAnonymous(party, sheetsRace);
+  assert.ok(!JSON.stringify(out.open).includes("Gnome") && JSON.stringify(out.open).includes("kept text"), "party text");
+  // a value with a space or a comma is matched as a phrase
+  const decide = { people: [], party: { lines: [{ label: "Frost, ice tank is open", text: "x" }, { label: "plain", text: "y" }] } };
+  const d = projectDecide(decide, mini, sheetsSpec);
+  assert.ok(!JSON.stringify(d).includes("ice tank") && JSON.stringify(d).includes("plain"), "phrase");
+});
+
+test("personMask: an entry that pairs by class_key also takes the hide of a stored member that has no class_key", () => {
+  const party = { members: [{ name: "Ann Ash", role: "tank" }, { name: "Bo Birch", role: "healer", class_key: "druid" }] };
+  const doc = { people: [{ class_key: "druid", decisions: [{ key: "professions" }, { key: "spec40" }] }, { class_key: "x1", decisions: [] }, { class_key: "x2", decisions: [] }], party: {} };
+  const out = projectDecide(doc, party, [hideFields()("Ann Ash", ["professions"]), hideFields()("Bo Birch", [])]);
+  assert.deepEqual(out.people[0].decisions.map((d) => d.key), ["spec40"], "Ann's stripped row might be the druid");
+});
+
+test("sheet_events cannot be read while party_sheets holds only junk: every read fails closed (name and role only)", async () => {
+  const env = await makeEnv({ sheets: [null, 5, "x"] });
+  const real = env.DB.prepare.bind(env.DB);
+  const e2 = { ...env, DB: { ...env.DB, prepare: (sql) => { if (/sheet_events/i.test(sql) && /select/i.test(sql)) throw new Error("D1 down"); return real(sql); } } };
+  assert.equal((await loadPublicInputs(e2)).sheets, null);
+  for (const m of JSON.parse((await http(e2, "GET", "/data/party")).text).members) assert.deepEqual(Object.keys(m).sort(), ["name", "role"]);
 });

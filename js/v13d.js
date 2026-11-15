@@ -82,7 +82,7 @@ const CORE = {
   },
   roads() {
     const P = D.party, me = MEM.member(), meet = meetOf(); if (!P) return null;
-    const a = me && me.start_zone ? `${me.name} wakes in ${me.start_zone}, then takes ${roadHow(me.start_zone)} to Orgrimmar.` : `The ${K.pn.word()} wake in ${K.andList([...new Set(P.members.map((x) => x.start_zone))])} and meet in Orgrimmar.`;
+    const a = me && me.start_zone ? `${me.name} wakes in ${me.start_zone}, then takes ${roadHow(me.start_zone)} to Orgrimmar.` : (() => { const zs = [...new Set(P.members.map((x) => x.start_zone).filter((z) => typeof z === "string" && z))]; return zs.length ? `The ${K.pn.word()} wake in ${K.andList(zs)} and meet in Orgrimmar.` : `The ${K.pn.word()} meet in Orgrimmar.`; })();
     return { a: `${a} Meeting point: ${meet || "not picked yet"}.`, go: meet ? ["Open the Atlas", `#atlas.plan.${MEM.slug(meet)}${me ? `~${me.class_key}` : ""}`] : ["Pick where we meet", "#signups"] };
   },
   racials() {

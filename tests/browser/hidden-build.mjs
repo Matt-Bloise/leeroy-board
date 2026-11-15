@@ -13,7 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pageUrl } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
-import { projectForAnonymous, projectDecide, projectTonight } from "../../infrastructure/worker/public-party.js";
+import { projectForAnonymous, projectDecide, projectTonight, projectGuidedAtlas, projectClient } from "../../infrastructure/worker/public-party.js";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -24,24 +24,24 @@ let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 
 // ---- the projected documents ---------------------------------------------------------------------------------------------------------
-const party0 = DATA("party"), decide0 = DATA("decide"), tonight0 = DATA("tonight");
+const party0 = DATA("party"), decide0 = DATA("decide"), tonight0 = DATA("tonight"), atlas0 = DATA("guided-atlas"), client0 = DATA("client");
 const slug = (n) => n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const HIDE = [["race", "class", "spec_path", "spec_at_40", "professions", "plan_zone"], ["class"], ["professions", "spec_at_40"], ["race"], ["plan_zone"]];
 const sheets = party0.members.map((m, i) => ({ slug: slug(m.name), name: m.name, updated: "x", fields: Object.fromEntries(["race", "class", "spec_path", "spec_at_40", "professions", "plan_zone", "level", "goals"].map((f) => [f, { value: "x", visible: !(HIDE[i] || []).includes(f), source: "board", at: "x" }])) }));
 const party = projectForAnonymous(party0, sheets);
 delete party.members[4].role; // a card with no role at all
-const PARTY = JSON.stringify(party), DECIDE = JSON.stringify(projectDecide(decide0, party0, sheets)), TONIGHT = JSON.stringify(projectTonight(tonight0, party0, sheets));
+const PARTY = JSON.stringify(party), DECIDE = JSON.stringify(projectDecide(decide0, party0, sheets)), TONIGHT = JSON.stringify(projectTonight(tonight0, party0, sheets)), ATLAS = JSON.stringify(projectGuidedAtlas(atlas0, party0, sheets)), CLIENT = JSON.stringify(projectClient(client0, party0, sheets));
 ok("fixture: the first member shows a name and a role only", JSON.stringify(Object.keys(party.members[0]).sort()) === JSON.stringify(["name", "role"]), Object.keys(party.members[0]).join(","));
 ok("fixture: the last member has no role and no start zone", party.members[4].role === undefined && party.members[4].start_zone === undefined && party.members[4].class !== undefined, JSON.stringify(Object.keys(party.members[4])));
 ok("fixture: one member hides class, so there is a member with no class_key", party.members[1].class_key === undefined && party.members[1].race !== undefined);
 
-const DATA_RE = /\/(?:api\/)?data\/(party|decide|tonight)(?:\.json)?(?:\?|$)/;
+const DATA_RE = /\/(?:api\/)?data\/(party|decide|tonight|guided-atlas|client)(?:\.json)?(?:\?|$)/;
 const json = (route, body) => route.fulfill({ status: 200, contentType: "application/json", headers: { "cache-control": "no-store", "access-control-allow-origin": "*" }, body });
 async function setup(browser, width, { member = null } = {}) {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: phone ? 800 : 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: "block", reducedMotion: "reduce" });
   await ctx.route("**/api/bootstrap*", (r) => r.abort());
-  await ctx.route(DATA_RE, (route) => json(route, { party: PARTY, decide: DECIDE, tonight: TONIGHT }[DATA_RE.exec(route.request().url())[1]]));
+  await ctx.route(DATA_RE, (route) => json(route, { party: PARTY, decide: DECIDE, tonight: TONIGHT, "guided-atlas": ATLAS, client: CLIENT }[DATA_RE.exec(route.request().url())[1]]));
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource|net::ERR|favicon|ERR_FAILED/.test(m.text())) errors.push(`console: ${m.text()}`); });
@@ -70,7 +70,7 @@ async function openHash(page, hash) {
   await page.waitForTimeout(900);
 }
 
-const SCENES = ["five", "five.party", `five.sheet-${slug(party0.members[0].name)}`, `five.sheet-${slug(party0.members[1].name)}`, "roads", "racials", "buffs", "ledger", "signups", "decide", "tonight", "timeline", "legacy"];
+const SCENES = ["five", "five.party", `five.sheet-${slug(party0.members[0].name)}`, `five.sheet-${slug(party0.members[1].name)}`, "roads", "atlas", "racials", "buffs", "ledger", "signups", "decide", "tonight", "timeline", "legacy"];
 const browser = stubbed(await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}));
 try {
   for (const [width, member] of [[1366, null], [390, null], [1366, party0.members[3].name]]) {
@@ -81,6 +81,13 @@ try {
       const bad = (await strings(page)).filter((s) => BAD.test(s));
       ok(`${t} #${hash}: no "undefined", "null" or "NaN" on screen`, bad.length === 0, bad.slice(0, 4).join(" || "));
     }
+    // the #atlas lede ("M4 in undefined" once) and the guided "In short" box of the roads scene
+    await openHash(page, "atlas");
+    const lede = await page.evaluate(() => (document.querySelector("#map-lede") || {}).textContent || "");
+    ok(`${t} the atlas lede is there and has no undefined`, lede.length > 20 && !BAD.test(lede), lede);
+    await openHash(page, "roads");
+    const brief = await page.evaluate(() => Array.from(document.querySelectorAll(".jr-core")).map((e) => e.textContent).join(" | "));
+    ok(`${t} the guided "In short" box of the roads scene is there and has no undefined`, brief.length > 20 && !BAD.test(brief), brief.slice(0, 200));
     // the party formation: a coin for every member, whatever they hide
     await openHash(page, "five");
     await page.waitForSelector("#five-form", { state: "attached", timeout: 8000 }).catch(() => {});

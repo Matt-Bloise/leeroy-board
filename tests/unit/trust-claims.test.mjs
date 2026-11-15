@@ -199,8 +199,9 @@ test("trust card: 'sees' says anyone can read names, builds and sign-ups, hidden
   assert.match(sees, /anyone/i);
   assert.match(sees, /anyone with the link/i);
   assert.match(sees, /names, builds and sign-ups/);
-  assert.match(sees, /hide on your sheet are not shown/i);
-  assert.match(sees, /Your role \(tank, healer or damage\) is always shown; it is not one of the fields you can hide\./);
+  assert.match(sees, /field you hide on your sheet is removed from those pages/i);
+  assert.match(sees, /A member who hides every field still shows a name, a role \(tank, healer or damage\), a level and goals \(no control hides those\), a place in the party, their sign-up, and that they are on the launch list\./);
+  assert.doesNotMatch(sees, /nothing gives|nor is anything|give them away/i, "no claim stronger than the enumeration test proves");
   assert.match(sees, /need your key/i);
   assert.match(sees, /public code and older commits/i);
   assert.match(sees, /hiding a field does not remove them there/i);

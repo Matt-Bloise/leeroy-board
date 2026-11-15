@@ -993,8 +993,8 @@ function renderMap() {
   VF("pins", svg);
   KIT.emit("map", { svg, groups, lines, byZone, roads: ROADS, zones: ZONES, pick: (key) => { sticky = key; light(null); } });
   const meet = D.party.open.find((o) => /meeting point/i.test(o.title));
-  const names = Object.entries(byZone).map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`);
-  $("#map-lede").textContent = `${names.join("; ")}. The Undercity zeppelin and two roads all end in Orgrimmar.`;
+  const names = Object.entries(byZone).filter(([z]) => z && z !== "undefined").map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`); // a member who hides race or zone has no start_zone: no "in undefined"
+  $("#map-lede").textContent = `${names.length ? `${names.join("; ")}. ` : ""}The Undercity zeppelin and two roads all end in Orgrimmar.`;
   $("#map-caption").replaceChildren(...(meet ? meetLine(meet) : []));
 }
 

@@ -22,7 +22,7 @@ To sign you in, to show the group's board, to answer your questions, and to stop
 
 ## Who can see it
 
-- Anyone with the link can read the public board pages. The party list, sign-ups and timeline are open to anyone who asks the server. They have no sign-in. If your character or sign-up is on the board, a stranger could read it. A field you hide on your sheet is removed from those open pages, together with what it would give away (hide your class and your spec goes too). Your role (tank, healer or damage) is always shown; it is not one of the fields you can hide.
+- Anyone with the link can read the public board pages. The party list, sign-ups and timeline are open to anyone who asks the server. They have no sign-in. If your character or sign-up is on the board, a stranger could read it. A field you hide on your sheet is removed from those open pages, together with the fields that come from it (hide your class and your spec, colour and build line go too) and any shared line that names it. A member who hides every field still shows a name, a role (tank, healer or damage), a level and goals (no control hides those), a place in the party, their sign-up, and that they are on the launch list. The size and roles of the party stay visible, so they can still narrow a guess.
 - The first members' builds are also written into the board's public code and older commits of the repo. Hiding a field does not remove them there.
 - A scan of those open pages on 8 November 2026 found no emails, tokens or secrets.
 - Matt and the group admins can see names, roles, builds and sign-ups.

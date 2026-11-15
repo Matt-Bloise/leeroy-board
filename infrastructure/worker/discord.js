@@ -25,7 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
-import { loadPublicInputs, projectForAnonymous } from "./public-party.js";
+import { loadPublicInputs, projectForAnonymous, projectLaunch } from "./public-party.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
@@ -1088,11 +1088,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           ver: 1,
           at: now,
         });
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/launch.json"]);
+        await purgeWorkerCache(origin, PARTY_CACHE_PATHS); // /state and /data/launch carry the launch list, both spellings
         await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
       }
-      const summary = rows.length
-        ? rows.map((r) => `• **${r.name}:** \`${r.state}\``).join("\n")
+      // The stored rows stay whole (they were written above); the reply is the public form: a member who hid launch_state shows no state to anyone else.
+      const shownRows = rows.length ? projectLaunch(rows, (await loadPublicInputs(env)).sheets, member.slug).filter((r) => r && r.state) : [];
+      const summary = shownRows.length
+        ? shownRows.map((r) => `• **${r.name}:** \`${r.state}\``).join("\n")
         : "No launch states set yet.";
       return new Response(
         JSON.stringify({
