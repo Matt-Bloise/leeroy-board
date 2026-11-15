@@ -383,3 +383,63 @@ test("GET /intents never echoes an unparseable row", async () => {
   assert.ok(!text.includes(MARKER) && !text.includes("raw"), text);
   assert.equal(JSON.parse(text).intents.length, 1);
 });
+
+// Review follow-ups (PR 344): a read failure limited to the roster key must keep refusing on every call, and a failure
+// first seen by the ordinary loader (shared cache) must not later read as "no roster guild".
+const KV_READ = "FROM kv_state WHERE key = ?";
+function failRosterReads(env) {
+  const realPrepare = env.DB.prepare.bind(env.DB);
+  const state = { failing: true };
+  env.DB.prepare = (sql) => {
+    const p = realPrepare(sql);
+    if (!sql.includes(KV_READ)) return p;
+    return { bind: (k) => { if (state.failing && k === "discord_roster") throw new Error("D1 down"); return p.bind(k); } };
+  };
+  return state;
+}
+
+test("a roster-only read failure refuses on every call, never opens the gate from a cached failure, and recovers", async () => {
+  const env = await makeEnv();
+  env.DB.raw.prepare("DELETE FROM kv_state WHERE key = 'discord_roster'").run();
+  invalidateConfigCache();
+  addRow(env, "journey", { journey: "curious" });
+  const state = failRosterReads(env);
+  for (let i = 0; i < 3; i++) {
+    const t = (await discordCmd(env, "intents", "32")).data.content;
+    assert.ok(!t.includes("curious") && !t.includes(GATE_OFF_NOTE), `call ${i + 1} while the roster read fails`);
+  }
+  env.DB.raw.prepare("UPDATE intents SET slug = 'someone-else'").run(); // a refused admin may still clear only their OWN rows
+  const before = intentRows(env).length;
+  await discordCmd(env, "ack", "32", [{ name: "up_to", type: 4, value: 99 }]);
+  assert.equal(intentRows(env).length, before, "/ack cleared no other member's row while the roster read fails");
+  state.failing = false;
+  const ok = (await discordCmd(env, "intents", "32")).data.content;
+  assert.ok(ok.includes("curious") && ok.includes(GATE_OFF_NOTE), "after recovery the absent roster gives gate-off");
+  invalidateConfigCache();
+});
+
+test("a roster failure first cached by loadConfigKey still refuses at the gate", async () => {
+  const { loadConfigKey } = await import("../../infrastructure/worker/config.js");
+  const env = await makeEnv();
+  env.DB.raw.prepare("DELETE FROM kv_state WHERE key = 'discord_roster'").run();
+  invalidateConfigCache();
+  addRow(env, "journey", { journey: "curious" });
+  failRosterReads(env);
+  await loadConfigKey(env, "discord_roster");
+  for (let i = 0; i < 2; i++) {
+    const t = (await discordCmd(env, "intents", "32")).data.content;
+    assert.ok(!t.includes("curious") && !t.includes(GATE_OFF_NOTE), `gate refuses after a failed ordinary read (${i + 1})`);
+  }
+  invalidateConfigCache();
+});
+
+test("a malformed roster guildId refuses even when the interaction carries the same string", async () => {
+  for (const g of ["abc", "1234"]) {
+    const env = await makeEnv();
+    setRoster(env, JSON.stringify({ guildId: g }));
+    addRow(env, "journey", { journey: "curious" });
+    const t = (await discordCmd(env, "intents", "32", [], { guild: g })).data.content;
+    assert.ok(!t.includes("curious"), `refused for guildId ${g}`);
+  }
+  invalidateConfigCache();
+});
