@@ -203,8 +203,41 @@ test("a Claude request never carries a roster name: the prompt is tokenised, tok
   assert.deepEqual(scanBody(r.anth[0].body, researchRoster()), []);
 });
 
-test("a reply with a bare token, a foreign-nonce token or an id token is discarded and Workers AI answers", async () => {
-  for (const bad of ["{P1}", "{P2.zzzz}", "{ID.zzzz}", "{ p1 }"]) {
+test("nonce tolerance: a reply whose token has a mis-copied nonce on a valid index is NOT discarded and restores the display name", async () => {
+  const target = NAMES[2];
+  const r = await ask(`what should ${target} play and what is the weather like`, {
+    claude: (body) => {
+      const [, idx, nonce] = body.messages[0].content.match(/what should \{P(\d+)\.([a-z0-9]+)\} play/);
+      const wrongNonce = nonce === "702f" ? "0abc" : "702f";
+      return { status: 200, text: `**{P${idx}.${wrongNonce}} should play whatever is fun.**
+That is how Classic handled it.
+-# Sources: general Classic-era knowledge · unconfirmed` };
+    },
+  });
+  assert.equal(r.anth.length, 1);
+  assert.equal(r.wai.length, 0, "answered by Claude, not discarded");
+  assert.match(r.row.model, /^claude:/);
+  assert.ok(r.answer.includes(target), "display name restored");
+  assert.ok(!/\{P\d/.test(r.answer));
+});
+
+test("nonce tolerance: a wrong nonce on an index that is not in the map is still discarded", async () => {
+  const r = await ask(ABSTAIN_Q, { claude: () => ({ status: 200, text: "**{P99.702f} should play whatever is fun.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed" }) });
+  assert.equal(r.wai.length >= 1, true);
+  assert.match(r.answer, /Workers answer first/);
+});
+
+test("nonce tolerance: a token typed in the QUESTION is escaped to brackets, never sent as a brace token, and a reply echoing it as a brace token stays discarded when the index is absent", async () => {
+  const r = await ask("what about {P1.abcd} and {P77.abcd} in the weather", { claude: () => ({ status: 200, text: "**Plain answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
+  assert.equal(r.anth.length, 1);
+  const body = r.anth[0].body.messages[0].content;
+  assert.ok(body.includes("[P1.ABCD]") && body.includes("[P77.ABCD]"), "escaped to brackets");
+  assert.ok(!body.includes("{P1.abcd}") && !body.includes("{P77.abcd}"));
+  assert.match(r.answer, /Plain answer/);
+});
+
+test("a reply with a bare token, a foreign-nonce token on an unknown index, or an id token is discarded and Workers AI answers", async () => {
+  for (const bad of ["{P1}", "{P99.zzzz}", "{ID.zzzz}", "{ p1 }"]) {
     const r = await ask(ABSTAIN_Q, { claude: () => ({ status: 200, text: `**${bad} should play whatever is fun.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed` }) });
     assert.equal(r.wai.length >= 1, true, bad);
     assert.match(r.answer, /Workers answer first/, bad);

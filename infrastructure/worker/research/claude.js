@@ -13,7 +13,7 @@
 // in code: the token cap is the bound (docs/runbooks/flags.md has the worst-case arithmetic).
 import { anthropicAvailable } from "../ai-keys.js";
 import { stripFence } from "../prompt-fence.js";
-import { buildNameMap, tokenise, detokenise } from "../privacy/tokenise.js";
+import { buildNameMap, tokenise, detokenise, stripRestorableTokens } from "../privacy/tokenise.js";
 import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
 import { researchMembers, researchMembersFor, genericAliases } from "../privacy/roster-config.js";
@@ -233,8 +233,7 @@ export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, pre
         try {
           if (replyLeaksIdentity(text, ctx.roster)) return null;
         } catch { return null; }
-        map.tokRe.lastIndex = 0;
-        if (LEFTOVER_TOKEN.test(text.replace(map.tokRe, ""))) return null;
+        if (LEFTOVER_TOKEN.test(stripRestorableTokens(text, map))) return null;
         return detokenise(text, map);
       },
     };

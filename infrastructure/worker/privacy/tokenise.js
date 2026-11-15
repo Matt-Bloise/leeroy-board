@@ -34,6 +34,9 @@ export const LONG_NAME_MIN = 7;
 
 const RESERVED = new Set(["id", "all", "guild", "invite", "everyone", "here", "someone"]);
 const SUFFIXES = new Set(["", "s", "es", "y", "ie", "ies"]);
+// A model sometimes mis-copies the per-request nonce ({P8.702f} for {P8.1n70}). Only the model can emit a brace token (user-typed ones are escaped to [P8.1N70]
+// before tokenising), and a restored DISPLAY name is allowed reply content, so a P token with ANY 1-8 alphanumeric nonce whose index exists in THIS map restores.
+const LOOSE_P_RE = /\{P([1-9]\d{0,3})\.[A-Za-z0-9]{1,8}\}/g;
 const USER_TOKEN_RE = /\{\s{0,3}(?:p\s{0,3}\d{1,4}|id|all|invite|guild)[^{}]{0,14}\}/gi;
 
 const INVITE_RE = /(?:https?:\/\/)?(?:www\.)?(?:discord\s{0,3}\.\s{0,3}gg|dsc\s{0,3}\.\s{0,3}gg|discord(?:app)?\s{0,3}\.\s{0,3}com\s{0,3}\/\s{0,3}invites?|discord\s{0,3}\.\s{0,3}me)\s{0,3}\/\s{0,3}[\w-]+/gi;
@@ -314,8 +317,9 @@ export function tokenise(text, map) {
 }
 
 /**
- * Restore DISPLAY names (never first/real names) for tokens issued by THIS map; anything that
- * looks like a token but is not (bare {P1}, wrong nonce, spaced forms) becomes "someone".
+ * Restore DISPLAY names (never first/real names) for tokens issued by THIS map. A {P<n>.<nonce>}
+ * with a wrong nonce still restores when index n exists in this map; anything else that looks like
+ * a token (bare {P1}, unknown index, spaced forms, other kinds with a wrong nonce) becomes "someone".
  */
 export function detokenise(text, map) {
   if (text == null) return "";
@@ -329,5 +333,13 @@ export function detokenise(text, map) {
       if (kind === "GUILD") return "the server";
       return m.byToken.get(tokStr)?.display ?? "someone";
     })
+    .replace(LOOSE_P_RE, (_t, n) => m.byToken.get(`{P${n}.${m.nonce}}`)?.display ?? "someone")
     .replace(USER_TOKEN_RE, "someone");
+}
+
+/** The text with this request's tokens (exact nonce, or a mis-copied nonce on an index in the map) removed: what is left must hold no token-looking text. */
+export function stripRestorableTokens(text, map) {
+  const m = map && map.byToken ? map : buildNameMap([]);
+  m.tokRe.lastIndex = 0;
+  return String(text ?? "").replace(m.tokRe, "").replace(LOOSE_P_RE, (t, n) => (m.byToken.has(`{P${n}.${m.nonce}}`) ? "" : t));
 }
