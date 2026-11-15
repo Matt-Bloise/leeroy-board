@@ -96,6 +96,8 @@ function sayChannelKeys(roster) {
 }
 export const GATE_OFF_NOTE = "Server check is off: no roster server is set, so any server admin can use this.";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
+import { readTextCapped } from "./limits.js";
+export const DISCORD_MAX_BODY_BYTES = 256 * 1024;
 import { dataCachePath } from "./public-docs.js";
 import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
 
@@ -719,7 +721,10 @@ export function likePattern(term) {
 }
 
 async function handleDiscordInteractionInner(req, env, ctx, origin, state = { verified: false, type: null }) {
-  const rawBody = await req.text();
+  // Anyone can post here, so the body is capped before it is read and before the signature is checked (a real interaction is a few KB).
+  const read = await readTextCapped(req, DISCORD_MAX_BODY_BYTES);
+  if (read.tooLarge) return new Response("Payload too large", { status: 413 });
+  const rawBody = read.text;
   if (!env.DISCORD_PUBLIC_KEY) {
     return new Response(JSON.stringify({ error: "DISCORD_PUBLIC_KEY not configured" }), { status: 500 });
   }
