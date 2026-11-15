@@ -641,11 +641,13 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
   } catch (err) {
     // Before the signature is verified, or for a PING, keep the old behaviour (the caller's 500). Afterwards Discord must get an answer.
     if (!state.verified || state.type === 1) throw err;
-    console.error("Discord interaction failed:", String((err && err.message) || err));
+    // Name and a fixed tag only: err.message can carry a slice of user input.
+    console.error("Discord interaction failed:", String((err && err.name) || "Error"), "[interaction_catch]");
     const body = state.type === 4
       ? { type: 8, data: { choices: [] } }
-      : { type: 4, data: { content: "Something broke on my side. Try again in a moment.", flags: 64 } };
-    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      : { type: 4, data: { content: SLASH_COPY.interactionFailed(), flags: 64 } };
+    // Falls through to hardenInteractionBody below, so the catch reply carries allowed_mentions too.
+    res = new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   }
   if (res.status !== 200 || !(res.headers.get("Content-Type") || "").includes("application/json")) return res;
   try {
@@ -1127,8 +1129,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
     // 2e. `/map`
     if (cmd === "map") {
-      const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-      const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+      const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
+      const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
       const hash = plan ? `#atlas.plan.${plan}` : place ? `#atlas.${place}` : "#atlas";
       const label = plan ? `Meeting Route Plan (${plan})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
       return new Response(
@@ -1143,7 +1145,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
                   {
                     type: 2,
                     style: 5,
-                    label: `${label} on the Atlas`,
+                    label: `${label} on the Atlas`.slice(0, 80),
                     url: `${boardUrl}/${hash}`,
                   },
                 ],

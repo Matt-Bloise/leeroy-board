@@ -5,6 +5,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { handleDiscordInteraction, LAUNCH_UTC } from "../../infrastructure/worker/discord.js";
+import { LAUNCH_EPOCH } from "../../infrastructure/worker/tonight-copy.js";
+import { readFileSync } from "node:fs";
 import { SLASH_COPY } from "../../infrastructure/worker/slash-copy.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
@@ -38,8 +40,14 @@ const call = (interaction, env, reqOpts) => handleDiscordInteraction(signer.sign
 async function send(interaction, extraKv) { return (await call(interaction, mkEnv(extraKv))).json(); }
 
 // The structural rule for a reply's components (type 1 rows holding type 2 buttons).
+function assertUrl(u, at) {
+  let parsed;
+  assert.doesNotThrow(() => { parsed = new URL(u); }, `${at}: url parses`);
+  assert.ok(parsed.protocol === "http:" || parsed.protocol === "https:", `${at}: url is http(s)`);
+}
 function assertComponentsValid(components, where) {
   if (components === undefined) return;
+  const ids = [];
   assert.ok(Array.isArray(components) && components.length <= 5, `${where}: up to 5 rows`);
   for (const [ri, row] of components.entries()) {
     const at = `${where} row ${ri}`;
@@ -51,11 +59,26 @@ function assertComponentsValid(components, where) {
       assert.ok(typeof c.label === "string" && c.label.length >= 1 && c.label.length <= 80, `${cat}: label 1 to 80 chars`);
       assert.equal((c.custom_id ? 1 : 0) + (c.url ? 1 : 0), 1, `${cat}: exactly one of custom_id or url`);
       assert.equal(c.style === 5, Boolean(c.url), `${cat}: style 5 iff url`);
-      if (c.custom_id) assert.ok(c.custom_id.length <= 100, `${cat}: custom_id <= 100`);
+      if (c.custom_id) { assert.ok(c.custom_id.length <= 100, `${cat}: custom_id <= 100`); ids.push(c.custom_id); }
+      if (c.url) assertUrl(c.url, cat);
       assert.ok(Number.isInteger(c.style) && c.style >= 1 && c.style <= 5, `${cat}: style 1..5`);
     }
   }
+  assert.equal(new Set(ids).size, ids.length, `${where}: custom_ids are unique within the message`);
 }
+// Also the embed urls of a reply (a /page embed links to the board).
+function assertEmbedUrls(data, where) {
+  for (const [i, e] of (data.embeds || []).entries()) if (e.url) assertUrl(e.url, `${where} embed ${i}`);
+}
+const PAGE_ROW = { id: "fixture-page", category: "fixture", title: "Fixture Page", blurb: "A fictional page.", facts_json: "[]" };
+const withPage = (DB) => {
+  const prepare = DB.prepare.bind(DB);
+  DB.prepare = (sql) => {
+    const o = prepare(sql);
+    if (!/FROM lib_pages/.test(sql)) return o;
+    return { ...o, bind: (...a) => { const b = o.bind(...a); return { ...b, first: async () => PAGE_ROW }; } };
+  };
+};
 
 test("the structural checker rejects the old broken button", () => {
   assert.throws(() => assertComponentsValid([{ type: 1, components: [{ type: 5, style: 5, label: "Open Sign-ups", url: "https://x.test" }] }], "old"), /type 2/);
@@ -66,19 +89,22 @@ test("every drivable slash reply has valid components", async () => {
     slash("signup"), slash("signup", [opt("rsvp", "maybe")]), slash("map", [opt("place", "Org")]), slash("start"), slash("dates"),
     slash("library"), slash("didyouknow"), slash("journey", [opt("choice", "guided")]), slash("quiz"), slash("vote"), slash("tonight"),
     slash("countdown"), slash("help"), slash("leeroy"), slash("page", [opt("title", "Nope")]), slash("tooltip", [opt("name", "Nope")]),
-    slash("launch"), slash("build"),
+    slash("launch"), slash("build"), slash("sheet"), slash("page", [opt("title", "Fixture Page")]),
+    slash("map", [opt("place", "x".repeat(60))]), slash("map", [opt("plan", "y".repeat(60))]),
   ];
   Date.now = () => LAUNCH_UTC - 86400000;
   try {
     let withComponents = 0;
     for (const i of cases) {
-      const body = await send(i);
+      const body = await (await call(i, mkEnv({}, withPage))).json();
       assert.equal(body.type, 4, `${i.data.name}: reply type`);
+      assert.notEqual(body.data && body.data.content, SLASH_COPY.interactionFailed(), `/${i.data.name} fell into the catch path`);
+      assertEmbedUrls(body.data || {}, `/${i.data.name}`);
       const comps = body.data && body.data.components;
       assertComponentsValid(comps, `/${i.data.name}`);
       if (comps) withComponents++;
     }
-    assert.ok(withComponents >= 3, `expected several replies with components, saw ${withComponents}`);
+    assert.ok(withComponents >= 5, `expected several replies with components, saw ${withComponents}`);
   } finally { Date.now = realNow; }
 });
 
@@ -96,7 +122,8 @@ test("/launch before launch is unchanged; after launch it is one honest line", a
   try {
     Date.now = () => LAUNCH_UTC - 3600000;
     const before = await send(slash("launch"));
-    assert.equal(before.data.content, `${SLASH_COPY.launchHeader()}\nNo launch states set yet.`);
+    assert.equal(before.data.content, `${SLASH_COPY.launchHeader()}
+No launch states set yet.`);
     assert.equal(before.data.flags, 64);
 
     Date.now = () => LAUNCH_UTC + 3600000;
@@ -133,8 +160,12 @@ test("a throw after verification still answers: command 200 type 4 flags 64", as
     const body = await res.json();
     assert.equal(body.type, 4);
     assert.equal(body.data.flags, 64);
-    assert.equal(body.data.content, "Something broke on my side. Try again in a moment.");
+    assert.equal(body.data.content, "Something broke on my side. Check the board before you try again.");
+    assert.doesNotMatch(body.data.content, /try again in a moment/i);
+    assert.deepEqual(body.data.allowed_mentions, { parse: [] });
     assert.ok(seen.length >= 1);
+    assert.ok(seen.every((s) => !s.includes("db down")), "the log line carries no err.message");
+    assert.ok(seen.some((s) => s.includes("Error") && s.includes("[interaction_catch]")), "the log line is err.name plus a fixed tag");
   } finally { console.error = realErr; }
 });
 
@@ -157,4 +188,39 @@ test("signature failures stay 401 and PING is unaffected", async () => {
   const ping = await call({ type: 1 }, env);
   assert.equal(ping.status, 200);
   assert.deepEqual(await ping.json(), { type: 1 });
+});
+
+test("a signed-wrong non-JSON body is 401, not a crash", async () => {
+  const env = mkEnv();
+  const res = await call("not json {", env, { tamper: true });
+  assert.equal(res.status, 401);
+});
+
+test("/launch at exactly LAUNCH_UTC is the post-launch line; one ms earlier is the old reply", async () => {
+  try {
+    Date.now = () => LAUNCH_UTC;
+    assert.equal((await send(slash("launch"))).data.content, SLASH_COPY.launchOver(URL_));
+    Date.now = () => LAUNCH_UTC - 1;
+    assert.equal((await send(slash("launch"))).data.content, `${SLASH_COPY.launchHeader()}
+No launch states set yet.`);
+  } finally { Date.now = realNow; }
+});
+
+test("LAUNCH_UTC is LAUNCH_EPOCH in ms and matches data/timeline.json", () => {
+  assert.equal(LAUNCH_UTC, LAUNCH_EPOCH * 1000);
+  const timeline = JSON.parse(readFileSync(new URL("../../data/timeline.json", import.meta.url), "utf8"));
+  const rows = Array.isArray(timeline) ? timeline : timeline.events || timeline.items || Object.values(timeline).find(Array.isArray) || [];
+  const launch = rows.find((r) => r && r.key === "launch");
+  assert.ok(launch, "timeline has a launch row");
+  assert.equal(launch.epoch, LAUNCH_EPOCH);
+});
+
+test("/map caps a 60-character place and plan: label <= 80 and a short slug", async () => {
+  for (const [name, hashPrefix] of [["place", "#atlas."], ["plan", "#atlas.plan."]]) {
+    const body = await send(slash("map", [opt(name, "a".repeat(60))]));
+    const btn = body.data.components[0].components[0];
+    assert.ok(btn.label.length >= 1 && btn.label.length <= 80, `${name}: label ${btn.label.length}`);
+    const slug = btn.url.split(hashPrefix)[1];
+    assert.ok(slug && slug.length <= 40, `${name}: slug ${slug && slug.length}`);
+  }
 });

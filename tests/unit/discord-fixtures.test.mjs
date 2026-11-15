@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleDiscordInteraction, LAUNCH_UTC, DISCORD_SLASH_COMMANDS_MANIFEST } from "../../infrastructure/worker/discord.js";
+import { SLASH_COPY } from "../../infrastructure/worker/slash-copy.js";
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "discord");
@@ -86,6 +87,8 @@ for (const fx of fixtures) {
     if (fx.expectEphemeral) assert.equal(body.data.flags & 64, 64, "response should be ephemeral");
     if (body.data && typeof body.data.content === "string") assert.ok(body.data.content.length <= 2000, "content is clamped");
     if (body.type === 4 || body.type === 7) assert.ok(body.data.allowed_mentions, "allowed_mentions is set on every message reply");
+    // The catch reply now carries allowed_mentions too, so that check no longer notices a command that fell into the catch.
+    assert.notEqual(body.data && body.data.content, SLASH_COPY.interactionFailed(), `${fx.file} fell into the catch path`);
   });
 }
 

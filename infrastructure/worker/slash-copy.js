@@ -3,6 +3,8 @@
 // of the original reply survives. Staff surfaces (/intents, /ack, /answer, /setup) and data cards stay plain.
 export const SLASH_COPY = {
   sheetUpdated: (name, field, value, url) => `Done. **${name}**'s sheet now reads **${field}** = \`${value}\`. The board has it: ${url}`,
+  // A write may already have saved before the throw, and a retry has a new interaction id, so never say "try again".
+  interactionFailed: () => "Something broke on my side. Check the board before you try again.",
   sheetEmpty: () => "Nothing custom on the sheet yet. Even legends start blank.",
   launchHeader: () => "**Launch Night Status**: who is in the queue, who is in the world, who is done. Leeroy keeps count so nobody has to.",
   launchOver: (url) => `Launch has come and gone, so there is nothing to count down. Ask me with \`/ask\`, or check the board: ${url}`,
