@@ -244,7 +244,7 @@ function spawnRecorder() {
 cp.spawnSync=function(cmd,args,...rest){fs.appendFileSync(${JSON.stringify(log)},JSON.stringify([cmd,...(args||[])])+"\\n");return orig.call(this,cmd,args,...rest);};
 require("module").syncBuiltinESMExports();\n`);
   const spawns = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
-  return { nodeOptions: `--require=${pre}`, spawns };
+  return { nodeOptions: `--require="${pre.replace(/\\/g, "/")}"`, spawns };
 }
 
 test("CLI: a hung wrangler is killed after the timeout, nothing more runs, a warning is raised, exit 1", () => {
@@ -264,7 +264,8 @@ test("the spawn recorder sees what the fake sees (so the hung-wrangler check abo
   const rec = spawnRecorder();
   assert.equal(cli(f, [], { NODE_OPTIONS: rec.nodeOptions }).status, 0);
   assert.deepEqual(rec.spawns().map((s) => s.slice(2)), f.calls());
-  assert.deepEqual(rec.spawns().map((s) => s[4]), ["list", "create"]);
+  const keys = parseKeyList(fs.readFileSync(path.join(ROOT, "infrastructure/flagship-flags.txt"), "utf8"));
+  assert.deepEqual(rec.spawns().map((s) => s[4]), ["list", ...keys.map(() => "create")], "one list, then one create per key in the key file");
 });
 
 test("every spawn has a timeout and the default is 60 s", () => {
