@@ -227,6 +227,7 @@ jobs:
           PREVIEW_API: ${{ needs.preview.outputs.worker }}
           PREVIEW_PAGES: ${{ needs.preview.outputs.pages }}
           PREVIEW_ADMIN_BASE: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
+          CRAWL_REPORT: ${{ runner.temp }}/preview-crawl.json
         run: |
           set -o pipefail
           # The preview Worker holds a per-PR token derived from the preview-only secret (see pr-preview-cloudflare.yml), never a production one.
@@ -245,7 +246,9 @@ jobs:
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: preview-test-logs-api
-          path: ${{ runner.temp }}/api.log
+          path: |
+            ${{ runner.temp }}/api.log
+            ${{ runner.temp }}/preview-crawl.json
           if-no-files-found: ignore
 
   browser:
