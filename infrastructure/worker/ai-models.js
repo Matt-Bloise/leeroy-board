@@ -31,6 +31,7 @@ import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HA
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
+import { memberLine } from "./research/no-wall.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -1224,11 +1225,13 @@ export async function answerWithAi({
   const nowIso = () => new Date().toISOString();
   const isCoach = journey === "guided" && share !== true;
   let budgetCode = null;
+  let memberNoWall = false; // ASK_RESEARCH on and the asker is a member: no budget verdict can refuse this ask (research/no-wall.js)
 
   try {
     // ASK_RESEARCH (off by default; never in a PR preview, which is already Workers AI only): the research prompt state, labellers, Workers-AI-only provider and token budget.
     // Fails closed: a flag read that throws counts as ON for provider forcing (research/provider.js).
     const research = await researchModeOn(env, { preview: isPrPreviewEnv(env) });
+    memberNoWall = research && (isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember)); // the same rule buildAnswerInputs uses for askerIsMember
     // 0. The same member asking the same question again within 10 minutes gets the same answer text, with no new model call.
     // Not in research mode: a stored refusal or abstain row from before the flag was turned on must never come back as the answer (W5 decides what reuse means for research).
     const prior = research ? null : await findRecentSameAnswer(env, { intentId, question, share });
@@ -1312,7 +1315,9 @@ export async function answerWithAi({
     } else {
     {
       // The global cap counts Workers AI neurons only, so it is skipped for other providers; the user and tenant caps still apply.
-      const verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null, new Date(), { skipGlobal: chosenProvider !== "workers-ai", failClosed: chosenProvider === "workers-ai" && Boolean(budget && budget.guest) });
+      // Research mode, member asker: no verdict. The counters keep counting (recordAttributed) but nothing refuses; the chain below degrades instead: Claude, Workers AI (which stops
+      // at the neuron cap by itself), library facts. Guests keep the check, on their own keys.
+      const verdict = memberNoWall ? null : await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null, new Date(), { skipGlobal: chosenProvider !== "workers-ai", failClosed: chosenProvider === "workers-ai" && Boolean(budget && budget.guest) });
       if (verdict) {
         budgetCode = verdict.code;
         const limitedAt = nowIso();
@@ -1362,7 +1367,8 @@ export async function answerWithAi({
         if (!usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from the model"); }
       }
       // Workers AI records its own use; any other provider counts as one ask (no neurons) so the per-user cap still fills up.
-      if (chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
+      // (Research mode: a Claude answer counts too, so the per-user counter fills the same way on either hop.)
+      if (research ? provider !== "workers-ai" : chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
     } catch (providerErr) {
       fallbackNote = ` (after ${chosenProvider}: ${shortProviderError(providerErr)})`;
       if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
@@ -1533,7 +1539,9 @@ export async function answerWithAi({
     }
   } catch (err) {
     const failedAt = nowIso();
-    const msg = String((err && err.message) || err);
+    let msg = String((err && err.message) || err);
+    // Research mode, member: the stored error text is shown on the board and in Discord, so it is an in-voice line, never a raw message that could read as a wall.
+    if (memberNoWall) { console.error("ask failed:", msg); msg = memberLine(null, intentId); }
     await env.DB.prepare("UPDATE ask_turns SET status = 'error', answer = ?, answered_at = ? WHERE id = ?")
       .bind(msg, failedAt, intentId)
       .run()

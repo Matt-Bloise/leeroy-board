@@ -135,7 +135,7 @@ export async function checkAskBudget(env, keys, caps, now = new Date(), { skipGl
     const c = caps || resolveCaps(null);
     if (keys.tenantKey) {
       const t = await loadRow(env, keys.tenantKey, now, { strict: failClosed });
-      if (t.neurons >= (dailyCap(env) * c.tenantSharePct) / 100) return { code: "budget_tenant", retryAfter };
+      if (t.neurons >= (dailyCap(env) * (keys.tenantSharePct || c.tenantSharePct)) / 100) return { code: "budget_tenant", retryAfter };
     }
     if (keys.userKey && !keys.guest) {
       const u = await loadRow(env, keys.userKey, now);
