@@ -12,7 +12,7 @@
 // month is written (alert:claude-cap:YYYYMM, no names, no text). A counter write that fails pauses Claude for 10 minutes (module memory). Prices are NOT modelled
 // in code: the token cap is the bound (docs/runbooks/flags.md has the worst-case arithmetic).
 import { anthropicAvailable } from "../ai-keys.js";
-import { stripFence } from "../prompt-fence.js";
+import { stripFence, fence } from "../prompt-fence.js";
 import { buildNameMap, tokenise, detokenise, stripRestorableTokens, makeNonce } from "../privacy/tokenise.js";
 import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
@@ -85,11 +85,12 @@ export function usageTokens(usage, estimate) {
 
 // Safe upper bound on what one send costs, from the bytes actually sent (the JSON-escaped system and user strings, so quotes, newlines and control characters count as the
 // extra bytes they are). A token is never shorter than one byte, so UTF-8 bytes are a hard ceiling: every non-ASCII byte (CJK, emoji, accents, combining marks) counts as a whole
-// token, which is above any real tokenizer. ASCII counts at 0.65 token per byte (3 characters per token is the optimistic prose figure; dense code, digits and base64 run near
-// 0.75 and the 25% margin covers that (0.81 effective)). Then the margin, a fixed framing allowance, and the FULL max_tokens answer allowance, because a response is billed up to max_tokens.
-export const INPUT_ASCII_RATIO = 0.65;
-export const INPUT_MARGIN = 1.25;
+// token, which is above any real tokenizer; ASCII counts at one token per byte too (the same hard ceiling: dense code, digits and base64 cannot beat it). Then a 10% margin, a fixed framing
+// allowance, and the FULL max_tokens answer allowance, because a response is billed up to max_tokens. Never NaN or Infinity: a bad max_tokens means the answer allowance, a non-finite total the cap value.
+export const INPUT_ASCII_RATIO = 1;
+export const INPUT_MARGIN = 1.1;
 export const INPUT_FRAMING_TOKENS = 128;
+export const MAX_ESTIMATE = 1000000;
 export function estimateTokens(systemText, userText, maxTokens = RESEARCH_MAX_TOKENS) {
   let ascii = 0;
   let wide = 0; // UTF-8 bytes of everything above U+007F
@@ -102,7 +103,9 @@ export function estimateTokens(systemText, userText, maxTokens = RESEARCH_MAX_TO
       else wide += 3;
     }
   }
-  return Math.ceil((ascii * INPUT_ASCII_RATIO + wide) * INPUT_MARGIN) + INPUT_FRAMING_TOKENS + Math.max(0, Math.floor(maxTokens));
+  const out = typeof maxTokens === "number" && Number.isFinite(maxTokens) ? Math.max(0, Math.floor(maxTokens)) : RESEARCH_MAX_TOKENS;
+  const total = Math.ceil((ascii * INPUT_ASCII_RATIO + wide) * INPUT_MARGIN) + INPUT_FRAMING_TOKENS + out;
+  return Number.isFinite(total) ? total : MAX_ESTIMATE;
 }
 
 // One atomic statement: add the estimate only if the WHOLE reservation fits under the cap (both branches) (and the stored value is a plain integer). Rows come back only on success.
@@ -276,7 +279,9 @@ const notBilled = (e) => Boolean(e) && (e.code === "OUTBOUND_IDENTIFIER_LEAK" ||
 // Returns { answer, model, provider: "claude" } or { reason } (reason may be null: silent skip, e.g. no key configured).
 // call: callAnthropicClaude from ai-models.js (injected: this file must not import it back).
 // hardEndAt: absolute epoch ms the whole Claude hop must end by (the ask's start + its deadline - margin, from ai-models.js); the reservation writes count inside it.
-export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date(), hardEndAt = null, modeRule = "" }) {
+// The checks that decide, before anything is reserved or sent, that a compose call cannot happen. Returns null when compose may proceed, else { reason } (reason may be null: silent skip).
+// Shared by tryResearchClaude and the understand step, so understand never spends a send on an ask whose compose is sure to be skipped.
+export function composePrecheck(env, priv) {
   if (!anthropicAvailable(env)) return { reason: null };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
   if (!priv || !priv.ok) return { reason: (priv && priv.reason) || "tokenise:error" };
@@ -286,6 +291,13 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
     for (const seg of priv.partySegments) guardUserText([seg], priv.roster);
   } catch (e) { return { reason: guardReason(e) }; }
   if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
+  return null;
+}
+
+// restated: the understand step's validated rewrite. It goes into the USER prompt as a fenced data block, never the system prompt (modeRule only says how to treat that block).
+export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date(), hardEndAt = null, modeRule = "", restated = "" }) {
+  const pre = composePrecheck(env, priv);
+  if (pre) return pre;
 
   const budgetStart = Date.now(); // the 9 s / 6 s budgets start here, so the reservation write is inside them
   const hardEnd = Number(hardEndAt) > 0 ? Number(hardEndAt) : Infinity;
@@ -293,7 +305,10 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   const at = now();
   const cap = monthlyTokenCap(env);
   const system = modeRule ? `${priv.system}\n\n${modeRule}` : priv.system; // the understand step's static mode line (research/index.js), nothing else
-  const estimate = estimateTokens(system, priv.user);
+  const user = restated ? `${priv.user}
+
+${fence("RESTATED_QUESTION", restated)}` : priv.user; // what is actually sent: the estimate below covers all of it
+  const estimate = estimateTokens(system, user);
   try {
     if (!(await reserveTokens(env, estimate, cap, at))) {
       await alertOnce(env, cap, at);
@@ -316,7 +331,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
     return { reason: "claude:no-time" };
   }
   const beforeSend = (body) => guardBody(body, priv.roster);
-  const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: system, userPrompt: priv.user, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
+  const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: system, userPrompt: user, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
   let res;
   try {
     try {

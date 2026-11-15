@@ -1300,6 +1300,7 @@ export async function answerWithAi({
     const sendSystem = priv && priv.ok ? priv.system : systemPrompt;
     const sendUser = priv && priv.ok ? priv.user : userPrompt;
     let researchNote = "";
+    let understandNote = ""; // ASK_UNDERSTAND only: how the understand step ended, so its latency and fallbacks can be measured from ask_turns.model
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
@@ -1380,7 +1381,8 @@ export async function answerWithAi({
         else {
           // understand step (ASK_UNDERSTAND, research/understand.js): picks answer mode and depth and may restate the question; never blocks. It checks the hard end itself and runs before compose.
           const plan = await researchPlan({ env, priv, call: clampedCall, hardEndAt: hardEnd });
-          viaClaude = await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, call: clampedCall, modeRule: plan.rule });
+          viaClaude = await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, call: clampedCall, modeRule: plan.rule, restated: plan.restated });
+          understandNote = plan.note;
         }
         if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
@@ -1511,7 +1513,7 @@ export async function answerWithAi({
       "UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
     )
       // A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
-      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
+      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${understandNote}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
       .run();
 
     const statsRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();
