@@ -3,6 +3,8 @@
 // entry.updated is a full ISO time within the last 7 days and not in the future (the same idea as entryIsCurrent in the weekly post,
 // infrastructure/worker/weekly-post.js). 7 days rolling, because the board has no public play-night schedule. The document-level
 // `updated` is never used for this: any click by anyone moves it. Pure functions, no DOM; tests/unit/signups-week.test.mjs runs this file.
+// Known limit (kept on purpose, the weekly post has the same one): an entry has one `updated` for all its fields, so a pack, meeting-point or
+// time click this week re-stamps the entry and its older RSVP counts again. Telling them apart needs a stamp per field, a separate change.
 (() => {
 "use strict";
 const FRESH_MS = 7 * 24 * 3600 * 1000, SKEW_MS = 60 * 1000, NIGHT_MS = 12 * 3600 * 1000;
@@ -16,10 +18,12 @@ function isCurrent(entry, now) {
 // The RSVP and time-slot tallies over the given entries, in the server's shape ({ key: { count, names } }). Pack and meeting point are not here:
 // they are launch-night questions and keep the server's tallies.
 const own = (o, k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k); // never "constructor" or "__proto__"
-const who = (e) => String(e.name == null ? "" : e.name).trim().toLowerCase();
+// the board's cleanName (js/board.js): leading and trailing marks that are not letters or digits go, so "=Ada=" and "Ada" are one person
+const who = (e) => { const n = String(e.name == null ? "" : e.name); return (n.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "") || n).toLowerCase(); };
 function tallies(entries, whenKeys) {
   const slot = () => ({ count: 0, names: [] });
-  const rsvp = Object.fromEntries(RSVP_KEYS.map((k) => [k, slot()])), when = Object.fromEntries((whenKeys && whenKeys.length ? whenKeys : WHEN_KEYS).map((k) => [k, slot()]));
+  const keys = Array.isArray(whenKeys) ? whenKeys.filter((k) => typeof k === "string") : [];
+  const rsvp = Object.fromEntries(RSVP_KEYS.map((k) => [k, slot()])), when = Object.fromEntries((keys.length ? keys : WHEN_KEYS).map((k) => [k, slot()]));
   for (const e of entries) {
     const name = (e && e.name) || "Someone";
     if (e && own(rsvp, e.rsvp)) { rsvp[e.rsvp].count++; rsvp[e.rsvp].names.push(name); }
@@ -45,7 +49,8 @@ function week(S, now, launchMs) {
   const current = all.filter((e) => isCurrent(e, now)), now_ = new Set(current.map(who));
   // earlier: an older RSVP from someone with no entry this week (a person with an old and a new entry shows once, as this week's)
   const earlier = all.filter((e) => !current.includes(e) && RSVP_KEYS.includes(e.rsvp) && !now_.has(who(e)));
-  const stamps = all.map(stampOf).filter((x) => x !== null && x <= now + SKEW_MS), last = stamps.length ? Math.max(...stamps) : null;
+  // the last answers: the newest stamp on an entry that carries an RSVP (a pack-only click is not an answer, so it does not move this)
+  const stamps = all.filter((e) => RSVP_KEYS.includes(e.rsvp)).map(stampOf).filter((x) => x !== null && x <= now + SKEW_MS), last = stamps.length ? Math.max(...stamps) : null;
   const t = tallies(current, S && S.options && S.options.when);
   const total = current.filter((e) => RSVP_KEYS.includes(e.rsvp)).length; // answers this week; a current click on pack or meeting point alone is not one
   const signed = current.filter((e) => SIGNED.includes(e.rsvp)).length; // "out" answered but is not signed up
