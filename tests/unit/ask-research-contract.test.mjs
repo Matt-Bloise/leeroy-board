@@ -9,7 +9,7 @@ import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { lintResearchAnswer } from "../../infrastructure/worker/answer-lint.js";
 import { ABSTAIN_LINE } from "../../infrastructure/worker/self-rag.js";
 import { NOT_PUBLISHED_LINE } from "../../infrastructure/worker/ask-build.js";
-import { RESEARCH_RULES } from "../../infrastructure/worker/research/rules.js";
+import { RESEARCH_RULES, RESEARCH_VOICE_RULES, RESEARCH_STRUCTURE_RULES, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS } from "../../infrastructure/worker/research/rules.js";
 import { defuseLinks, neutraliseMentions, labelClassic, stripRefusals, takeSources, trimToSentences, fitToCap, researchPrepare, usableAnswer } from "../../infrastructure/worker/research/label.js";
 import { runEval } from "../../infrastructure/worker/eval.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
@@ -130,7 +130,8 @@ test("flag on: the code-written refusal is never returned, the model is called, 
   assert.notEqual(on.row.model, "abstain");
   assert.ok(on.prompt.includes(RESEARCH_RULES), "research rules in the prompt");
   assert.ok(!on.prompt.includes("The library has nothing on this question. Say so plainly"), "the old abstain rule must not be in the prompt");
-  assert.equal(on.bodies[0].max_tokens, 600);
+  assert.equal(on.bodies[0].max_tokens, RESEARCH_MAX_TOKENS);
+  assert.ok(RESEARCH_MAX_TOKENS > 350);
   assert.equal((await ask("who tanks tonight", { research: false, provider: "groq" })).bodies[0].max_tokens, 350, "flag off keeps the 350 budget");
   // the model itself writes the refusal: it is still not returned as the answer
   const echo = await ask(ABSTAIN_Q, { respond: () => `**${ABSTAIN_LINE}**` });
@@ -349,6 +350,49 @@ test("hostile input: forged placeholders do not clone links or print undefined; 
   labelClassic("[".repeat(100000) + "](x)", "");
   researchPrepare("[".repeat(100000), { groundingText: "" });
   assert.ok(Date.now() - t0 < 1500, `took ${Date.now() - t0}ms`);
+});
+
+// ---- voice pass: the original Leeroy (archaeology 2026-11-15 sections 2b and 4) ----
+
+test("voice: the research prompt carries the original-voice rules (testable features 1-13) after the structure rules, and persona.js is untouched", async () => {
+  const on = await ask(ABSTAIN_Q);
+  assert.ok(on.prompt.includes(RESEARCH_VOICE_RULES) && on.prompt.includes(RESEARCH_STRUCTURE_RULES));
+  assert.ok(on.prompt.indexOf(RESEARCH_STRUCTURE_RULES) < on.prompt.indexOf(RESEARCH_VOICE_RULES));
+  const v = RESEARCH_VOICE_RULES;
+  for (const [what, re] of [
+    ["Leeroy never Skippy", /you are Leeroy, never "Skippy"/],
+    ["smug, well-read, theatrical suffering", /smug, well-read, theatrically long-suffering/],
+    ["answer first, smile on the same line", /first sentence answers the question, and a smile may ride that same line/],
+    ["one voice beat in the first screen", /one voice beat in the first screen/],
+    ["at most one signature opener, only with a fact", /At most one signature opener or closing flourish, and only when it carries a fact/],
+    ["running bits only if true", /running bit[^.]*only when it is true/],
+    ["tease game/chat never real life, end warm", /tease game and chat behaviour[^.]*never real life[^.]*end warm/],
+    ["match register, casual 1 to 4 sentences, no headers", /1 to 4 plain sentences and no headers/],
+    ["information: bold labels, bullets, sources", /bold labels, short bullets and the sources line/],
+    ["imperative advice with trade-offs", /imperative advice is fine[^.]*\./],
+    ["length 600-900, never past 1500", /600 to 900 characters, never past 1500/],
+    ["follow-up", /PREVIOUS_QUESTION/],
+    ["what would settle it", /what would settle it/],
+  ]) assert.match(v, re, what);
+  assert.equal(RESEARCH_HARD_CHARS, 1500);
+  assert.ok(RESEARCH_HARD_CHARS < 2000);
+  // the old voice and the library-only rules are still in the prompt (persona untouched), research voice only in the research state
+  assert.ok(on.prompt.includes("VOICE: a confident, playful, well-read friend"));
+  const lib = await ask("who tanks tonight");
+  assert.ok(!lib.prompt.includes(RESEARCH_VOICE_RULES), "a library-answered question keeps today's prompt");
+  assert.ok(RESEARCH_RULES.includes(RESEARCH_VOICE_RULES) && RESEARCH_RULES.includes(RESEARCH_STRUCTURE_RULES));
+});
+
+test("voice: length bounds, hard 1500 and always under 2000, with a typical 600-900 character answer left whole", async () => {
+  const typical = `**Frost, and the wand says so.** You asked, so: frost for the kiting, fire only if you enjoy being the loudest thing in the dungeon. ${"Frost slows what it burns and the pack never reaches you. ".repeat(8)}\n*Do try to stay out of the fire, friend.*${SOURCES}`;
+  const t = await ask(ABSTAIN_Q, { respond: () => typical });
+  assert.ok(t.answer.length > 600 && t.answer.length <= 1500, String(t.answer.length));
+  assert.ok(t.answer.includes("loudest thing in the dungeon") && t.answer.includes("Do try to stay out of the fire"), "a 600-900 character answer is not cut");
+  const long = Array.from({ length: 80 }, (_, i) => `Sentence ${i % 5} keeps going about the weather in plain words.`).join(" ");
+  const l = await ask(ABSTAIN_Q, { respond: () => `**Weather is flavour only.**\n${long}${SOURCES}` });
+  assert.ok(l.answer.length <= RESEARCH_HARD_CHARS, String(l.answer.length));
+  const body = l.answer.split("\n").filter((x) => !/^\s*-#/.test(x)).join(" ").trim();
+  assert.match(body, /[.!?…*]$/);
 });
 
 test("provider forcing (c): flag off, the requested provider is used as before (Gemini asked -> Gemini fetch, no Workers AI)", async () => {

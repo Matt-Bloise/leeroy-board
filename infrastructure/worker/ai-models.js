@@ -26,7 +26,7 @@ import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
 import { researchEnabled, researchAnswer } from "./research/index.js";
-import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS } from "./research/rules.js";
+import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS } from "./research/rules.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
@@ -1074,7 +1074,7 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
     }
     // Research text step: refusal sentences out, labels, mention and link safety, whole-sentence trim, one sources line with one confidence word (appended after formatting).
     let researchBasis = null;
-    const researchCap = research ? Math.min(Number(persona && persona.format && persona.format.chatMaxChars) > 0 ? Number(persona.format.chatMaxChars) : 1900, 1900) : 0;
+    const researchCap = research ? RESEARCH_HARD_CHARS : 0; // the original voice runs 600-900 characters, hard 1500; the persona's 1200 chat cap would cut it (Discord's limit is 2000)
     if (research && !trusted) {
       const rp = researchPrepare(repaired, { groundingText: typeof groundingText === "string" ? groundingText : "", retrievedIds: retrieved ? retrieved.ids : null, budget: researchCap - 200 });
       repaired = rp.text;
