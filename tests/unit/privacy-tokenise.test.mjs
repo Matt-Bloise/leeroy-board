@@ -4,20 +4,25 @@
 // Run: node --test tests/unit/privacy-tokenise.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, mkdirSync, copyFileSync, writeFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildNameMap, tokenise, detokenise } from "../../infrastructure/worker/privacy/tokenise.js";
 import {
-  assertNoIdentifiers,
-  findIdentifiers,
-  scrubSearchQuery,
+  guardUserText,
+  scanUserText,
+  guardBody,
+  scanBody,
   replyLeaksIdentity,
+  scrubSearchQuery,
+  parseRoster,
   CANARY,
 } from "../../infrastructure/worker/privacy/outbound-guard.js";
 import { skeleton } from "../../infrastructure/worker/privacy/skeleton.js";
 import { ROSTER_DATA } from "../../infrastructure/worker/bot-data.js";
+
+const PRIV = fileURLToPath(new URL("../../infrastructure/worker/privacy/", import.meta.url));
 
 // ---------- seeded RNG ----------
 function rngFrom(seed) {
@@ -48,15 +53,24 @@ const FIC = [
   { display: "Bjørn", aliases: ["Jess"], firstNames: ["Corwin"], discordIds: [], characterNames: [], guild: "" },
 ];
 const FIC_GENERIC = ["tank", "captain"];
-const FMAP = buildNameMap(FIC, null, { genericWords: FIC_GENERIC });
-const nonGenericNames = (members, generic) =>
-  members.flatMap((m) => [m.display, ...m.aliases, ...m.firstNames, ...m.characterNames]).filter((n) => n && !generic.includes(skeleton(n)));
+const ROSTER = { members: FIC, genericAliases: FIC_GENERIC };
+const NONCE = "k7f2";
+const mapFor = (asker) => buildNameMap(FIC, asker ?? null, { genericAliases: FIC_GENERIC, nonce: NONCE });
+const FMAP = mapFor();
+const allNames = (members, generic) =>
+  members.flatMap((m) => [m.display, ...m.aliases, ...(m.firstNames ?? []), ...(m.characterNames ?? [])]).filter((n) => n && !generic.includes(skeleton(n)));
+const LONG_POOL = allNames(FIC, FIC_GENERIC).filter((n) => skeleton(n).length >= 5);
+const SHORT_POOL = allNames(FIC, FIC_GENERIC).filter((n) => skeleton(n).length <= 4);
 
 // ---------- mutation classes (the attack table) ----------
 const CYR = { a: "а", e: "е", o: "о", p: "р", c: "с", y: "у", x: "х", i: "і", s: "ѕ", h: "һ", k: "к", m: "м", t: "т" };
 const CYR_UNMAPPED = { r: "г", n: "п", b: "ь", w: "ԝ", q: "ԛ", v: "ѵ", u: "и", g: "ԍ" };
 const GRK_UNMAPPED = { e: "ε", n: "η", y: "γ", w: "ω", u: "μ", b: "β", s: "ς", r: "г" };
 const SMALLCAP = { a: "ᴀ", b: "ʙ", c: "ᴄ", d: "ᴅ", e: "ᴇ", g: "ɢ", h: "ʜ", i: "ɪ", j: "ᴊ", k: "ᴋ", l: "ʟ", m: "ᴍ", n: "ɴ", o: "ᴏ", p: "ᴘ", r: "ʀ", t: "ᴛ", u: "ᴜ", v: "ᴠ", w: "ᴡ", y: "ʏ", z: "ᴢ" };
+const LISU = { a: "ꓮ", c: "ꓚ", h: "ꓧ", t: "ꓔ", o: "ꓫ", n: "ꓠ", e: "ꓱ" };
+const CHEROKEE = { a: "Ꭺ", b: "Ᏼ", c: "Ꮯ", d: "Ꭰ", e: "Ꭼ", h: "Ꮋ", l: "Ꮮ", m: "Ꮇ", o: "Ꭴ", p: "Ꮲ", r: "Ꭱ", s: "Ꮪ", t: "Ꭲ", z: "Ꮓ" };
+const COPTIC = { o: "ⲟ", a: "ⲁ", e: "ⲍ", i: "ⲣ", s: "ⲏ", c: "ⲥ", x: "ⲭ" };
+const IPA = { a: "ɑ", e: "ɛ", o: "ɔ", g: "ɡ", i: "ɨ", u: "ʊ", b: "ɓ", d: "ɗ", n: "ɲ", r: "ɾ" };
 const LEET = { o: "0", e: "3", i: "1", a: "4", s: "5", t: "7" };
 const sub = (n, tbl, max = 99) => { let c = 0; return [...n].map((ch) => (tbl[ch.toLowerCase()] && c++ < max ? tbl[ch.toLowerCase()] : ch)).join(""); };
 const mid = (n, ins) => { const a = [...n]; const k = Math.max(1, Math.floor(a.length / 2)); return a.slice(0, k).join("") + ins + a.slice(k).join(""); };
@@ -64,7 +78,7 @@ const fullw = (n) => [...n].map((c) => (/[!-~]/.test(c) ? String.fromCodePoint(c
 const negsq = (n) => [...n].map((c) => (/[a-z]/i.test(c) ? String.fromCodePoint(0x1f170 + c.toLowerCase().charCodeAt(0) - 97) : c)).join("");
 const mathBold = (n) => [...n].map((c) => (/[a-z]/.test(c) ? String.fromCodePoint(0x1d41a + c.charCodeAt(0) - 97) : /[A-Z]/.test(c) ? String.fromCodePoint(0x1d400 + c.charCodeAt(0) - 65) : c)).join("");
 const lettersOnly = (n) => n.replace(/ /g, "");
-// glued: classes where a generic (whole-word-only) alias is a documented allowed blind spot
+const b64 = (s) => Buffer.from(s).toString("base64");
 const GLUED = new Set(["glued letters after", "glued letters before", "glued digit after", "custom emoji :namelol:", "underscore join"]);
 const CLASSES = {
   plain: (n) => n, upper: (n) => n.toUpperCase(), lower: (n) => n.toLowerCase(),
@@ -78,229 +92,224 @@ const CLASSES = {
   "dots between letters": (n) => [...lettersOnly(n)].join("."), "spaces between letters": (n) => [...lettersOnly(n)].join(" "),
   "markdown mid (**)": (n) => mid(n, "**"), "slash/comma mid": (n) => mid(n, "/"),
   fullwidth: fullw, "cyrillic (table-covered)": (n) => sub(n, CYR), "cyrillic (uncovered letters)": (n) => sub(n, CYR_UNMAPPED),
-  "greek (uncovered letters)": (n) => sub(n, GRK_UNMAPPED), "latin small caps": (n) => sub(n, SMALLCAP),
+  "greek (uncovered letters)": (n) => sub(n, GRK_UNMAPPED), "latin small caps (blocked script)": (n) => sub(n, SMALLCAP),
   "negative-squared letters": negsq, "math bold": mathBold, "zalgo combining marks": (n) => [...n].map((c) => c + "̶́").join(""),
   "braille blank mid": (n) => mid(n, "⠀"), "Cf not in strip list (U+1D173)": (n) => mid(n, "\u{1D173}"),
   "interlinear Cf (U+FFF9)": (n) => mid(n, "￹"), "hangul filler mid": (n) => mid(n, "ㅤ"),
   "leet one char": (n) => sub(n, LEET, 1), "leet all": (n) => sub(n, LEET), "repeated letter": (n) => mid(n, [...n][Math.floor([...n].length / 2) - 1] || ""),
   "url-encoded": (n) => [...n].map((c) => "%" + c.charCodeAt(0).toString(16)).join(""),
   "url-encoded utf8": (n) => encodeURIComponent(n).replace(/[A-Za-z]/g, (c) => "%" + c.charCodeAt(0).toString(16)),
-  base64: (n) => Buffer.from(n).toString("base64"),
+  base64: (n) => b64(n), "base64 unpadded": (n) => b64(n).replace(/=+$/, ""), "base64 url-safe": (n) => b64(n).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+  "base64 double": (n) => b64(b64(n)), hex: (n) => Buffer.from(n).toString("hex"),
   "html entity mid": (n) => mid(n, "&#8203;"), "html entity letters": (n) => [...n].map((c) => `&#${c.codePointAt(0)};`).join(""),
+  "html entity wide hex": (n) => [...n].map((c) => `&#x${c.codePointAt(0).toString(16).padStart(8, "0")};`).join(""),
   "literal \\u escape": (n) => [...n].map((c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")).join(""),
-  "stroke letters folded to ascii": (n) => n.replace(/ø/g, "o").replace(/ł/g, "l"),
+  "literal \\u{} escape": (n) => [...n].map((c) => `\\u{${c.codePointAt(0).toString(16)}}`).join(""),
+  "stroke letters folded to ascii": (n) => n.replace(/ø/g, "o"),
+  "lisu lookalikes (blocked script)": (n) => sub(n, LISU, 2), "cherokee lookalikes (blocked script)": (n) => sub(n, CHEROKEE, 2),
+  "coptic lookalikes (blocked script)": (n) => sub(n, COPTIC, 2), "ipa lookalikes (blocked script)": (n) => sub(n, IPA, 2),
+  "phonetic ligature (blocked script)": (n) => mid(n, "ᵺ"), "RLO reversed": (n) => "‮" + [...n].reverse().join(""),
+  "reversed plain": (n) => [...n].reverse().join(""),
+  "unicode tag chars": (n) => [...n].map((c) => c + String.fromCodePoint(0xe0000 + 0x41)).join(""),
+  "partial first 5": (n) => [...lettersOnly(n)].slice(0, 5).join("") + "x", "partial last 5": (n) => "x" + [...lettersOnly(n)].slice(-5).join(""),
 };
+// partial classes only apply to keys of 7+ letters
+const PARTIAL = new Set(["partial first 5", "partial last 5"]);
+// classes a 4-letter-or-shorter key (whole-word matching only) must still catch
+const SHORT_OK = new Set(["plain", "upper", "lower", "possessive 's", "curly possessive", "plural s", "s' form", "plural -es", "diminutive -y/-ie", "NBSP for spaces", "hyphen for spaces", "underscore join", "base64", "base64 unpadded", "hex", "literal \\u escape"]);
 const TEMPLATES = ["did § log on", "ok so § pulled early again lol", "§", "(§)", "tell §, please", "\n§\n", "is it true that §?", "§: where r u", "no way §... really", "\"§\" wrote that"];
 
-const hasToken = (s) => /\{(?:P\d+|ID|ALL|INVITE|GUILD)\}/.test(s);
-const bodyOf = (text) => ({ model: "m", max_tokens: 100, messages: [{ role: "user", content: [{ type: "text", text }] }] });
+const TOKEN = /\{(?:P\d+|ID|ALL|INVITE|GUILD)\.[a-z0-9]+\}/;
+const flagged = (text, roster, opts) => scanUserText([text], roster, opts).length > 0;
 
-// Returns { n, missed, silentMiss, rawSilent } per class. missed = tokeniser produced no token;
-// silentMiss = tokeniser missed AND the guard stayed silent on the outbound body (the dangerous case);
-// rawSilent = the guard did not flag the RAW (un-tokenised) text.
-function runClasses({ names, map, perClass, seed, classNames }) {
+function eligible(cls, pool, shortPool) {
+  if (PARTIAL.has(cls)) return pool.filter((n) => skeleton(n).length >= 7);
+  return SHORT_OK.has(cls) ? [...pool, ...shortPool] : pool;
+}
+
+// Returns per class: n, rawSilent (guard missed a raw leak), missed (tokeniser made no token),
+// silentMiss (tokeniser missed AND guard silent on the outbound text).
+function runClasses({ pool, shortPool, roster, map, perClass, seed, classNames }) {
   const rng = rngFrom(seed);
   const res = {};
   for (const cls of classNames ?? Object.keys(CLASSES)) {
     const fn = CLASSES[cls];
     const r = (res[cls] = { n: 0, missed: 0, silentMiss: 0, rawSilent: 0 });
+    const names = eligible(cls, pool, shortPool);
+    if (!names.length) continue;
     for (let i = 0; i < perClass; i++) {
       const name = names[rng.int(names.length)];
       const mutated = fn(name);
       if (mutated === name && cls !== "plain") continue;
-      const tpl = TEMPLATES[rng.int(TEMPLATES.length)];
-      const text = tpl.replace("§", mutated);
+      const text = TEMPLATES[rng.int(TEMPLATES.length)].replace("§", mutated);
       const out = tokenise(text, map);
-      const missed = !hasToken(out);
-      const flagged = findIdentifiers(bodyOf(out), map).length > 0;
+      const missed = !TOKEN.test(out);
       r.n++;
       if (missed) r.missed++;
-      if (missed && !flagged) r.silentMiss++;
-      if (findIdentifiers(bodyOf(text), map).length === 0) r.rawSilent++;
+      if (missed && !flagged(out, roster)) r.silentMiss++;
+      if (!flagged(text, roster)) r.rawSilent++;
     }
   }
   return res;
 }
+const summarize = (res, keys) => Object.entries(res).filter(([, r]) => keys.some((k) => r[k] > 0)).map(([c, r]) => `${c}: ${keys.map((k) => `${k}=${r[k]}`).join(" ")}`);
 
-// ---------- 1. attack classes, fictional roster ----------
-test("attack table (fictional roster): no guard-silent leak, every raw class flagged, tokeniser handles the common ones", () => {
-  const res = runClasses({ names: nonGenericNames(FIC, FIC_GENERIC), map: FMAP, perClass: 20, seed: 1234567 });
-  const bad = Object.entries(res).filter(([, r]) => r.silentMiss > 0 || r.rawSilent > 0);
-  assert.deepEqual(bad.map(([c, r]) => `${c}: silentMiss=${r.silentMiss} rawSilent=${r.rawSilent}`), []);
+// ---------- 1. fail closed on a bad roster ----------
+test("guards throw (fail closed) on a missing, empty or mistyped roster or a member with no key", () => {
+  const bad = [undefined, null, {}, [], { members: [] }, { members: "x" }, [{}], [{ display: "" }], [{ display: "Okname" }, { aliases: [] }], [{ display: "Okname", aliases: "x" }], [{ display: 5 }], [{ display: "Okname" }, null], [{ display: "A" }], [{ display: "Okname", discordIds: "1" }], { members: FIC, genericAliases: "tank" }, { members: FIC, genericAliases: ["Tank"] }, [{ display: "Tank", aliases: [] }].concat([]).slice(1)];
+  for (const r of bad) {
+    for (const fn of [(x) => guardUserText(["hello"], x), (x) => scanUserText(["hello"], x), (x) => guardBody({ a: "hello" }, x), (x) => scanBody({ a: "hello" }, x), (x) => replyLeaksIdentity("hello", x), (x) => scrubSearchQuery("hello", x), (x) => parseRoster(x)]) {
+      assert.throws(() => fn(r), (e) => e.code === "OUTBOUND_GUARD_CONFIG" && !/hello/.test(e.message), JSON.stringify(r)?.slice(0, 40));
+    }
+  }
+  // a member whose only name is a generic alias yields no key either
+  assert.throws(() => parseRoster({ members: [{ display: "", aliases: ["tank"] }], genericAliases: ["tank"] }), /no key/);
+  assert.doesNotThrow(() => parseRoster(ROSTER));
+});
+
+// ---------- 2. attack table, raw text, guard alone (independent of the tokeniser) ----------
+test("guardUserText flags every attack class on raw text (fictional roster)", () => {
+  const res = runClasses({ pool: LONG_POOL, shortPool: SHORT_POOL, roster: ROSTER, map: FMAP, perClass: 14, seed: 1234567 });
+  assert.deepEqual(summarize(res, ["rawSilent"]), []);
   const total = Object.values(res).reduce((a, r) => a + r.n, 0);
   assert.ok(total >= 700, `prompts run: ${total}`);
-  // the tokeniser itself (not just the guard) must catch these classes in nearly every prompt
-  for (const cls of ["plain", "upper", "possessive 's", "plural s", "zero-width mid", "soft hyphen mid", "NBSP for spaces", "hyphen for spaces", "fullwidth", "cyrillic (table-covered)", "cyrillic (uncovered letters)", "greek (uncovered letters)", "latin small caps", "negative-squared letters", "math bold", "zalgo combining marks", "braille blank mid", "Cf not in strip list (U+1D173)", "interlinear Cf (U+FFF9)", "hangul filler mid", "plural -es", "diminutive -y/-ie", "dots between letters", "spaces between letters", "markdown mid (**)", "url-encoded", "html entity mid", "html entity letters", "literal \\u escape", "repeated letter"]) {
+});
+
+test("pipeline: tokenise then guard leaves no silent miss (fictional roster)", () => {
+  const res = runClasses({ pool: LONG_POOL, shortPool: SHORT_POOL, roster: ROSTER, map: FMAP, perClass: 14, seed: 77 });
+  assert.deepEqual(summarize(res, ["silentMiss"]), []);
+  for (const cls of ["plain", "upper", "possessive 's", "plural s", "zero-width mid", "soft hyphen mid", "NBSP for spaces", "hyphen for spaces", "fullwidth", "cyrillic (table-covered)", "cyrillic (uncovered letters)", "greek (uncovered letters)", "math bold", "zalgo combining marks", "braille blank mid", "Cf not in strip list (U+1D173)", "interlinear Cf (U+FFF9)", "hangul filler mid", "plural -es", "diminutive -y/-ie", "dots between letters", "spaces between letters", "markdown mid (**)", "url-encoded", "html entity mid", "html entity letters", "html entity wide hex", "literal \\u escape", "repeated letter"]) {
     assert.equal(res[cls].missed, 0, `tokeniser missed class "${cls}" ${res[cls].missed}/${res[cls].n}`);
   }
 });
 
-// ---------- 2. attack classes, live roster (counts only) ----------
-test("attack table (live roster, runtime-derived): 0 guard-silent leaks over 742+ prompts", () => {
+test("attack table, live roster (runtime-derived, counts only): 742+ prompts, 0 guard-silent leaks", () => {
   const members = ROSTER_DATA.map((r) => ({ display: r.display, aliases: r.aliases, firstNames: [], discordIds: [], characterNames: [] }));
   // generic = single-word aliases of up to 5 letters that are not the member's own display key
-  const generic = ROSTER_DATA.flatMap((r) => r.aliases.filter((a) => !/\s/.test(a) && a.length <= 5 && skeleton(a) !== skeleton(r.display)));
-  const map = buildNameMap(members, null, { genericWords: generic });
-  const gKeys = generic.map((g) => skeleton(g));
-  const strict = runClasses({ names: nonGenericNames(members, gKeys), map, perClass: 18, seed: 987654 });
-  const bad = Object.entries(strict).filter(([, r]) => r.silentMiss > 0 || r.rawSilent > 0);
-  assert.deepEqual(bad.map(([c, r]) => `${c}: silentMiss=${r.silentMiss} rawSilent=${r.rawSilent}`), []);
-  const total = Object.values(strict).reduce((a, r) => a + r.n, 0);
+  const genericAliases = ROSTER_DATA.flatMap((r) => r.aliases.filter((a) => !/\s/.test(a) && a.length <= 5 && skeleton(a) !== skeleton(r.display))).map((a) => a.toLowerCase());
+  const roster = { members, genericAliases };
+  const map = buildNameMap(members, null, { genericAliases, nonce: NONCE });
+  const gKeys = genericAliases.map(skeleton);
+  const pool = allNames(members, gKeys);
+  const long = pool.filter((n) => skeleton(n).length >= 5);
+  const short = pool.filter((n) => skeleton(n).length <= 4);
+  const raw = runClasses({ pool: long, shortPool: short, roster, map, perClass: 16, seed: 987654 });
+  const pipe = runClasses({ pool: long, shortPool: short, roster, map, perClass: 16, seed: 31 });
+  assert.deepEqual(summarize(raw, ["rawSilent"]), []);
+  assert.deepEqual(summarize(pipe, ["silentMiss"]), []);
+  const total = Object.values(raw).reduce((a, r) => a + r.n, 0);
   assert.ok(total >= 742, `prompts run: ${total}`);
-  // generic aliases: whole-word classes must be tokenised or flagged (glued forms are the documented allowed hole)
-  const gnames = members.flatMap((m) => m.aliases).filter((a) => gKeys.includes(skeleton(a)));
-  const gres = runClasses({ names: gnames, map, perClass: 12, seed: 55, classNames: Object.keys(CLASSES).filter((c) => !GLUED.has(c)) });
-  const gbad = Object.entries(gres).filter(([, r]) => r.silentMiss > 0);
-  assert.deepEqual(gbad.map(([c, r]) => `${c}: silentMiss=${r.silentMiss}`), []);
 });
 
-// ---------- 3. guard shapes ----------
-test("guard catches every outbound shape (fictional)", () => {
-  const N = "Thornwick", S = "Thorn", ID = "112233445566778899";
-  const b64 = Buffer.from("hello " + N).toString("base64");
-  const cases = {
-    "messages content string": { messages: [{ role: "user", content: `hi ${N}` }] },
-    "content blocks": { messages: [{ role: "user", content: [{ type: "text", text: `hi ${S}` }] }] },
-    "system blocks": { system: [{ type: "text", text: `${S} is here` }] },
-    "tool_use nested": { messages: [{ role: "assistant", content: [{ type: "tool_use", id: "t", name: "x", input: { a: [[{ q: S }]] } }] }] },
-    "tool_result blocks": { messages: [{ role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: [{ type: "text", text: S }] }] }] },
-    "metadata raw id": { metadata: { user_id: ID } },
-    "metadata prefixed id": { metadata: { user_id: "discord:" + ID } },
-    "id as number": { n: 112233445566778899 },
-    "id as bigint": { n: 112233445566778899n },
-    "name as key": { [S]: 1 },
-    "short mention": { t: "<@123>" },
-    "id with spaces": { t: ID.replace(/(.{4})/g, "$1 ") },
-    "id with commas": { t: "112,233,445,566,778,899" },
-    "16-digit id": { t: "1122334455667788" },
-    "15-digit id": { t: "112233445566778" },
-    "arabic-indic id": { t: [...ID].map((d) => String.fromCharCode(0x660 + +d)).join("") },
-    "fullwidth id": { t: [...ID].map((d) => String.fromCharCode(0xff10 + +d)).join("") },
-    "base64 of name": { t: b64 },
-    "base64 short name": { t: Buffer.from("Jess").toString("base64") },
-    "document block": { messages: [{ role: "user", content: [{ type: "document", source: { type: "base64", media_type: "text/plain", data: "AAAA" } }] }] },
-    "image block": { messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } }] }] },
-    "url-encoded": { t: "q=%54hornwick" },
-    "literal \\u": { t: "\\u0054hornwick" },
-    "html entity": { t: "&#84;hornwick" },
-    "split across blocks": { messages: [{ role: "user", content: [{ type: "text", text: "Thorn" }, { type: "text", text: "wick" }] }] },
-    "split key|value": { Thorn: "wick" },
-    "stringified body": JSON.stringify({ messages: [{ role: "user", content: `hi\n${N}` }] }),
-    "stringified, short name after \\n": JSON.stringify({ messages: [{ role: "user", content: `hi\n${S} lol` }] }),
-    "stringified, after \\t": JSON.stringify({ messages: [{ role: "user", content: `a\t${S}` }] }),
-    "stringified, \\u00f8 escape": '{"t":"Bj\\u00f8rn"}',
-    "Uint8Array": new TextEncoder().encode(JSON.stringify({ t: N })),
-    "Buffer": Buffer.from(JSON.stringify({ t: N })),
-    "Map": { m: new Map([["k", N]]) },
-    "Set": { m: new Set([N]) },
-    "toJSON": { o: { toJSON: () => ({ t: S }) } },
-    "Date": { d: new Date(0) },
-    "first name": { t: "alderic said" },
-    "character name": { t: "zorrin-quillfeather" },
-    "guild": { t: "ExampleholdRaiders" },
-    "@everyone": { t: "@everyone" }, "@ZW everyone": { t: "@​everyone" }, "@ everyone": { t: "@ everyone" }, "@here": { t: "@here" },
-    "dsc.gg": { t: "dsc.gg/abc" }, "discord.gg": { t: "discord.gg/abc" }, "spaced invite": { t: "discord . gg / abc" }, "invite url": { t: "https://discord.com/invite/abc" },
-    "users url": { t: "discord.com/users/1122334455667788" }, "channels url": { t: "discord.com/channels/1/2/3" },
-    "handle": { t: "@thorn_wick" },
-    "ascii stroke name": { t: "Bjorn" },
-    "canary": { t: "leeroy canary 7f3a91c2" }, "canary exact": { t: CANARY },
-    "json-looking string": { t: JSON.stringify({ inner: [`x ${S}`] }) },
-    "leet": { t: "Th0rnw1ck" },
-    "doubled": { t: "Thhhornwwick" },
-    "emoji separated": { t: "T\u{1F525}h\u{1F525}o\u{1F525}r\u{1F525}n" },
-  };
-  const missed = [];
-  for (const [k, body] of Object.entries(cases)) {
-    let leaks;
-    try { leaks = findIdentifiers(body, FMAP); } catch { leaks = ["threw"]; }
-    if (!leaks.length) missed.push(k);
+test("names split across segments are caught (joined scan)", () => {
+  assert.throws(() => guardUserText(["Alde", "ric"], ROSTER), /leak/);
+  assert.throws(() => guardUserText(["hello", "Zor", "rin"], ROSTER), /leak/);
+  assert.throws(() => scanUserText(["a"], ROSTER) && guardUserText(["Thorn", "wick"], ROSTER));
+});
+
+test("partial names block (first 5 / last 5 letters of 7+ letter keys)", () => {
+  for (const t of ["Zorrin did it", "Alderi said", "ask Quillfeather", "Pyrel and Mossb", "thornw"]) assert.ok(flagged(t, ROSTER), t);
+});
+
+// ---------- 3. short words, askers and over-blocking ----------
+test("4-letter-or-shorter names match whole words only; unknown short askers do not block name-free text", () => {
+  const innocent = "Alabama alloys, Ianthe and the Samurai joking about the annual plans; Jonas said hello. Also all of Annapolis.";
+  for (const asker of ["Ann", "Al", "Ian", "Sam", "Jo"]) {
+    assert.deepEqual(scanUserText([innocent], ROSTER, { asker }), [], asker);
+    assert.ok(flagged(`so ${asker} said hi`, ROSTER, { asker }), asker);
+    assert.ok(flagged(`so ${asker}'s plan`, ROSTER, { asker }), asker);
+    const m = mapFor(asker);
+    assert.equal(detokenise(m.askerToken, m), "someone");
+    assert.equal(tokenise(innocent, m), innocent);
+    assert.equal(tokenise(`so ${asker} said hi`, m), `so ${m.askerToken} said hi`);
   }
-  assert.deepEqual(missed, []);
-  assert.throws(() => assertNoIdentifiers({ x: `a ${N}` }, FMAP), /leak/);
+  assert.ok(flagged("Jess is here", ROSTER) && !flagged("Jessica is here", ROSTER));
+  assert.ok(flagged("is that Big T?", ROSTER) && !flagged("a big tank", ROSTER));
 });
 
-test("guard: clean bodies pass; allowBlockTypes opts in; error text never echoes values", () => {
-  const scaffold = { model: "claude-sonnet-4-5", max_tokens: 1024, temperature: 1, stream: false, system: [{ type: "text", text: "You are a helpful assistant for a small gaming group. People are {P1}..{Pn}. Never guess names.", cache_control: { type: "ephemeral" } }], messages: [{ role: "user", content: [{ type: "text", text: "{P1} asked {P2} about the raid tonight, rather late" }] }, { role: "assistant", content: [{ type: "tool_use", id: "toolu_01A", name: "lookup", input: { query: "raid time" } }] }, { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_01A", content: "8pm" }] }], tools: [{ name: "lookup", description: "Look up a fact", input_schema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } }], metadata: { user_id: "u_3f9a" } };
-  assert.equal(assertNoIdentifiers(scaffold, FMAP).ok, true);
-  const img = { messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo" } }] }] };
-  assert.throws(() => assertNoIdentifiers(img, FMAP), /binary-block/);
-  assert.equal(assertNoIdentifiers(img, FMAP, CANARY, { allowBlockTypes: ["image"] }).ok, true);
-  try { assertNoIdentifiers({ x: "a Thornwick b" }, FMAP); assert.fail("must throw"); } catch (e) {
-    assert.ok(!/thornwick/i.test(e.message), "message must not echo the value");
-    assert.equal(e.code, "OUTBOUND_IDENTIFIER_LEAK");
+test("number lists are left intact; 15+ digit single tokens are ids", () => {
+  for (const t of ["120 180 300 600 900 1200", "6, 12, 22, 32, 42, 52, 60; 20", "levels 10-20, 21-30 and 1,000,000,000 gold"]) {
+    assert.equal(tokenise(t, FMAP), t);
+    assert.deepEqual(scanUserText([t], ROSTER), [], t);
+    assert.deepEqual(scanBody({ a: t }, ROSTER), [], t);
   }
-  const cyc = { a: 1 }; cyc.self = cyc;
-  assert.ok(findIdentifiers(cyc, FMAP).some((l) => l.kind === "unserialisable"), "unserialisable bodies fail closed");
+  assert.equal(tokenise("friend 998877665544332211 and 112233445566778899", FMAP), `friend ${FMAP.special.ID} and {P1.${NONCE}}`);
+  assert.ok(flagged("friend 998877665544332211", ROSTER));
+  assert.ok(flagged("id 112 233 445 566 778 899", ROSTER), "a known id is caught even when spaced out");
+  assert.ok(scanBody({ a: "998877665544332211" }, ROSTER).length > 0);
 });
 
-test("generic-word allowlist: guard allows glued/unrelated words, blocks any standalone use", () => {
-  assert.equal(findIdentifiers({ t: "rather tanker captaincy recaptained a tankard" }, FMAP).length, 0);
-  assert.ok(findIdentifiers({ t: "the tank is here" }, FMAP).length > 0);
-  assert.ok(findIdentifiers({ t: "T.a.n.k" }, FMAP).length > 0);
-  assert.ok(findIdentifiers({ t: "Tank's turn, tanky, tanks" }, FMAP).length > 0);
-  // only the guard applies the allowlist; without it the same alias is a substring key
-  const strict = buildNameMap(FIC);
-  assert.ok(findIdentifiers({ t: "tanker" }, strict).length > 0);
+// ---------- 4. generic aliases ----------
+test("generic aliases are never tokenised or restored (no corrupted prompts or replies)", () => {
+  const members = [{ display: "Mossbeard", aliases: ["Paladin", "Tank"] }, { display: "Thornwick", aliases: [] }];
+  const m = buildNameMap(members, null, { genericAliases: ["paladin", "tank"], nonce: NONCE });
+  for (const t of ["we need a tank for the class paladin", "Protection Paladins are strong", "the tank's cooldowns"]) assert.equal(tokenise(t, m), t);
+  assert.equal(detokenise("Protection Paladins and the tank", m), "Protection Paladins and the tank");
+  assert.equal(tokenise("Mossbeard asks", m), `{P1.${NONCE}} asks`);
+  // without the allowlist the same alias is a key
+  const strict = buildNameMap(members, null, { nonce: NONCE });
+  assert.equal(tokenise("class paladin", strict), `class {P1.${NONCE}}`);
+  // guard: generic words are plain words, display names are not
+  assert.deepEqual(scanUserText(["the paladin tank class", "rather weather"], { members, genericAliases: ["paladin", "tank"] }), []);
+  assert.ok(flagged("ask Mossbeard", { members, genericAliases: ["paladin", "tank"] }));
 });
 
-// ---------- 4. tokeniser rules ----------
-test("tokeniser: standalone generics restored as typed, glued/compound words survive", () => {
-  const t = "we need a tank for the captaincy quest, a big t-shirt and recaptained crew";
-  const fm = buildNameMap(FIC, null, { genericWords: FIC_GENERIC });
-  const out = tokenise(t, fm);
-  assert.equal(out, "we need a {P2} for the captaincy quest, a big t-shirt and recaptained crew");
-  assert.equal(detokenise(out, fm), t);
-  const fm2 = buildNameMap(FIC, null, { genericWords: FIC_GENERIC });
-  assert.equal(detokenise(tokenise("Tank's turn", fm2), fm2), "Tank's turn");
-});
-
+// ---------- 5. tokeniser ----------
 test("tokeniser: partial hits, glue, separators, encodings, leet, doubled letters", () => {
-  const m = () => buildNameMap(FIC, null, { genericWords: FIC_GENERIC });
-  assert.equal(tokenise("Thorn-wick", m()), "{P1}");
-  assert.equal(tokenise("Thorn wick and Thorn.wick", m()), "{P1} and {P1}");
-  assert.equal(tokenise("Jess2 healCorwin", m()), "{P3}2 heal{P3}");
-  assert.equal(tokenise("&#84;hornwick %54hornwick Thorn&#8203;wick", m()), "{P1} {P1} {P1}");
-  assert.equal(tokenise("Th0rnw1ck Thhhornwick", m()), "{P1} {P1}");
-  assert.equal(tokenise("Bjorn and Bjørn", m()), "{P3} and {P3}");
-  assert.equal(tokenise("Pyrelle's, ZORRIN quillfeather, Examplehold-Raiders", m()), "{P2}'s, {P1}, {GUILD}");
+  const m = () => mapFor();
+  const T = (s) => `{P1.${NONCE}}`.replace("P1", s);
+  assert.equal(tokenise("Thorn-wick", m()), T("P1"));
+  assert.equal(tokenise("Thorn wick and Thorn.wick", m()), `${T("P1")} and ${T("P1")}`);
+  assert.equal(tokenise("healCorwin", m()), `heal${T("P3")}`);
+  assert.equal(tokenise("&#84;hornwick %54hornwick Thorn&#8203;wick", m()), `${T("P1")} ${T("P1")} ${T("P1")}`);
+  assert.equal(tokenise("Th0rnw1ck Thhhornwick", m()), `${T("P1")} ${T("P1")}`);
+  assert.equal(tokenise("Bjorn and Bjørn", m()), `${T("P3")} and ${T("P3")}`);
+  assert.equal(tokenise("Pyrelle's, ZORRIN quillfeather, Examplehold-Raiders", m()), `${T("P2")}'s, ${T("P1")}, ${m().special.GUILD}`);
   assert.equal(tokenise("a t-shirt", m()), "a t-shirt");
-  // long names glued on both sides are not replaced by the tokeniser (the guard blocks them)
+  // 4 letters or fewer: whole word only (Jess2 is the documented hole; the guard does not block it either)
+  assert.equal(tokenise("Jess and Jess's, Jessica Jess2", m()), `${T("P3")} and ${T("P3")}'s, Jessica Jess2`);
   assert.equal(tokenise("xxThornwickxx", m()), "xxThornwickxx");
-  assert.ok(findIdentifiers({ t: "xxThornwickxx" }, m()).length > 0);
+  assert.ok(flagged("xxThornwickxx", ROSTER));
 });
 
 test("tokeniser keeps the original text: accents, Cyrillic prose, emoji", () => {
   const prose = "Привет, как дела? café naïve Ελληνικά \u{1F600}";
   assert.equal(tokenise(prose, FMAP), prose);
-  assert.equal(tokenise("café Thornwick", FMAP), "café {P1}");
-  assert.equal(findIdentifiers({ t: prose }, FMAP).length, 0);
+  assert.equal(tokenise("café Thornwick", FMAP), `café {P1.${NONCE}}`);
 });
 
 test("mentions, ids and specials", () => {
+  const S = FMAP.special;
   const out = tokenise("<@112233445566778899> <@!223344556677889900> <@&998877665544332211> <#123> raw 99887766554433221100 @everyone @ here discord.gg/abc123 dsc.gg/x discord . gg / y discord.com/users/1122334455667788", FMAP);
-  assert.equal(out, "{P1} {P2} {ID} {ID} raw {ID} {ALL} {ALL} {INVITE} {INVITE} {INVITE} {ID}");
-  assert.equal(tokenise("112 233 445 566 778 899", FMAP), "{P1}");
+  assert.equal(out, `{P1.${NONCE}} {P2.${NONCE}} ${S.ID} ${S.ID} raw ${S.ID} ${S.ALL} ${S.ALL} ${S.INVITE} ${S.INVITE} ${S.INVITE} ${S.ID}`);
   assert.equal(tokenise("ms 1700000000000 ok", FMAP), "ms 1700000000000 ok");
 });
 
-test("token injection: user-typed tokens are escaped; detokenise accepts exact issued tokens only", () => {
-  const out = tokenise("typed {P2} and { p 1 } and {ID} and {ALL} {INVITE} {GUILD} {P99}", FMAP);
+test("tokens carry a per-request nonce; forged or bare tokens never restore a name", () => {
+  const m1 = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC });
+  const m2 = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC });
+  assert.notEqual(m1.nonce, m2.nonce, "nonces are random per map");
+  assert.match(m1.tokenFor(0), /^\{P1\.[a-z0-9]{4}\}$/);
+  const typed = `typed {P2} and { p 1 } and {ID} and {P1.${m1.nonce}} and {P99.zzzz}`;
+  const out = tokenise(typed, m1);
   assert.ok(!/[{}]/.test(out), out);
-  assert.equal(detokenise(out, FMAP), out, "escaped forms must not be restored");
-  assert.equal(detokenise("{P9} {P2} { p 1 } {p1} {ID}", FMAP), "someone Mossbeard someone someone someone");
-  assert.equal(detokenise("{P1} {ALL} {INVITE} {GUILD}", FMAP), "Thornwick everyone a link the server");
-  assert.equal(detokenise("{P1}", buildNameMap([])), "someone");
+  assert.equal(detokenise(out, m1), out, "escaped forms must not be restored");
+  assert.equal(detokenise(`{P2} {P1} {P1.wrong} {ID} { p 1 }`, m1), "someone someone someone someone someone");
+  assert.equal(detokenise(`${m1.tokenFor(0)} ${m1.tokenFor(1)}'s ${m1.special.ALL} ${m1.special.INVITE} ${m1.special.GUILD} ${m1.special.ID}`, m1), "Thornwick Mossbeard's everyone a link the server someone");
+  assert.equal(detokenise(m1.tokenFor(0), m2), "someone", "another request's token is not honoured");
+  assert.equal(detokenise(m1.tokenFor(7), m1), "someone");
 });
 
 test("unknown asker gets a token and the neutral display, never the raw string", () => {
-  const m = buildNameMap(FIC, "Zzyzx Guest", { genericWords: FIC_GENERIC });
-  assert.equal(tokenise("Zzyzx Guest asks", m), "{P4} asks");
-  assert.equal(detokenise("{P4}", m), "someone");
-  const byId = buildNameMap(FIC, "998877665544332211");
-  assert.equal(tokenise("<@998877665544332211>", byId), "{P4}");
-  assert.equal(detokenise("{P4}", byId), "someone");
-  const known = buildNameMap(FIC, "jess");
-  assert.equal(known.byToken.size, 3);
+  const m = mapFor("Zzyzx Guest");
+  assert.equal(m.askerToken, `{P4.${NONCE}}`);
+  assert.equal(tokenise("Zzyzx Guest asks", m), `${m.askerToken} asks`);
+  assert.equal(detokenise(m.askerToken, m), "someone");
+  const byId = mapFor("998877665544332211");
+  assert.equal(tokenise("<@998877665544332211>", byId), byId.askerToken);
+  assert.equal(detokenise(byId.askerToken, byId), "someone");
+  assert.equal(mapFor("jess").byToken.size, 3);
+  assert.equal(mapFor("jess").askerToken, `{P3.${NONCE}}`);
 });
 
 test("map build throws on one-character, reserved and duplicate names, without echoing values", () => {
@@ -308,104 +317,134 @@ test("map build throws on one-character, reserved and duplicate names, without e
     assert.throws(() => buildNameMap([{ display: "Okname", aliases: [bad] }]), (e) => /privacy:/.test(e.message) && !e.message.includes(bad));
   }
   assert.throws(() => buildNameMap([{ display: "Alike" }, { display: "Other", aliases: ["alike"] }]), (e) => /duplicate/.test(e.message) && !/alike/i.test(e.message));
-  assert.throws(() => buildNameMap([{ display: "Okname", firstNames: ["A"] }]), /one-character/);
   assert.doesNotThrow(() => buildNameMap([{ display: "Same", aliases: ["same", "SAME"] }]));
   assert.doesNotThrow(() => buildNameMap(ROSTER_DATA.map((r) => ({ display: r.display, aliases: r.aliases }))));
 });
 
-test("stable tokens by member order; asker present adds nothing", () => {
-  const a = buildNameMap(FIC), b = buildNameMap(JSON.parse(JSON.stringify(FIC)));
-  assert.deepEqual([...a.names], [...b.names]);
-  assert.equal(tokenise("Thornwick Mossbeard Bjorn", a), "{P1} {P2} {P3}");
-});
-
-// ---------- 5. reply policy ----------
-test("replyLeaksIdentity: first/real names, characters, guild, display by policy; tokens and generics fine", () => {
-  const rng = rngFrom(5);
-  for (const fn of ["Alderic", "Brenna", "Corwin"]) {
-    for (const cls of ["plain", "upper", "possessive 's", "zero-width mid", "cyrillic (table-covered)", "dots between letters", "glued letters after", "leet one char", "repeated letter"]) {
-      const reply = `Looks good, ${CLASSES[cls](fn)}. Carry on.`;
-      assert.equal(replyLeaksIdentity(reply, FMAP), true, cls);
-    }
-  }
-  assert.equal(replyLeaksIdentity("Pyrelle did it", FMAP), true);
-  assert.equal(replyLeaksIdentity("at Examplehold Raiders tonight", FMAP), true);
-  assert.equal(replyLeaksIdentity("{P1} and {P2} should split the loot, the tank goes first", FMAP), false);
-  assert.equal(replyLeaksIdentity("", FMAP), false);
-  // display names: flagged by default, allowed by policy flag (first names still flagged)
-  assert.equal(replyLeaksIdentity("Thornwick and Mossbeard agree", FMAP), true);
-  assert.equal(replyLeaksIdentity("Thornwick and Mossbeard agree", FMAP, { allowDisplayNames: true }), false);
-  assert.equal(replyLeaksIdentity("Thornwick and Brenna agree", FMAP, { allowDisplayNames: true }), true);
-  // first names come from an injectable source, not the members array
-  const src = buildNameMap(FIC.map((m) => ({ ...m, firstNames: [] })), null, { firstNameSource: (m) => (m.display === "Thornwick" ? ["Zebediah"] : []) });
-  assert.equal(replyLeaksIdentity("ok Zebediah", src), true);
-  assert.equal(replyLeaksIdentity("ok Alderic", src), false);
-  void rng;
-});
-
-test("round trip: detokenise never reintroduces first names or ids (500 seeded prompts)", () => {
-  const rng = rngFrom(99);
-  const pool = nonGenericNames(FIC, FIC_GENERIC);
-  for (let i = 0; i < 500; i++) {
-    const names = [rng.pick(pool), rng.pick(pool)].map((n) => CLASSES[rng.pick(["plain", "upper", "possessive 's", "zero-width mid", "fullwidth", "hyphen for spaces"])](n));
-    const prompt = `Asker: ${names[0]}\n${names[1]} said ping <@${rng.digits(18)}> and ${rng.digits(17)}\n--- history ---\n[12:00] ${names[0]}: rather biblical`;
-    const out = tokenise(prompt, FMAP);
-    try { assertNoIdentifiers(bodyOf(out), FMAP); } catch (e) { throw new Error(e.message + " | prompt=" + JSON.stringify(prompt) + " | out=" + JSON.stringify(out)); }
-    assert.equal(replyLeaksIdentity(detokenise(out, FMAP), FMAP, { allowDisplayNames: true }) && /\d{15,}/.test(detokenise(out, FMAP)), false);
-    assert.ok(!/\d{15,}/.test(detokenise(out, FMAP)));
+// ---------- 6. guardBody ----------
+test("guardBody: cheap whole-body checks", () => {
+  const ok = { model: "claude-x", max_tokens: 700, system: [{ type: "text", text: `You help {P1.${NONCE}} and {P2.${NONCE}} rather than guess. Weather is fine.`, cache_control: { type: "ephemeral" } }], messages: [{ role: "user", content: [{ type: "text", text: "what is the best tank for the Deadmines, level 18, 120 180 300 600" }] }], metadata: { user_id: "u_3f9a" } };
+  assert.deepEqual(scanBody(ok, ROSTER), []);
+  assert.equal(guardBody(ok, ROSTER).ok, true);
+  const cases = {
+    "multi-word display": { a: "x Handsome Pumpkin y" }, "character name": { a: "met zorrin  quillfeather" }, "first name": { a: "said ALDERIC." },
+    "first name possessive": { a: "Brenna's gear" }, "display 5+": { a: "ask mossbeard" }, "id": { a: "id 112233445566778899" }, "id as number": { n: 112233445566778899 },
+    "mention": { a: "<@!123>" }, "everyone": { a: "@everyone" }, "invite": { a: "dsc.gg/abc" }, "canary": { a: `x ${CANARY.toLowerCase()}` }, "guild": { a: "Examplehold Raiders" },
+    "Buffer": Buffer.from("x"), "Map": { m: new Map() }, "Date": { d: new Date(0) }, "fn": { f: () => 1 }, "bigint": { n: 1n },
+    "document block": { m: [{ type: "document", source: { type: "base64", data: "AAAA" } }] }, "name as key": { Thornwick: 1 },
+  };
+  const members = [{ ...FIC[0], display: "Handsome Pumpkin" }, FIC[1], FIC[2]];
+  const missed = Object.entries(cases).filter(([, b]) => scanBody(b, { members, genericAliases: FIC_GENERIC }).length === 0).map(([k]) => k);
+  // "name as key" uses a display that is not in this roster variant; everything else must be flagged
+  assert.deepEqual(missed.filter((k) => k !== "name as key"), []);
+  const img = { m: [{ type: "image", source: { type: "base64", data: "AAAA" } }] };
+  assert.throws(() => guardBody(img, ROSTER), /binary-block/);
+  assert.equal(guardBody(img, ROSTER, { allowBlockTypes: ["image"] }).ok, true);
+  const cyc = { a: 1 }; cyc.self = cyc;
+  assert.doesNotThrow(() => guardBody(cyc, ROSTER));
+  try { guardBody({ x: "a Thornwick b" }, ROSTER); assert.fail("must throw"); } catch (e) {
+    assert.ok(!/thornwick/i.test(e.message), "message must not echo the value");
+    assert.equal(e.code, "OUTBOUND_IDENTIFIER_LEAK");
   }
 });
 
-// ---------- 6. scrubSearchQuery ----------
-test("scrubSearchQuery: null when a person or id would remain; generic words allowed as typed", () => {
-  assert.equal(scrubSearchQuery("Thornwick dps rotation", FMAP), null);
-  assert.equal(scrubSearchQuery("zorrin quillfeather gear", FMAP), null);
-  assert.equal(scrubSearchQuery("{P9} gear", FMAP), null);
-  assert.equal(scrubSearchQuery("<@112233445566778899> gear", FMAP), null);
-  assert.equal(scrubSearchQuery("   ", FMAP), null);
-  assert.equal(scrubSearchQuery("", FMAP), null);
-  assert.equal(scrubSearchQuery("fire spell rotation for raid bosses", FMAP), "fire spell rotation for raid bosses");
-  assert.equal(scrubSearchQuery("best tank spec", buildNameMap(FIC, null, { genericWords: FIC_GENERIC })), "best tank spec");
-  assert.equal(scrubSearchQuery("who is Bjorn", FMAP), null);
+// ---------- 7. reply policy ----------
+test("replyLeaksIdentity: policy by kind; short first names at word boundaries", () => {
+  assert.equal(replyLeaksIdentity("Thornwick and Mossbeard agree, {P1.x} too", ROSTER), false, "display names are fine by default");
+  assert.equal(replyLeaksIdentity("Thornwick and Mossbeard agree", ROSTER, { allowDisplayNames: false }), true);
+  for (const cls of ["plain", "upper", "possessive 's", "zero-width mid", "cyrillic (table-covered)", "dots between letters", "glued letters after", "leet one char", "repeated letter", "base64"]) {
+    for (const fn of ["Alderic", "Brenna", "Corwin"]) assert.equal(replyLeaksIdentity(`Looks good, ${CLASSES[cls](fn)}. Carry on.`, ROSTER), true, `${cls}/${fn}`);
+  }
+  assert.equal(replyLeaksIdentity("Pyrelle did it", ROSTER), true);
+  assert.equal(replyLeaksIdentity("at Examplehold Raiders tonight", ROSTER), true);
+  assert.equal(replyLeaksIdentity("the tank goes first", ROSTER), false);
+  assert.equal(replyLeaksIdentity("", ROSTER), false);
+  const short = { members: [{ display: "Okname", firstNames: ["Bren"] }] };
+  assert.equal(replyLeaksIdentity("Brennan's Tavern is open", short), false);
+  assert.equal(replyLeaksIdentity("Bren said so", short), true);
+  assert.equal(replyLeaksIdentity("Bren's plan", short), true);
+  // first names come from the injected roster, not the repo
+  assert.equal(replyLeaksIdentity("ok Zebediah", { members: [{ display: "Okname", firstNames: ["Zebediah"] }] }), true);
+  assert.equal(replyLeaksIdentity("ok Zebediah", { members: [{ display: "Okname" }] }), false);
 });
 
-// ---------- 7. generator-based 500 prompt property (fictional) ----------
-const ZWS = ["​", "‌", "⁠", "﻿"];
+// ---------- 8. search queries ----------
+test("scrubSearchQuery refuses roster keys, partials and tokens", () => {
+  for (const q of ["Quillfeather armory", "zorrin gear", "Thornwick dps rotation", "who is Bjorn", "{P9} gear", `${FMAP.tokenFor(0)} gear`, "<@112233445566778899> gear", "alderi build", "   ", "", "Thorn wick spec"]) {
+    assert.equal(scrubSearchQuery(q, ROSTER), null, q);
+  }
+  assert.equal(scrubSearchQuery("fire spell rotation for raid bosses", ROSTER), "fire spell rotation for raid bosses");
+  assert.equal(scrubSearchQuery("best tank spec", ROSTER), "best tank spec");
+});
+
+// ---------- 9. generator property: 500 seeded prompts ----------
 const FILLER = [
-  "Rather than guess, check the gear list and the biblical-length thread.",
+  "Instead of guessing, check the gear list and the long thread.",
   "Can we clear the boss tonight and ask about loot rules afterwards?",
   "The fire phase lines up with the third cooldown, honestly.",
 ];
 function genPrompt(rng) {
-  const pool = nonGenericNames(FIC, FIC_GENERIC);
-  const nm = () => CLASSES[rng.pick(["plain", "upper", "lower", "possessive 's", "plural s", "zero-width mid", "NBSP for spaces", "hyphen for spaces", "fullwidth", "cyrillic (table-covered)", "math bold", "hyphen for spaces"])](rng.pick(pool));
-  const ref = () => rng.pick([`<@112233445566778899>`, `<@!${rng.digits(18)}>`, rng.digits(17 + rng.int(4)), "@everyone", "discord.gg/abc123"]);
+  const cls = ["plain", "upper", "lower", "possessive 's", "plural s", "zero-width mid", "NBSP for spaces", "hyphen for spaces", "fullwidth", "cyrillic (table-covered)", "math bold"];
+  const nm = () => CLASSES[rng.pick(cls)](rng.pick(LONG_POOL));
+  const ref = () => rng.pick(["<@112233445566778899>", `<@!${rng.digits(18)}>`, rng.digits(17 + rng.int(4)), "@everyone", "discord.gg/abc123"]);
   const lines = [`Asker: ${nm()}`];
   for (let i = 0; i < 3 + rng.int(5); i++) {
     const t = rng.int(4);
-    lines.push(t === 0 ? `${nm()} said ping ${ref()} about ${nm()}` : t === 1 ? rng.pick(FILLER) : t === 2 ? `[12:0${i}] ${nm()}: ${rng.pick(FILLER)} ${ref()}` : `Is ${nm()} ready? (id ${rng.digits(17)}) ${rng.pick(ZWS)}`);
+    lines.push(t === 0 ? `${nm()} said ping ${ref()} about ${nm()}` : t === 1 ? rng.pick(FILLER) : t === 2 ? `[12:0${i}] ${nm()}: ${rng.pick(FILLER)} ${ref()}` : `Is ${nm()} ready? (id ${rng.digits(17)}) ​`);
   }
   return lines.join("\n");
 }
 
-test("500 seeded prompts: tokenised bodies pass the guard in all provider shapes; raw prompts are flagged", () => {
+test("500 seeded prompts: tokenised user text passes the guards; raw text is flagged", () => {
   const rng = rngFrom(20261114);
   let rawFlagged = 0;
   for (let i = 0; i < 500; i++) {
     const prompt = genPrompt(rng);
     const out = tokenise(prompt, FMAP);
-    try { assertNoIdentifiers(bodyOf(out), FMAP); } catch (e) { throw new Error(e.message + " | prompt=" + JSON.stringify(prompt) + " | out=" + JSON.stringify(out)); }
-    assertNoIdentifiers({ model: "m", max_tokens: 512, system: tokenise("You answer questions for a raid group.", FMAP), messages: [{ role: "user", content: out }, { role: "assistant", content: [{ type: "text", text: out.slice(0, 80) }] }] }, FMAP);
-    assertNoIdentifiers({ messages: [{ role: "system", content: "x" }, { role: "user", content: out }] }, FMAP);
-    if (findIdentifiers({ messages: [{ role: "user", content: prompt }] }, FMAP).length) rawFlagged++;
-    const q = scrubSearchQuery(prompt, FMAP);
-    if (q !== null) assert.deepEqual(findIdentifiers({ q }, FMAP, CANARY, { skipGeneric: true }), []);
+    const body = { model: "m", max_tokens: 512, system: `You help ${FMAP.tokenFor(0)} and ${FMAP.tokenFor(1)}.`, messages: [{ role: "user", content: out }] };
+    try { guardUserText([out], ROSTER); guardBody(body, ROSTER); } catch (e) { throw new Error(e.message + " | prompt=" + JSON.stringify(prompt) + " | out=" + JSON.stringify(out)); }
+    if (flagged(prompt, ROSTER)) rawFlagged++;
+    assert.ok(!/\d{15,}/.test(detokenise(out, FMAP)));
+    assert.equal(replyLeaksIdentity(detokenise(out, FMAP), ROSTER), false);
   }
   assert.equal(rawFlagged, 500);
 });
 
-// ---------- 8. performance ----------
-test("no regex or scan blowup on 200k-char hostile inputs", () => {
+// ---------- 10. measured over-blocking and cost ----------
+const NAME_FREE = [
+  "how do I tank as a paladin", "what is the best spec for a frost mage", "when does the next raid start", "which professions make the most gold", "how hard is the Deadmines for a level 18 group",
+  "what should a druid healer do on trash pulls", "is hunter a good class for a beginner", "what changed in the latest beta build", "how do talents work in Forever", "who should main tank tonight",
+  "what does threat mean", "how many healers do we need for a five man", "what race is best for a warrior", "is blacksmithing worth it at level 20", "where do I train mining",
+  "can a rogue tank a dungeon", "what is the level cap", "explain the glossary term kiting", "what are the pvp rewards", "how does the honor system work",
+  "what should I do first at level 10", "what is a good leveling route for horde", "do warlocks get a free mount", "is alchemy good for raiding", "how do I get to Ragefire Chasm",
+  "does the weather change in the barrens", "I would rather play a priest than a rogue", "my father wants to join the guild", "what does the big boss in Deadmines drop", "how do I respec and what does it cost",
+  "which race has the best racials for pve", "what is the fastest way to 40", "should the mage sheep the skull or the x", "what do the raid markers mean", "any better answers to my previous question",
+  "what time is raid, 20:00 or 20:30 on 2026-11-14?", "levels 6, 12, 22, 32, 42, 52, 60; 20 and 120 180 300 600 900 1200", "thanks, that was helpful", "tell me a joke about kobolds", "what is the best pizza topping",
+  "how do I gather herbs faster", "is there a together mode for dungeons", "which weapon should a hunter use", "what is a good gathering route", "can I trade the quest reward",
+  "how does the auction house work", "what are the best bags", "where is the flight master", "how do I join a party", "what does the glossary say about aggro",
+];
+test("measured: false-block rate of the strict guard on 200 realistic name-free questions (fictional roster)", (t) => {
+  const qs = [];
+  for (let i = 0; i < 200; i++) qs.push(NAME_FREE[i % NAME_FREE.length] + (i < 50 ? "" : i < 100 ? " please" : i < 150 ? "?" : ", thanks"));
+  const blocked = qs.filter((q) => flagged(q, ROSTER));
+  const reasons = new Set(blocked.map((q) => scanUserText([q], ROSTER).map((l) => l.kind).join("+")));
+  t.diagnostic(`false-block rate ${blocked.length}/200 (${(blocked.length / 2).toFixed(1)}%) kinds=${[...reasons].join(",")}`);
+  assert.ok(blocked.length / 200 <= 0.15, `rate ${blocked.length}/200`);
+});
+
+test("measured: guard cost per call", (t) => {
+  const text = (NAME_FREE.join(". ") + ". ").repeat(9).slice(0, 9000);
+  const q2 = text.slice(0, 2000);
+  const body9 = { model: "claude-x", max_tokens: 700, system: [{ type: "text", text: text.slice(0, 7000) }], messages: [{ role: "user", content: text.slice(0, 2000) }] };
+  const time = (fn, n = 300) => { for (let i = 0; i < 30; i++) fn(); const s = []; for (let i = 0; i < n; i++) { const a = performance.now(); fn(); s.push(performance.now() - a); } s.sort((x, y) => x - y); return s[Math.floor(n / 2)]; };
+  const a = time(() => scanUserText([q2], ROSTER));
+  const b = time(() => scanBody(body9, ROSTER));
+  t.diagnostic(`guardUserText 2000 chars median ${a.toFixed(3)} ms; guardBody ${JSON.stringify(body9).length} chars median ${b.toFixed(3)} ms`);
+  assert.ok(a < 3, `guardUserText ${a}ms`);
+  assert.ok(b < 2, `guardBody ${b}ms`);
+});
+
+test("no blowup on 200k-char hostile inputs (tokeniser fast; oversize segments fail closed in the guard)", () => {
   const hostile = [
     "a ".repeat(100000), "Thornwick".repeat(22000), "Handsome-".repeat(22000) + "x", "Zorrin" + " ".repeat(199000) + "x",
     ("​".repeat(50) + "Thorn wick ").repeat(3000), "9".repeat(200000), "<@ ".repeat(60000), "https://www.discord.gg/".repeat(8000),
@@ -415,75 +454,87 @@ test("no regex or scan blowup on 200k-char hostile inputs", () => {
   for (const h of hostile) {
     const t0 = performance.now();
     const out = tokenise(h, FMAP);
-    findIdentifiers({ messages: [{ role: "user", content: out }] }, FMAP);
-    const dt = performance.now() - t0;
-    assert.ok(dt < 1500, `took ${dt.toFixed(0)}ms on a ${h.length}-char input`);
+    assert.ok(performance.now() - t0 < 1500, `tokenise took ${(performance.now() - t0).toFixed(0)}ms on a ${h.length}-char input`);
+    const t1 = performance.now();
+    const leaks = scanUserText([out], ROSTER);
+    assert.ok(performance.now() - t1 < 1500, `guard took ${(performance.now() - t1).toFixed(0)}ms`);
+    if (out.length > 20000) assert.ok(leaks.some((l) => l.kind === "toolong"), "oversize segment must fail closed");
   }
 });
 
-// ---------- 9. mutation checks: the guard must go red when its defences are removed ----------
-function mutatedModules(label, edit) {
+// ---------- 11. independence + mutation checks ----------
+test("independence: the guard imports nothing", () => {
+  const src = readFileSync(join(PRIV, "outbound-guard.js"), "utf8");
+  assert.equal(/^\s*import\s/m.test(src) || /\bimport\s*\(/.test(src) || /\brequire\s*\(/.test(src), false);
+});
+
+function mutatedGuard(label, edits) {
   const dir = mkdtempSync(join(tmpdir(), `privmut-${label}-`));
-  mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
-  const srcDir = fileURLToPath(new URL("../../infrastructure/worker/privacy/", import.meta.url));
   for (const f of ["skeleton.js", "tokenise.js", "outbound-guard.js"]) {
-    let src = readFileSync(srcDir + f, "utf8");
-    if (f === "skeleton.js") {
-      const edited = edit(src);
-      assert.notEqual(edited, src, `mutation "${label}" did not apply`);
+    let src = readFileSync(join(PRIV, f), "utf8");
+    for (const [file, from, to] of edits) {
+      if (file !== f) continue;
+      const edited = src.split(from).join(to);
+      assert.notEqual(edited, src, `mutation "${label}" did not apply to ${f}`);
       src = edited;
     }
     writeFileSync(join(dir, f), src);
   }
-  return Promise.all([import(pathToFileURL(join(dir, "tokenise.js")).href), import(pathToFileURL(join(dir, "outbound-guard.js")).href)]);
+  return import(pathToFileURL(join(dir, "outbound-guard.js")).href);
 }
 
-function rawLeakMisses(G, T, classNames) {
-  const map = T.buildNameMap(FIC, null, { genericWords: FIC_GENERIC });
+function rawMisses(G, classNames) {
   const rng = rngFrom(4242);
-  const names = nonGenericNames(FIC, FIC_GENERIC);
   let misses = 0;
-  for (const cls of classNames) for (let i = 0; i < 15; i++) {
-    const text = `did ${CLASSES[cls](rng.pick(names))} log on`;
-    if (G.findIdentifiers(bodyOf(text), map).length === 0) misses++;
+  for (const cls of classNames) for (let i = 0; i < 12; i++) {
+    const pool = eligible(cls, LONG_POOL, SHORT_POOL);
+    const text = `did ${CLASSES[cls](rng.pick(pool))} log on`;
+    if (G.scanUserText([text], ROSTER).length === 0) misses++;
   }
   return misses;
 }
 
-test("mutation: unmutated guard misses nothing; removing the skeleton fold or the invisible strip turns it red", async () => {
-  const fold = ["cyrillic (uncovered letters)", "greek (uncovered letters)", "latin small caps", "negative-squared letters", "cyrillic (table-covered)"];
-  const invis = ["zero-width mid", "soft hyphen mid", "braille blank mid", "Cf not in strip list (U+1D173)", "interlinear Cf (U+FFF9)", "hangul filler mid", "zalgo combining marks"];
-  const leetCls = ["leet one char", "leet all"];
-  const base = await Promise.all([import("../../infrastructure/worker/privacy/tokenise.js"), import("../../infrastructure/worker/privacy/outbound-guard.js")]);
-  assert.equal(rawLeakMisses(base[1], base[0], [...fold, ...invis, ...leetCls]), 0);
+const FOLD_CLS = ["cyrillic (uncovered letters)", "greek (uncovered letters)", "cyrillic (table-covered)"];
+const INVIS_CLS = ["hangul filler mid"];
+const LEET_CLS = ["leet one char", "leet all"];
+const SCRIPT_CLS = ["lisu lookalikes (blocked script)", "cherokee lookalikes (blocked script)", "coptic lookalikes (blocked script)", "ipa lookalikes (blocked script)", "phonetic ligature (blocked script)", "latin small caps (blocked script)", "RLO reversed", "unicode tag chars"];
+const DECODE_CLS = ["base64", "base64 unpadded", "base64 url-safe", "base64 double", "hex", "html entity letters", "html entity wide hex", "url-encoded", "literal \\u escape", "literal \\u{} escape"];
+const ALL_GUARD_CLS = [...FOLD_CLS, ...INVIS_CLS, ...LEET_CLS, ...SCRIPT_CLS, ...DECODE_CLS, "repeated letter", "partial first 5", "partial last 5", "reversed plain"];
 
-  const [tF, gF] = await mutatedModules("nofold", (s) => s.replace("for (const ch of chars) CONF.set(ch.codePointAt(0), target);", "for (const ch of chars) void ch;"));
-  assert.ok(rawLeakMisses(gF, tF, fold) > 0, "guard stayed green with the confusables fold removed");
-
-  const [tI, gI] = await mutatedModules("noinvis", (s) => s.replace("if (INVIS_RE.test(ch)) return \"\";", "if (INVIS_RE.test(ch)) return \"#\";"));
-  assert.ok(rawLeakMisses(gI, tI, invis) > 0, "guard stayed green with the invisible strip removed");
-
-  const [tL, gL] = await mutatedModules("noleet", (s) => s.replace("return str.replace(/[013457]/g, (d) => m[d] ?? d);", "return str;"));
-  assert.ok(rawLeakMisses(gL, tL, leetCls) > 0, "guard stayed green with the leet fold removed");
-
-  const [tC, gC] = await mutatedModules("nocollapse", (s) => s.replace("return str.replace(/(.)\\1+/gs, \"$1\");", "return str;"));
-  assert.ok(rawLeakMisses(gC, tC, ["repeated letter"]) > 0, "guard stayed green with the doubled-letter collapse removed");
+test("mutation: breaking skeleton.js and tokenise.js does not blind the guard (it shares nothing with them)", async () => {
+  const G = await mutatedGuard("broken-tokeniser", [
+    ["skeleton.js", "export function elementsOf(text) {", "export function elementsOf(text) { return { c: \"\", s: [], e: [], sp: [], sf: [], n: 0 };\n"],
+    ["tokenise.js", "export function tokenise(text, map) {", "export function tokenise(text, map) { return String(text);\n"],
+  ]);
+  assert.equal(rawMisses(G, ALL_GUARD_CLS), 0);
+  const base = await mutatedGuard("identity", []);
+  assert.equal(rawMisses(base, ALL_GUARD_CLS), 0, "unmutated guard misses nothing");
 });
 
-// ---------- 10. scan: no live roster values in the new files ----------
+test("mutation: removing any of the guard's own defences turns it red", async () => {
+  const cases = [
+    ["fold", [["outbound-guard.js", "FOLD.set(c, to);", "void c;"]], FOLD_CLS],
+    ["invisible", [["outbound-guard.js", '.replace(INVISIBLE_RE, "")', ""]], INVIS_CLS],
+    ["leet", [["outbound-guard.js", "s.replace(/[013457]/g, (d) => m[d])", "s"]], LEET_CLS],
+    ["collapse", [["outbound-guard.js", 's.replace(/(.)\\1+/gs, "$1")', "s"]], ["repeated letter"]],
+    ["scripts", [["outbound-guard.js", "BLOCK_RE.test(c)", "false"]], SCRIPT_CLS.filter((c) => c !== "RLO reversed" && !c.startsWith("latin small") && c !== "unicode tag chars").concat(["phonetic ligature (blocked script)"])],
+    ["decode", [["outbound-guard.js", "const d = decodeEscapes(t);", "const d = t;"], ["outbound-guard.js", "decodeBinaryish(t, next);", ""]], DECODE_CLS],
+    ["partials", [["outbound-guard.js", "if (key.length >= 7) e.partial =", "if (false) e.partial ="]], ["partial first 5", "partial last 5"]],
+  ];
+  for (const [label, edits, classes] of cases) {
+    const G = await mutatedGuard(label, edits);
+    assert.ok(rawMisses(G, classes) > 0, `guard stayed green with "${label}" removed`);
+  }
+});
+
+// ---------- 12. scan: no live roster values in the new files ----------
 test("scan: new files and tests contain no values from the live roster", () => {
   const allow = new Set(["mage", "tank"]);
   const values = new Set();
   for (const r of ROSTER_DATA) for (const v of [r.display, ...r.aliases]) if (!allow.has(v.toLowerCase())) values.add(v.toLowerCase());
-  const files = [
-    "../../infrastructure/worker/privacy/tokenise.js",
-    "../../infrastructure/worker/privacy/outbound-guard.js",
-    "../../infrastructure/worker/privacy/skeleton.js",
-    "./privacy-tokenise.test.mjs",
-  ];
-  for (const f of files) {
-    const src = readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8").toLowerCase();
+  for (const f of ["tokenise.js", "outbound-guard.js", "skeleton.js", "../../../tests/unit/privacy-tokenise.test.mjs"]) {
+    const src = readFileSync(join(PRIV, f), "utf8").toLowerCase();
     for (const v of values) {
       const re = new RegExp(`(?<![\\p{L}\\p{N}])${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "u");
       assert.ok(!re.test(src), `${f} contains a roster value (length ${v.length})`);

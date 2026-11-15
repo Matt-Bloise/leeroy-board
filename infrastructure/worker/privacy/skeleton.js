@@ -224,7 +224,7 @@ export function keyNeedles(key) {
 // ---- decoding (HTML entities, percent-encoding, literal \u escapes) ----
 
 const NAMED = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", shy: "­", zwnj: "‌", zwj: "‍" };
-const DECODE_RE = /&#(\d{1,7});|&#x([0-9a-f]{1,6});|&(amp|lt|gt|quot|apos|nbsp|shy|zwnj|zwj);|((?:%[0-9a-f]{2}){1,64})|\\u([0-9a-f]{4})|\\x([0-9a-f]{2})/gi;
+const DECODE_RE = /&#(\d{1,12});|&#x([0-9a-f]{1,12});|&(amp|lt|gt|quot|apos|nbsp|shy|zwnj|zwj);|((?:%[0-9a-f]{2}){1,64})|\\u([0-9a-f]{4})|\\x([0-9a-f]{2})/gi;
 
 function safeFromCp(n) {
   try {
