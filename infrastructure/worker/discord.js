@@ -1032,7 +1032,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       // INTEREST_NUDGES: one-tap answers. "I'm in" (the existing sign-up button) only before launch and while this member's RSVP is empty:
       // after launch the sign-up record is history, and a click would write rsvp:in into it.
       if (await interestOn(env)) {
-        const mine = (signups.entries || []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
+        const mine = (signups && Array.isArray(signups.entries) ? signups.entries : []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
         const beforeLaunch = Math.floor(Date.now() / 1000) < LAUNCH_EPOCH;
         const nudges = [...(member && beforeLaunch && !mine.rsvp ? [{ type: 2, style: 3, label: "I'm in tonight", custom_id: "signup:rsvp:in" }] : []), askLevelButton(), countsButton()];
         tonightRows.push({ type: 1, components: nudges });
