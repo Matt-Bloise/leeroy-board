@@ -44,7 +44,7 @@ const readSrc = (rel) => readFileSync(new URL(rel, ROOT), "utf8");
 // ---- 1. the table is checked against the code -----------------------------------------------------------------------------------------
 // Every route of ROUTES. "member": its answer (or its broadcast) can carry another member's build; it must be covered by an entry of READS below.
 const ROUTE_CLASS = {
-  "POST /discord": "member", "GET /discord/commands": "none", "GET /votes": "none", "GET /me": "none", "POST /probe": "none", "ANY /sheet": "member",
+  "POST /discord": "member", "POST /listen": "member", "GET /discord/commands": "none", "GET /votes": "none", "GET /me": "none", "POST /probe": "none", "ANY /sheet": "member",
   "POST /announce": "none", "PUT /vocab": "none", "PUT /config/:key": "none", "POST /admin/members": "none", "POST /admin/sheet": "none", "POST /admin/cards/post": "none",
   "GET /admin/feedback": "none", "GET /admin/export": "none", "GET /admin/requests": "none", "PUT /persona": "none", "POST /dispatch": "none", "POST /admin/events/sync": "none",
   "GET /admin/moments": "none", "POST /admin/eval": "none", "GET /intents": "none", "POST /ack": "none", "POST /answer": "none", "GET /signups": "none", "POST /signups": "none",
@@ -277,7 +277,7 @@ const READS = [
   { id: "Discord /tonight", covers: ["POST /discord", "discord:tonight"], run: async (env) => [{ where: "/tonight", text: await discord(env, slash("tonight")) }] },
   { id: "Discord /sheet for each member", covers: ["POST /discord", "discord:sheet"], run: async (env) => { const out = []; for (let i = 0; i < NAMES.length; i++) out.push({ where: `/sheet ${NAMES[i]}`, text: await discord(env, slash("sheet", [{ name: "member", type: 6, value: `10000000000000010${i}` }])), member: i }); return out; } },
   { id: "the sign-up and party cards", covers: ["POST /discord", "discord:signup"], run: async (env) => { const st = await loadCardState(env); return [{ where: "cards", text: JSON.stringify([renderBoardCard(st), renderSignupCard(st)]) }]; } },
-  { id: "the ask prompt", covers: ["POST /intent", "discord:ask"], run: async (env) => { const q = await buildAnswerInputs(env, { question: "Who is in the party and what do they play?", by: "Asker X", memberSlug: "asker-x", isMember: true, share: true }); return [{ where: "ask prompt", text: `${q.systemPrompt}\n${q.userPrompt}` }]; } },
+  { id: "the ask prompt", covers: ["POST /intent", "POST /listen", "discord:ask"], run: async (env) => { const q = await buildAnswerInputs(env, { question: "Who is in the party and what do they play?", by: "Asker X", memberSlug: "asker-x", isMember: true, share: true }); return [{ where: "ask prompt", text: `${q.systemPrompt}\n${q.userPrompt}` }]; } },
 ];
 
 test("every route and Discord command that carries member data is covered by a read in READS", () => {
