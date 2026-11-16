@@ -85,6 +85,12 @@ async function decide(env, id, decision, { askId = null, posted = false } = {}) 
   } catch {}
 }
 
+// Writes listen_events.ask_id for this event ahead of the turn itself (see answerEvent). Throws when the row is not there or the write fails.
+async function linkAsk(env, id, askId) {
+  const r = await env.DB.prepare("UPDATE listen_events SET ask_id = ? WHERE msg_id = ?").bind(askId, await msgKey(env, id)).run();
+  if (!(r && r.meta && r.meta.changes > 0)) throw new Error("no listen_events row");
+}
+
 // Exposed for tests and for the route. Returns the decision string.
 export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = {}) {
   const roster = await loadConfigKey(env, "discord_roster");
@@ -117,6 +123,9 @@ async function answerEvent(env, origin, ev, member, mode, { fetchImpl, tag = "",
   const share = live; // a dry-run answer is private: filed 'ask-private', shown to no one else
   const intentId = crypto.randomUUID();
   const now = new Date().toISOString();
+  // Link the event to its turn BEFORE the turn exists. GET /ask leaves out every turn listen_events.ask_id points at (latestTurn), so a turn is never visible without its link: not while the answer is
+  // composed, and not if anything fails before decide(). When the link cannot be written the turn is not created at all.
+  try { await linkAsk(env, ev.id, intentId); } catch { await decide(env, ev.id, tag + "store-failed"); return "store-failed"; }
   try {
     await insertAskTurn(env, { id: intentId, byName: member.name, question, provider: resolveAiProvider(env), share, createdAt: now }, { discordId: ev.author_id, slug: member.slug });
   } catch (e) {

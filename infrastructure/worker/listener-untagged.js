@@ -84,7 +84,7 @@ export const CLASSIFY_SYSTEM =
   "decision ignore: personal life (health, family, work, where someone lives, money, schedule outside the game), a question put to one particular person, rhetorical or vague, or one that needs context you do not have. " +
   `Output ONLY JSON, nothing before or after it: {"decision":"answer|wiki_only|ignore","reason":"${REASONS.join("|")}","confidence":0.0}. confidence is your own certainty from 0 to 1 that the decision is right and, for answer, that a correct answer exists.`;
 
-// The model's reply is data: strict JSON, whitelisted decision and reason, confidence a number in [0, 1]. Anything else is 'ignore'. A 'personal' reason is always 'ignore' (never an unprompted answer).
+// The model's reply is data: strict JSON, whitelisted decision and reason, confidence a number in [0, 1] (anything else, including a string or an out-of-range number, is 'ignore' with reason bad-confidence). Anything else is 'ignore'. A 'personal' reason is always 'ignore' (never an unprompted answer).
 export function parseVerdict(raw) {
   const bad = { decision: "ignore", reason: "bad-output", confidence: 0 };
   let obj = null;
@@ -98,7 +98,9 @@ export function parseVerdict(raw) {
   const decision = DECISIONS.includes(obj.decision) ? obj.decision : null;
   if (!decision) return bad;
   const reason = REASONS.includes(obj.reason) ? obj.reason : "other";
-  const c = typeof obj.confidence === "number" && Number.isFinite(obj.confidence) ? Math.min(1, Math.max(0, obj.confidence)) : 0;
+  // A confidence outside [0, 1], not finite, not a number (a string such as "0.9", null, missing) is a broken verdict, never clamped: 7 must not become 1 and authorise an unprompted post.
+  const c = obj.confidence;
+  if (typeof c !== "number" || !Number.isFinite(c) || c < 0 || c > 1) return { decision: "ignore", reason: "bad-confidence", confidence: 0 };
   if (reason === "personal") return { decision: "ignore", reason, confidence: c };
   return { decision, reason, confidence: c };
 }

@@ -35,7 +35,7 @@ const BOT = ["bot", "token", "for", "tests", "9f3c1a"].join("-");
 const GUILD = "800000000000000001", CH = "900000000000000001", OTHER_GUILD = "800000000000000009";
 const FOX = "700000000000000001", OWL = "700000000000000002", STRANGER = "700000000000000099";
 const realFetch = globalThis.fetch;
-let anth = [], classify = [], posts = [], reply = null, anthStatus = 200;
+let anth = [], classify = [], posts = [], reply = null, anthStatus = 200, hooks = {};
 const verdict = (decision, reason, confidence) => JSON.stringify({ decision, reason, confidence });
 globalThis.fetch = async (url, init) => {
   const u = String(url);
@@ -48,13 +48,14 @@ globalThis.fetch = async (url, init) => {
       if (reply instanceof Error) throw reply;
       return new Response(JSON.stringify({ content: [{ type: "text", text: reply ?? verdict("answer", "direct_fact", 0.95) }], usage: { input_tokens: 150, output_tokens: 20 } }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
+    if (hooks.compose) await hooks.compose(); // a look at the world while the answer is being composed (the turn exists, decide() has not run)
     return new Response(JSON.stringify({ content: [{ type: "text", text: "**Short answer first.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }], usage: { input_tokens: 100, output_tokens: 20 } }), { status: 200, headers: { "Content-Type": "application/json" } });
   }
   if (u.includes("discord.com")) { posts.push({ url: u, body: JSON.parse(init.body) }); return new Response("{}", { status: 200 }); }
   return new Response("{}", { status: 599 });
 };
 test.after(() => { globalThis.fetch = realFetch; });
-test.beforeEach(() => { resetListenerKeyCacheForTests(); resetKeyCacheForTests(); resetResearchClaudeForTests(); invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache(); privacyBudget.ms = 1000; anth = []; classify = []; posts = []; reply = null; anthStatus = 200; });
+test.beforeEach(() => { resetListenerKeyCacheForTests(); resetKeyCacheForTests(); resetResearchClaudeForTests(); invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache(); privacyBudget.ms = 1000; anth = []; classify = []; posts = []; reply = null; anthStatus = 200; hooks = {}; });
 
 const roomStub = { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) };
 const fakeAi = { run: async () => { throw new Error("Workers AI must not be called for a member"); } };
@@ -201,11 +202,32 @@ test("rules (hardened): plural, possessive and apostrophe-less forms, accents, s
   }
   assert.equal(untaggedRules("anyone know the boss order in the raid?").verdict, "candidate");
 });
+test("parseVerdict: a confidence outside [0, 1], not finite, a string, null or missing is ignore/bad-confidence, never clamped; 0, 0.8 and 1 are valid", () => {
+  const withC = (c) => `{"decision":"answer","reason":"direct_fact","confidence":${c}}`;
+  for (const c of ["7", "-1", "1.0001", "-0.0001", "1e999", '"0.9"', '"high"', "null", "true", "[0.9]"]) {
+    assert.deepEqual(parseVerdict(withC(c)), { decision: "ignore", reason: "bad-confidence", confidence: 0 }, c);
+  }
+  assert.deepEqual(parseVerdict('{"decision":"answer","reason":"direct_fact"}'), { decision: "ignore", reason: "bad-confidence", confidence: 0 }, "missing");
+  assert.equal(parseVerdict(withC("NaN")).decision, "ignore", "NaN is not JSON");
+  for (const [c, want] of [[0, 0], [0.8, 0.8], [1, 1], [0.95, 0.95]]) assert.deepEqual(parseVerdict(withC(c)), { decision: "answer", reason: "direct_fact", confidence: want }, String(c));
+});
+test("an out-of-range or string confidence never authorises an unprompted post (live): the text is filed, nothing is posted", async () => {
+  for (const c of [7, -1, 1.0001, "0.9"]) {
+    const DB = schemaDb(); seed(DB); posts = []; anth = []; reply = JSON.stringify({ decision: "answer", reason: "direct_fact", confidence: c });
+    assert.equal(await run(mkEnv(DB), ev(), "live"), "logged", String(c));
+    assert.equal(decisions(DB).at(-1), "u:ignore:bad-confidence", String(c));
+    assert.equal(posts.length, 0); assert.equal(anth.length, 0);
+    assert.equal(count(DB, "SELECT count(*) c FROM group_log WHERE source = 'listener'"), 1);
+  }
+  for (const c of [0.8, 1]) {
+    const DB = schemaDb(); seed(DB); posts = []; reply = verdict("answer", "direct_fact", c);
+    assert.equal(await run(mkEnv(DB), ev(), "live"), "posted", String(c));
+  }
+});
 test("parseVerdict: strict JSON, whitelisted decision and reason, a bounded confidence; anything else is ignore; a personal reason is always ignore", () => {
   assert.deepEqual(parseVerdict(verdict("answer", "direct_fact", 0.9)), { decision: "answer", reason: "direct_fact", confidence: 0.9 });
   assert.deepEqual(parseVerdict(`Sure! ${verdict("wiki_only", "planning", 0.4)} done`), { decision: "wiki_only", reason: "planning", confidence: 0.4 });
-  assert.deepEqual(parseVerdict(verdict("answer", "made_up", 7)), { decision: "answer", reason: "other", confidence: 1 });
-  assert.equal(parseVerdict(JSON.stringify({ decision: "answer", reason: "direct_fact", confidence: "high" })).confidence, 0);
+  assert.deepEqual(parseVerdict(verdict("answer", "made_up", 0.5)), { decision: "answer", reason: "other", confidence: 0.5 });
   assert.deepEqual(parseVerdict(verdict("answer", "personal", 0.99)), { decision: "ignore", reason: "personal", confidence: 0.99 });
   assert.deepEqual(parseVerdict(verdict("wiki_only", "personal", 0.99)), { decision: "ignore", reason: "personal", confidence: 0.99 });
   for (const bad of [undefined, "", "no json", "{", "[]", '{"decision":"post","reason":"direct_fact","confidence":1}', '{"decision":null}', "null"]) assert.equal(parseVerdict(bad).decision, "ignore", String(bad));
@@ -588,4 +610,43 @@ test("runbook and flag comments say personal-topic text is filed and only never 
   for (const f of ["docs/runbooks/listener.md", "docs/runbooks/flags.md", "infrastructure/wrangler.toml", "docs/privacy.md"]) {
     assert.ok(!/personal-life (?:topics|text) (?:never|is not|are not)|never stored by this path|personal-life topics never|is not kept and is not sent/i.test(read(f)), f);
   }
+});
+
+// ---- review (HIGH): the turn is linked to its event BEFORE it exists ------------------------------------------------------------------------------
+const askerHdr = () => ({ Authorization: `Board ${MEMBER_KEY}` });
+test("while the answer is being composed (turn inserted, decide() not run yet) GET /ask does not serve the listener's turn: mention, reply and untagged answer", async () => {
+  for (const [kind, extra] of [["mention", { content: "who tanks tonight" }], ["reply", { content: "and the healer?", ref_text: "Tank is Red Fox." }], ["chatter", {}]]) {
+    const { DB, env } = await askEnv();
+    putTurn(DB, "turn-normal", "Blue Owl", "NORMAL-SHARED-QUESTION", 1, "2026-01-01T00:00:00Z");
+    const seen = [];
+    hooks.compose = async () => {
+      const turn = DB.raw.prepare("SELECT id, question FROM ask_turns WHERE id <> 'turn-normal'").get();
+      const link = turn && DB.raw.prepare("SELECT ask_id FROM listen_events WHERE ask_id = ?").get(turn.id);
+      seen.push({ turnExists: Boolean(turn), linked: Boolean(link), served: (await getAsk(env, askerHdr())).ask.text });
+    };
+    await run(env, ev({ kind, ...extra }), "live");
+    assert.ok(seen.length >= 1, `${kind}: the compose hook ran`);
+    for (const x of seen) assert.deepEqual(x, { turnExists: true, linked: true, served: "NORMAL-SHARED-QUESTION" }, kind);
+    hooks = {};
+  }
+});
+test("when processing dies before decide() (the decision write fails) the shared turn stays excluded from GET /ask", async () => {
+  for (const kind of ["mention", "chatter"]) {
+    const { DB, env } = await askEnv();
+    putTurn(DB, "turn-normal", "Blue Owl", "NORMAL-SHARED-QUESTION", 1, "2026-01-01T00:00:00Z");
+    const broken = { ...env, DB: { ...DB, prepare: (sql) => (/UPDATE listen_events SET decision/.test(sql) ? { bind: () => ({ run: async () => { throw new Error("D1 is having a bad day"); } }) } : DB.prepare(sql)) } };
+    await run(broken, ev({ kind, content: "who tanks tonight" }), "live");
+    const turn = DB.raw.prepare("SELECT id, share FROM ask_turns WHERE id <> 'turn-normal'").get();
+    assert.ok(turn && turn.share === 1, `${kind}: a shared listener turn exists`);
+    assert.equal(DB.raw.prepare("SELECT decision, ask_id FROM listen_events").get().decision, "claimed", "decide() never landed");
+    assert.equal(DB.raw.prepare("SELECT ask_id FROM listen_events").get().ask_id, turn.id, "but the link did");
+    assert.equal((await getAsk(env, askerHdr())).ask.text, "NORMAL-SHARED-QUESTION", kind);
+  }
+});
+test("when the link cannot be written the turn is not created at all (fail closed)", async () => {
+  const { DB, env } = await askEnv();
+  const broken = { ...env, DB: { ...DB, prepare: (sql) => (/UPDATE listen_events SET ask_id/.test(sql) ? { bind: () => ({ run: async () => { throw new Error("D1 is having a bad day"); } }) } : DB.prepare(sql)) } };
+  assert.equal(await run(broken, ev({ kind: "mention", content: "who tanks tonight" }), "live"), "store-failed");
+  assert.equal(count(DB, "SELECT count(*) c FROM ask_turns"), 0);
+  assert.equal(decisions(DB)[0], "store-failed"); assert.equal(posts.length, 0);
 });
