@@ -66,7 +66,7 @@ Flags confirmed with `--help` (cli). Behavior (docs): in-flight queries are canc
 
 Retention: the docs say Workers Paid plans restore up to 30 days back and Workers Free plans 7 days. Which plan this account is on is unverified (`wrangler.toml:18,25,35` describe free-tier limits but do not prove the plan). Plan on 7 days until the owner confirms the plan in the dashboard.
 
-Before any restore: note the current bookmark, and take an export as a second copy (cli): `npx wrangler d1 export leeroy-board-db --remote --output=../_scratch-backup.sql` (keep it out of the repo; see `backup-restore.md`). A restore also rewinds live edits made through the app since the target time (sign-ups, sheet events, ask history). The Durable Object holds no storage of its own (`infrastructure/README.md:14`).
+The production deploy job now records the current bookmark automatically before migrations apply: open the run's job summary, heading "D1 Time Travel bookmark before migrations" (read-only, never blocks the deploy; PR previews are not covered). Before any restore: note the current bookmark (the summary of the deploy being undone has it), and take an export as a second copy (cli): `npx wrangler d1 export leeroy-board-db --remote --output=../_scratch-backup.sql` (keep it out of the repo; see `backup-restore.md`). A restore also rewinds live edits made through the app since the target time (sign-ups, sheet events, ask history). The Durable Object holds no storage of its own (`infrastructure/README.md:14`).
 
 ## 4. Revert through the normal process
 
