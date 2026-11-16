@@ -271,7 +271,9 @@ function scorePageForQuestion(page, words) {
 const AI_TIMEOUT_MS = 20000;
 export const ASK_CHOSEN_TIMEOUT_MS = 12000;
 export const ASK_FALLBACK_TIMEOUT_MS = 9000;
-export const ASK_DEADLINE_MS = 24000;
+// 26 s (was 24 s): the Claude hop needs up to 22 s (the hard end, deadline minus a sixth; research/claude.js). The ask runs under ctx.waitUntil, which Cloudflare ends 30 s after the response is sent, and the Discord edit
+// has a 28 s budget from the ask's start (discord.js DELIVERY_BUDGET_MS): 26 s leaves the delivery edit its 2 s first-attempt floor before that 28 s. Do not raise it past 26 s without moving the delivery budget and the 30 s waitUntil cap.
+export const ASK_DEADLINE_MS = 26000;
 // The delivery deadline in force (discord.js answerAndDeliver reads the same override): research mode takes its margin from this, not from the constant.
 export const askDeadlineMs = (env) => (Number(env && env.ASK_DEADLINE_MS) > 0 ? Number(env.ASK_DEADLINE_MS) : ASK_DEADLINE_MS);
 

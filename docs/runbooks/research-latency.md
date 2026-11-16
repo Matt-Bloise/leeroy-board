@@ -21,7 +21,7 @@ Tools (both in `tools/`, both print numbers only: no key, header, prompt, reply,
 
 The Node CPU number is a **proxy only**. It runs on a different engine build and clock than workerd, and workerd freezes timers during pure compute. The authoritative CPU number is the Workers observability CPU time of a deployed Worker. A pass from the Node tool never satisfies the condition; a fail is a real warning.
 
-The numbers 6 s and 3 s are the intended timeouts. Check the current constants before reading a result: at the time of writing `research/claude.js` has one 9 s budget (`CLAUDE_TIMEOUT_MS`), a 2.5 s minimum for the retry (`RETRY_MIN_MS`) and an 8 ms privacy budget (`privacyBudget.ms`). All gates are inclusive (`<=`): a value equal to the gate passes. The gates above are set under the 6 s and 3 s targets, so they hold for either.
+The numbers 6 s and 3 s are the intended timeouts. Check the current constants before reading a result: at the time of writing `research/claude.js` has one 22 s budget (`CLAUDE_TIMEOUT_MS`: compose 16 s, `CLAUDE_COMPOSE_MS`, then a retry of at most 8 s), a 2.5 s minimum for the retry (`RETRY_MIN_MS`) and an 8 ms privacy budget (`privacyBudget.ms`). All gates are inclusive (`<=`): a value equal to the gate passes. The gates above are set under the 6 s and 3 s targets, so they hold for either.
 
 ## Who runs it
 

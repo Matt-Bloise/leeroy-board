@@ -641,7 +641,7 @@ export async function patchOriginalWithRetry(interaction, content, components = 
 
 // Run an answer and edit the placeholder (@original) with the result. The final edit is ALWAYS sent, exactly once:
 // the answer, or the persona error line plus "Try again in a moment" when the provider chain failed or the deadline
-// (ASK_DEADLINE_MS, 24s, under the roughly 30s waitUntil cap) passed. An answer that lands after the deadline is still
+// (ASK_DEADLINE_MS, 26s, under the 30s waitUntil cap) passed. An answer that lands after the deadline is still
 // stored by answerWithAi in ask_turns (the website shows it) and is never sent a second time.
 export async function answerAndDeliver({ env, interaction, intentId, persona, answer, wrap = (s) => s, isPrivate = false, askerId = "", memberOpen = false }) {
   const startedAt = Date.now();

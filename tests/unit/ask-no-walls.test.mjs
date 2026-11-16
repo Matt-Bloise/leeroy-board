@@ -458,11 +458,13 @@ test("11. every wall-pattern string in the ask UI files is the typed-length vali
 // ---- 5. deadline margin ---------------------------------------------------------------------------------------------------------------------------------
 test("12. researchTimeoutMs keeps every Workers AI attempt inside deadline minus 4 s", () => {
   assert.equal(researchTimeoutMs(0, 12000), 12000);
-  assert.equal(researchTimeoutMs(9000, 12000), 11000);
-  assert.equal(researchTimeoutMs(12000, 9000), 8000);
-  assert.equal(researchTimeoutMs(19900, 9000), null, "less than 1 s left: skip the attempt, never start one past the margin");
-  assert.equal(researchTimeoutMs(20500, 8000, 24000), null);
-  assert.equal(researchTimeoutMs(19000, 9000), 1000, "exactly 1 s left still runs");
+  // CHANGED: the default deadline is 26 s (was 24 s): the margin is still 4 s, so every limit below moved by 2 s.
+  assert.equal(researchTimeoutMs(9000, 12000), 12000);
+  assert.equal(researchTimeoutMs(12000, 12000), 10000);
+  assert.equal(researchTimeoutMs(12000, 9000), 9000);
+  assert.equal(researchTimeoutMs(21900, 9000), null, "less than 1 s left: skip the attempt, never start one past the margin");
+  assert.equal(researchTimeoutMs(20500, 8000, 24000), null); // an explicit 24 s deadline behaves as before
+  assert.equal(researchTimeoutMs(21000, 9000), 1000, "exactly 1 s left still runs");
 });
 
 test("12. worst case with a faked clock: Claude takes 9 s, then the degraded line (no Workers AI); a guest's Workers AI attempt ends by 20 s and its retry only starts at or before 12 s", async () => {
