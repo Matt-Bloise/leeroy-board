@@ -9,17 +9,17 @@
    "class_key": "druid",
    "class": "Druid",
    "race": "Tauren",
-   "spec": "Feral, bear tank",
-   "role": "tank",
+   "spec": "Feral, cat damage",
+   "role": "damage",
    "color": "#ff7c0a",
    "start_zone": "Mulgore",
    "professions": [
     {
-     "name": "Leatherworking",
+     "name": "Herbalism",
      "source": "board"
     },
     {
-     "name": "Skinning",
+     "name": "Alchemy",
      "source": "board"
     }
    ]
@@ -55,7 +55,7 @@
    "start_zone": "Elwynn Forest",
    "professions": [
     {
-     "name": "Blacksmithing",
+     "name": "Skinning",
      "source": "board"
     },
     {

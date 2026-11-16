@@ -41,6 +41,7 @@
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
 import { ignoredConsoleError, cspCheck, sweepContext } from "../helpers/sweep-filters.mjs";
 import { pageUrl } from "../helpers/page-url.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
 import { XR_JS, sameOrigin, captureConsoleError } from "../helpers/sweep-diag.mjs";
@@ -315,7 +316,7 @@ async function openState(page, state) {
       await sceneOpen(20000);
     }
     await page.waitForSelector("#tn-me .tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
-    await press(page, page.getByRole("button", { name: /Bloise/ }).first());
+    await press(page, page.getByRole("button", { name: new RegExp(standIn(3).name) }).first());
     await press(page, page.getByRole("button", { name: /Show me what is next/ }).first());
   }
   await page.waitForTimeout(state === "gate" ? 300 : 1200);

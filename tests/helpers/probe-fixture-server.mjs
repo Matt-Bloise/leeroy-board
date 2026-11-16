@@ -44,6 +44,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { loadSnapshot, repoDoc } from "./api-stub.mjs";
+import { isPrivatePath } from "../../tools/pages-bundle.mjs";
 const beaconFail = (then) => `setTimeout(() => { const i = new Image(); i.src = "https://static.cloudflareinsights.com/__probe_selftest_404"; document.body.append(i); setTimeout(() => { ${then} }, 600); }, 1200);`; // the probe (PROBE_SELFTEST_BEACON=1) answers this URL 404 without CORS headers, so the browser logs the real error
 const CORS_LINE = "console.error('Origin ' + location.origin + ' is not allowed by Access-Control-Allow-Origin. Status code: 404');";
 const beaconLine = (host) => "console.error('Beacon API cannot load https://" + host + "/cdn-cgi/rum. Origin ' + location.origin + ' is not allowed by Access-Control-Allow-Origin. Status code: 404');";
@@ -117,10 +118,10 @@ export async function startFixtureServer({ mode = "green", crossOrigin = false }
       if (hit) { res.writeHead(hit.status, { "content-type": hit.type || "application/json", "cache-control": "no-store" }); return res.end(hit.body); }
       return json(res, '{"error":"not in api-snapshot"}', 404);
     }
-    if (p === "/data/client.json") { res.writeHead(200, { "content-type": TYPES[".json"], "cache-control": "no-store" }); return res.end(client()); }
     const rel = p === "/" ? "/index.html" : decodeURIComponent(p);
     const file = path.normalize(path.join(ROOT, rel));
-    if (!file.startsWith(ROOT + path.sep) || !STATIC_OK.test(rel) && rel !== "/index.html") { res.writeHead(404); return res.end("not found"); }
+    // like the deploy (tools/pages-bundle.mjs): the member data files are not static files, so there is no data/client.json (or party, decide, ...) over plain HTTP
+    if (!file.startsWith(ROOT + path.sep) || !STATIC_OK.test(rel) && rel !== "/index.html" || isPrivatePath(rel)) { res.writeHead(404); return res.end("not found"); }
     let f = file;
     try { if (fs.statSync(f).isDirectory()) f = path.join(f, "index.html"); } catch (e) { res.writeHead(404, { "content-type": "text/plain" }); return res.end("not found"); }
     try { let body = fs.readFileSync(f); seen.static++; if (path.basename(f) === "index.html") seen.index++; if (path.basename(f) === "index.html" && INJECT[mode]) body = Buffer.from(body.toString("utf8").replace("</body>", `<script>${INJECT[mode]}</script></body>`)); res.writeHead(200, { "content-type": TYPES[path.extname(f)] || "application/octet-stream", "cache-control": "no-store" }); res.end(body); } catch (e) { res.writeHead(404); res.end("not found"); }

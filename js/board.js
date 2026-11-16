@@ -278,11 +278,11 @@ const API = (() => {
     return API_OK.test(u.origin) ? u.origin : null;
   } catch (e) { return null; }
 })();
-/* The five documents that carry member data. The static file of each is the WHOLE party, so when the API is set and does not answer 200 it is never read in the API's place:
-   the caller gets the failure and shows MEMBER_DOWN where the section was. Every other document keeps the static fallback. */
-const MEMBER_DOC_RE = /^data\/(party|decide|tonight|guided-atlas|client)\.json/;
+/* The documents that carry member data (the five member documents and the sign-ups). They are not published as static files (tools/pages-bundle.mjs leaves them out of the Pages bundle: the Worker serves them through its privacy projection),
+   so they come from the Worker only. With no API, or an API that does not answer 200, the caller gets the failure and shows MEMBER_DOWN where the section was. Every other document keeps the static fallback. */
+const MEMBER_DOC_RE = /^data\/(party|decide|tonight|guided-atlas|client|signups)\.json/;
 const MEMBER_DOWN = "This part of the board could not load. Try again in a moment.";
-const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; const closed = !!to && MEMBER_DOC_RE.test(url); return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok || closed ? r : fetch(url, opt)), (e) => (closed ? Promise.reject(e) : fetch(url, opt))) : fetch(url, opt); };
+const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; if (!to && MEMBER_DOC_RE.test(url)) return Promise.reject(new Error(`${url}: no board server to ask`)); const closed = !!to && MEMBER_DOC_RE.test(url); return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok || closed ? r : fetch(url, opt)), (e) => (closed ? Promise.reject(e) : fetch(url, opt))) : fetch(url, opt); };
 const BF = (() => {
   const B = ((document.currentScript || {}).src || "").match(/[?&]v=([0-9a-f]+)/), stale = new Set(), file = (u) => String(u).split("?")[0], key = (u) => `bd:${B ? B[1] : "dev"}:${file(u)}`;
   /* boot: drop cached copies stamped by an older build (their key is never read again) */
@@ -317,9 +317,9 @@ const BF = (() => {
 })();
 window.BoardFetch = BF;
 /* The five member documents, wherever a brain base exists (leeroy.party, previews, the Activity, ?brain=): read from the Worker at BoardBrain.url("/data/<name>") ONLY, by the closed rule: a non-OK answer or a failed
-   fetch is the "could not load" line, never the static file of the same name (that file is the whole party). BoardBrain.url answers null for data/ on the legacy matt-bloise.github.io host and when there is no
-   base at all; those keep reading the static file (the legacy host is a frozen copy with no brain to ask), or the ?api= Worker through apiFetch. */
-const MEMBER_NAMES = ["party", "decide", "tonight", "client", "guided-atlas"];
+   fetch is the "could not load" line, never a static file of the same name (the deploy publishes none). BoardBrain.url answers null for data/ on the legacy matt-bloise.github.io host and when there is no
+   base at all; there the ?api= Worker answers through apiFetch, and without one the document is not available (the same "could not load" line). */
+const MEMBER_NAMES = ["party", "decide", "tonight", "client", "guided-atlas", "signups"];
 const memberUrl = (n) => { const b = window.BoardBrain; if (!MEMBER_NAMES.includes(n) || !b || typeof b.url !== "function") return null; try { return b.url(`/data/${n}`); } catch (e) { return null; } };
 const dataGet = (n) => {
   const mu = memberUrl(n);

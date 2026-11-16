@@ -12,8 +12,8 @@ const LANDS = {
   melee: (m) => m.class_key === "druid" || m.class_key === "paladin",
 };
 
-/* One row per giver and audience: { giver, cls, className, to: "everyone" | "Santa and Street Rat" | "one person you pick", buffs: [names] }.
-   Buffs with the same audience on one giver share a row, so a glance reads "Bible Boi to everyone: Power Word: Fortitude, Divine Spirit". */
+/* One row per giver and audience: { giver, cls, className, to: "everyone" | "Ada and Ben" | "one person you pick", buffs: [names] }.
+   Buffs with the same audience on one giver share a row, so a glance reads "Cleo to everyone: Power Word: Fortitude, Divine Spirit". */
 export function glance(list, members, { sixth = false } = {}) {
   const and = (a) => (a.length < 2 ? a.join("") : a.length === 2 ? a.join(" and ") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`);
   const rows = [];
