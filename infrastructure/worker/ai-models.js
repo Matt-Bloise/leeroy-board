@@ -411,16 +411,25 @@ export async function fetchWithGatewayFallback({
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
   // Research mode (singleHop): friend text goes only to Anthropic's API, direct or through the gateway's anthropic route; any other URL is refused before a send (research/real-names.js).
   if (singleHop) { assertAnthropicUrl(defaultEndpoint); assertAnthropicUrl(gwUrl); }
-  const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN)) || ""; // never the account-wide deploy token
+  // never the account-wide deploy token. Edge whitespace (a dashboard paste, a trailing newline) is trimmed; a value that still has whitespace or control characters inside, or is absurdly long, would make
+  // the runtime's header check throw before any send, so it is not used: a research or BYOK send (no direct hop to fall back to) stops with a fixed code, any other send goes on without the gateway token.
+  const rawAigToken = env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN);
+  const aigToken = typeof rawAigToken === "string" ? rawAigToken.trim() : "";
+  const aigTokenBad = aigToken.length > 0 && (aigToken.length > 512 || /[\s\x00-\x1f\x7f]/.test(aigToken));
   if (!allowDirectFallback) {
     if (gwUrl === defaultEndpoint || !gatewayReady(env)) {
       throw new Error("Anthropic BYOK needs the AI Gateway configured (account id, gateway id and gateway token)");
     }
   }
+  if (aigTokenBad && (singleHop || !allowDirectFallback)) {
+    const e = new Error("AI Gateway token is not usable as a header value");
+    e.code = "AI_GATEWAY_TOKEN_INVALID"; // fixed text and code: never the value
+    throw e;
+  }
   const cacheHeaders = env && env.AI_GATEWAY_ID ? {
     "cf-aig-cache-ttl": String(env.AI_GATEWAY_CACHE_TTL || 21600), // 6 hours matching the cron update cycle
     "cf-aig-metadata": gatewayMetadata(metadata),
-    ...(aigToken ? { "cf-aig-authorization": `Bearer ${aigToken}` } : {}),
+    ...(aigToken && !aigTokenBad ? { "cf-aig-authorization": `Bearer ${aigToken}` } : {}),
     ...(skipCache ? { "cf-aig-skip-cache": "true" } : {}),
     ...(cacheKey ? { "cf-aig-cache-key": String(cacheKey) } : {}),
   } : {};
