@@ -106,6 +106,11 @@ test("Pages: the member data files are not published (404) and data/atlas/links.
     const r = await fetch(`${PAGES}/data/${p}.json`, { redirect: "manual" });
     await r.arrayBuffer();
     assert.equal(r.status, 404, `/data/${p}.json answered ${r.status}: member data must come from the Worker only`);
+    // the Pages Function (pages-worker/) answers these itself: never cacheable, so an edge layer cannot keep a copy of the answer either
+    assert.match(r.headers.get("cache-control") || "", /no-store/, `/data/${p}.json 404 must be no-store`);
+    const q = await fetch(`${PAGES}/data/${p}.json?cb=${Date.now()}`, { redirect: "manual", headers: { "cache-control": "no-cache" } });
+    await q.arrayBuffer();
+    assert.equal(q.status, 404, `/data/${p}.json?cb answered ${q.status}`);
   }
   const l = await fetch(`${PAGES}/data/atlas/links.json`);
   assert.equal(l.status, 200);

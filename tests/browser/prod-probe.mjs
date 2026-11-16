@@ -7,7 +7,9 @@
 //
 // What it does, per engine (Chromium, WebKit, Firefox, one after the other) and per viewport (phone 390x844, laptop 1366x768): ONE page load, "Just take a look",
 // then every scene is opened in turn (the location hash, which is what a tab press sets): timeline, five, five.party, one sheet per party member (five.<slug>), roads,
-// racials, legacy, buffs, ledger, signups, librarian, library, decide, tonight. It FAILS on:
+// racials, legacy, buffs, ledger, signups, librarian, library, decide, tonight. Before any browser starts it also checks (no browser, status lines only) that none of the private member data
+// paths (data/party.json, decide, tonight, guided-atlas, client, signups) answers 2xx on the site hostnames. It FAILS on:
+//   - any private data path answering 2xx on https://leeroy.party or https://leeroy-board.pages.dev, bare URL, cache-busted, or as a raw dot-segment / parent-segment / backslash spelling (helpers/private-path-probe.mjs; asked again up to 3 times, and a 2xx on any attempt stays a failure)
 //   - any console error or uncaught page error (only third-party/report-only noise is exempt: the Cloudflare beacon, CSP messages that say they are
 //     report-only, WebKit-without-WebGL when SMOKE_ALLOW_WEBKIT_NO_WEBGL=1; an ENFORCED Content Security Policy violation fails)
 //   - any 4xx/5xx response from the site itself; from the API any 5xx, and any 4xx on /api/bootstrap and /api/state (a 4xx elsewhere, for example an anonymous 401, is a
@@ -39,6 +41,7 @@ import fs from "node:fs";
 import { pageUrl, originOf } from "../helpers/page-url.mjs";
 import { WORDS, slugOf, junkIn, wrongCountCopy, memberCountProblem, uniq, consoleFailures, exemptedAdvisories, classifyHttp, isInsightsHost, stubbedContext } from "../helpers/probe-checks.mjs";
 import { createBudget, guardContext } from "../helpers/probe-budget.mjs";
+import { probePrivatePaths, DEFAULT_HOSTS } from "../helpers/private-path-probe.mjs";
 import { parseClock } from "../helpers/clock-arg.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm ci in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
@@ -65,6 +68,20 @@ if (API_ROUTE === "fetch") console.log("WARN PROBE_API_ROUTE=fetch: the probe se
 const problems = [], notes = [], hiddenCopy = new Set(), advisories = new Set();
 const fail = (where, what) => { problems.push(`${where}: ${what}`); console.log(`FAIL ${where}: ${what}`); };
 const pass = (what) => console.log(`PASS ${what}`);
+
+// 0. Member data is Worker-only: no private data path (tools/pages-bundle.mjs list, pages-worker/private-paths.mjs) may answer 2xx on a SITE hostname, the bare URL and a cache-busted one,
+// on https://leeroy.party and https://leeroy-board.pages.dev (the site hostname alone when the probe is pointed at something else). Status lines only, never a body (helpers/private-path-probe.mjs).
+// A 2xx FAILS the probe (the production-probe job is non-blocking, so the deploy is never held up by it). The API host is NOT checked here: /api/data/party on api.leeroy.party is the Worker
+// route and is supposed to answer 200. These requests are static-path requests on the site (Pages Function invocations once the Function is deployed): 60 per run, 180 at the most with retries.
+{
+  const host = new URL(SITE).hostname;
+  const hosts = local || !/(^|\.)leeroy\.party$/.test(host) ? [SITE] : [...new Set([SITE, ...DEFAULT_HOSTS])];
+  const priv = await probePrivatePaths({ hosts });
+  for (const l of priv.lines) console.log(l);
+  for (const w of priv.warnings) console.log(`${w}
+::warning title=Production probe::${w}`);
+  if (priv.problems.length) priv.problems.forEach((x) => fail("private-data", x)); else if (!priv.warnings.length) pass(`no private data path answers 2xx on ${hosts.join(", ")} (${priv.checked} requests)`);
+}
 
 // 1. The reference: the real party, read once by Node. redirect: "error": Node would otherwise follow a redirect chain, each hop a Worker request the budget never saw.
 if (!budget.spend()) { console.error("budget too small"); process.exit(2); }

@@ -5,7 +5,8 @@
 //   - both workflows stage the bundle through the script (and no longer copy the data folder themselves), the production deploy and the PR preview alike;
 //   - a simulated bundle (the script run into a temp folder) holds none of the private paths and no member field next to a member name, in any file;
 //   - the final assertion fires: a stale private file in the output folder makes the script exit 1;
-//   - the local static server answers 404 for the private files, like the deploy.
+//   - the local static server answers 404 for the private files, like the deploy;
+//   - the bundle also ships the Pages Function (_worker.js/) and _routes.json that answer 404 for the private paths whatever an edge layer holds (tests/unit/pages-worker.test.mjs has the Function itself).
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -13,9 +14,10 @@ import os from "node:os";
 import net from "node:net";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { PRIVATE_DATA_FILES, STRIPPED_FILES, BUNDLE_ITEMS, buildBundle, assertBundleClean, stripLinks, isPrivatePath, strippedFor } from "../../tools/pages-bundle.mjs";
+import { isPrivateRequestPath, privateRoutes } from "../../pages-worker/private-paths.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
@@ -229,4 +231,69 @@ test("nothing that ships in the bundle fetches a private data file over plain HT
     }
   }
   assert.deepEqual(bad, []);
+});
+
+// ---- The Pages Function (pages-worker/, staged as _worker.js/) and _routes.json: "not published" is not enough (docs/runbooks/member-data-worker-only.md, "The stale copy") ----
+
+test("the staged bundle ships the Pages Function and _routes.json, byte for byte from the repository, and still no private file anywhere in it", async () => {
+  const out = tmp();
+  try {
+    buildBundle(root, out);
+    for (const f of ["index.js", "private-paths.mjs"]) {
+      assert.ok(fs.existsSync(path.join(out, "_worker.js", f)), `_worker.js/${f} is staged`);
+      assert.equal(fs.readFileSync(path.join(out, "_worker.js", f), "utf8"), read(`pages-worker/${f}`), `_worker.js/${f} is the repository copy`);
+    }
+    assert.deepEqual(fs.readdirSync(path.join(out, "_worker.js")).sort(), ["index.js", "private-paths.mjs"], "nothing else rides along in the Function folder");
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(out, "_routes.json"), "utf8")), privateRoutes());
+    assert.ok(!fs.existsSync(path.join(out, "functions")), "no functions/ folder: the Function is the advanced-mode _worker.js (wrangler reads functions/ from its working directory, never from the output folder)");
+    // no staged path, at any depth, is a private path (a copy inside _worker.js or any renamed folder would be caught too)
+    for (const f of walk(out)) {
+      const rel = path.relative(out, f).split(path.sep).join("/");
+      assert.equal(isPrivatePath(rel), false, `${rel} is a private path`);
+      assert.equal(isPrivateRequestPath("/" + rel), false, `/${rel} is a private path`);
+    }
+    // the staged Function, loaded from the bundle itself, behaves: 404 for a private path, the asset for a public one
+    const m = await import(pathToFileURL(path.join(out, "_worker.js", "index.js")).href);
+    const env = { ASSETS: { fetch: async () => new Response("ASSET") } };
+    const priv = await m.default.fetch({ url: "https://leeroy.party/data/party.json", method: "GET" }, env);
+    assert.equal(priv.status, 404);
+    assert.equal(priv.headers.get("cache-control"), "no-store");
+    const pub = await m.default.fetch({ url: "https://leeroy.party/data/timeline.json", method: "GET" }, env);
+    assert.equal(await pub.text(), "ASSET");
+  } finally { rmrf(out); }
+});
+
+test("the final assertion also fires when the Function or the routes are missing or altered (the deploy step stops before wrangler pages deploy)", () => {
+  const mk = () => { const o = tmp(); buildBundle(root, o); return o; };
+  for (const [what, mutate, re] of [
+    ["the Function folder is missing", (o) => rmrf(path.join(o, "_worker.js")), /_worker\.js\/index\.js is missing/],
+    ["the shared path file is missing from the Function folder", (o) => fs.rmSync(path.join(o, "_worker.js", "private-paths.mjs")), /_worker\.js\/private-paths\.mjs is missing/],
+    ["_routes.json is missing", (o) => fs.rmSync(path.join(o, "_routes.json")), /_routes\.json is missing/],
+    ["_routes.json routes nothing private", (o) => fs.writeFileSync(path.join(o, "_routes.json"), JSON.stringify({ version: 1, include: ["/nothing"], exclude: [] })), /_routes\.json does not equal/],
+    ["_routes.json is not JSON", (o) => fs.writeFileSync(path.join(o, "_routes.json"), "{"), /_routes\.json does not equal/],
+    ["_routes.json is a wildcard that would run the Function for every asset", (o) => fs.writeFileSync(path.join(o, "_routes.json"), JSON.stringify({ version: 1, include: ["/*"], exclude: [] })), /_routes\.json does not equal/],
+  ]) {
+    const o = mk();
+    try { mutate(o); assert.throws(() => assertBundleClean(o), re, what); } finally { rmrf(o); }
+  }
+});
+
+test("both deploy workflows upload the staged folder itself (so _worker.js and _routes.json go with it) from the infrastructure working directory, and no functions/ folder exists there", () => {
+  for (const wf of WORKFLOWS) {
+    const run = Object.values(parseYaml(read(wf)).jobs).flatMap((j) => j.steps || []).map((s) => s.run || "").find((r) => /pages deploy/.test(r));
+    assert.match(run, /pages deploy \.\.\/\.cloudflare-dist /, `${wf}: wrangler pages deploy uploads ../.cloudflare-dist`);
+    assert.match(run, /cd infrastructure/, `${wf}: the upload runs from infrastructure/ (wrangler reads functions/ from the working directory, which holds none)`);
+    assert.ok(!/--no-bundle|functions-directory|--functions/.test(run), `${wf}: no flag that changes how the Function folder is read`);
+  }
+  assert.ok(!fs.existsSync(path.join(root, "infrastructure", "functions")), "no infrastructure/functions: wrangler would build it next to _worker.js");
+});
+
+test("the Function is a pure module a Pages _worker.js folder can bundle: ES module, default export with fetch, no node: import, ASCII", () => {
+  for (const f of ["index.js", "private-paths.mjs"]) {
+    const src = read(`pages-worker/${f}`);
+    assert.ok(!/from\s+["']node:/.test(src) && !/require\(/.test(src), `${f} uses no node: module`);
+    assert.ok(!/[^\x00-\x7f]/.test(src), `${f} is ASCII`);
+  }
+  assert.match(read("pages-worker/index.js"), /export default \{ fetch/);
+  assert.match(read("pages-worker/index.js"), /from "\.\/private-paths\.mjs"/);
 });
