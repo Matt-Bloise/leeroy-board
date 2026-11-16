@@ -24,6 +24,7 @@ import { runScheduledSourceSweep, recomputeCategoryAndIndex, acquireRefreshCoold
 import { feedbackReport, cleanupAnswerUx, insertAskTurn, newGuestSecret, privateTurnAccess, RELOAD_ANSWER_LINE } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
+import { handleListen } from "./listener.js";
 import { manifestFor } from "./setup-command.js";
 import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
@@ -518,7 +519,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 export function projectionTag(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); }
 
 export const ROUTES = [
-  "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
+  "POST /discord", "POST /listen", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
@@ -547,6 +548,10 @@ const worker = {
       // 0. Discord Serverless HTTP Interactions Endpoint (`POST /api/discord`) & Command Manifest (`GET /api/discord/commands`)
       if (req.method === "POST" && path === "/discord") {
         return await handleDiscordInteraction(req, env, ctx, url.origin);
+      }
+      // The listener (LISTENER flag, off by default): a signed message event from the PC forwarder. See listener.js.
+      if (req.method === "POST" && path === "/listen") {
+        return await handleListen(req, env, ctx, url.origin);
       }
       if (req.method === "GET" && path === "/discord/commands") {
         return jsonResp({ commands: manifestFor(env, DISCORD_SLASH_COMMANDS_MANIFEST) }, 200, cors);
