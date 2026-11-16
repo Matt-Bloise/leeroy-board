@@ -9,7 +9,7 @@
 // then every scene is opened in turn (the location hash, which is what a tab press sets): timeline, five, five.party, one sheet per party member (five.<slug>), roads,
 // racials, legacy, buffs, ledger, signups, librarian, library, decide, tonight. Before any browser starts it also checks (no browser, status lines only) that none of the private member data
 // paths (data/party.json, decide, tonight, guided-atlas, client, signups) answers 2xx on the site hostnames. It FAILS on:
-//   - any private data path answering 2xx on https://leeroy.party or https://leeroy-board.pages.dev, bare URL or cache-busted (helpers/private-path-probe.mjs; asked again up to 3 times first)
+//   - any private data path answering 2xx on https://leeroy.party or https://leeroy-board.pages.dev, bare URL, cache-busted, or as a raw dot-segment / parent-segment / backslash spelling (helpers/private-path-probe.mjs; asked again up to 3 times, and a 2xx on any attempt stays a failure)
 //   - any console error or uncaught page error (only third-party/report-only noise is exempt: the Cloudflare beacon, CSP messages that say they are
 //     report-only, WebKit-without-WebGL when SMOKE_ALLOW_WEBKIT_NO_WEBGL=1; an ENFORCED Content Security Policy violation fails)
 //   - any 4xx/5xx response from the site itself; from the API any 5xx, and any 4xx on /api/bootstrap and /api/state (a 4xx elsewhere, for example an anonymous 401, is a
@@ -72,7 +72,7 @@ const pass = (what) => console.log(`PASS ${what}`);
 // 0. Member data is Worker-only: no private data path (tools/pages-bundle.mjs list, pages-worker/private-paths.mjs) may answer 2xx on a SITE hostname, the bare URL and a cache-busted one,
 // on https://leeroy.party and https://leeroy-board.pages.dev (the site hostname alone when the probe is pointed at something else). Status lines only, never a body (helpers/private-path-probe.mjs).
 // A 2xx FAILS the probe (the production-probe job is non-blocking, so the deploy is never held up by it). The API host is NOT checked here: /api/data/party on api.leeroy.party is the Worker
-// route and is supposed to answer 200. These requests are static-path requests on the site (Pages Function invocations once the Function is deployed): 24 per run, 72 at the most with retries.
+// route and is supposed to answer 200. These requests are static-path requests on the site (Pages Function invocations once the Function is deployed): 60 per run, 180 at the most with retries.
 {
   const host = new URL(SITE).hostname;
   const hosts = local || !/(^|\.)leeroy\.party$/.test(host) ? [SITE] : [...new Set([SITE, ...DEFAULT_HOSTS])];

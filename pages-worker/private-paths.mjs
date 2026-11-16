@@ -52,7 +52,21 @@ const REQUEST_FORMS = new Set(PRIVATE_DATA_FILES.flatMap((f) => [f, f.replace(/\
 export const isPrivateRequestPath = (input) => { const c = canonRequestPath(input); return c === null || REQUEST_FORMS.has(c); };
 
 // The Pages routing file (_routes.json): the Function runs only for these routes, every other request is a static asset request that never invokes it (free and unlimited).
-// Query strings are not part of a route. Exact paths, no wildcard: a route pattern that is not understood would silently stop protecting; these are the literal paths the stale copies are served at.
+// Rule syntax (wrangler's reference implementation, templates/pages-dev-util.ts isRoutingRuleMatch, which runs `pages dev`): matched against the URL pathname (no query, no fragment), case-SENSITIVE,
+// `*` is any run of characters (slashes too) anywhere in the rule, and a rule that does not end in `*` also matches with one trailing slash. Limits (wrangler validateRoutes): at most 100 rules, 100
+// characters each, every rule starts with "/", and a rule ending in "/*" may not overlap another rule. Per private file, three rules:
+//   /data/party.json   /data/party   the literal paths (what a plain request names)
+//   /*party.json*      any path that contains the file name followed by anything: "/data/./party.json", "/data/x/../party.json", "/data\party.json", "//data//party.json", "/data/party.json;v=1".
+//                      The edge was measured serving the stale copy for the dot-segment and backslash forms (docs/runbooks/member-data-worker-only.md), so the route must catch them even if routing
+//                      sees the raw path. A public file such as data/sample/party.json also matches: the Function hands it to the assets unchanged (one extra invocation, same answer).
+// and one rule for the whole class of percent-encoded paths:
+//   /*%*               any path that contains a "%": "/data/%70arty.json", "/data%2Fparty.json", "/%64ata/...", double encodings. No shipped file has a "%" in its name, so real traffic never matches.
+// What a route cannot express: a different CASE ("/DATA/PARTY.JSON"): rules are case-sensitive and a case-insensitive pattern needs one rule per spelling. Those are left to the asset layer, which is
+// case-sensitive and was measured to 404 them (tests/unit/pages-worker.test.mjs, MEASURED_ASSET_404). A "/data/*" rule would add every public data file (2 to 6 static requests per cold visit, measured)
+// and, ending in "/*", could not coexist with other /data/ rules.
 export function privateRoutes() {
-  return { version: 1, include: PRIVATE_DATA_FILES.flatMap((f) => ["/" + f, "/" + f.replace(/\.json$/, "")]), exclude: [] };
+  const include = [];
+  for (const f of PRIVATE_DATA_FILES) include.push("/" + f, "/" + f.replace(/\.json$/, ""), `/*${f.replace(/^data\//, "")}*`);
+  include.push("/*%*");
+  return { version: 1, include, exclude: [] };
 }

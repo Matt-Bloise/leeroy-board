@@ -33,19 +33,93 @@ const PRIVATE_VARIANTS = [
   "//data//{n}.json", "/data/./{n}.json", "/data/x/../{n}.json", "/data/%2e%2e/data/{n}.json", "/data/{n}.json/.", "/./data/{n}.json",
   "/%64ata/{n}.json", "/data%2F{n}.json", "/data%2f{n}%2ejson", "/data/{n}%2Ejson", "/data/{n}.json%20", "/data/{n}.json.", "/data/{n}.json ", "/data/{n}.json%00", "/data/{n}.json%09",
   "/data/{n}.json::$DATA", "/data/{n}.json;v=1", "/data/{n}.json%3Fx=1", "/data/{n}.json%23x", "/data\\{n}.json", "/data%5C{n}.json",
+  "/data/./{n}", "/data/../data/{n}", "/data/.%2e/data/{n}.json",
 ];
-const variantsOf = (n) => PRIVATE_VARIANTS.map((v) => v.replaceAll("{n}", n).replaceAll("{N}", n.toUpperCase())).concat([
-  `/data/%${n.charCodeAt(0).toString(16)}${n.slice(1)}.json`, // %70arty.json
-  `/data/${n.replace(/^./, (c) => "%25" + c.charCodeAt(0).toString(16))}.json`, // %2570arty.json (double encoding)
-  `/data/${n.replace(/^./, (c) => "%2525" + c.charCodeAt(0).toString(16))}.json`, // triple
-  `/data/${[...n].map((c) => "%" + c.charCodeAt(0).toString(16)).join("")}.json`, // every letter encoded
-  `/data/${[...n].map((c) => c.replace(/[a-z]/, (x) => String.fromCharCode(x.charCodeAt(0) + 0xfee0))).join("")}.json`, // full-width letters (NFKC folds them)
+// Each variant is { t: its template (the key in MEASURED_ASSET_404), p: the path }.
+const variantsOf = (n) => PRIVATE_VARIANTS.map((v) => ({ t: v, p: v.replaceAll("{n}", n).replaceAll("{N}", n.toUpperCase()) })).concat([
+  { t: "percent-encoded first letter", p: `/data/%${n.charCodeAt(0).toString(16)}${n.slice(1)}.json` }, // %70arty.json
+  { t: "double encoding", p: `/data/${n.replace(/^./, (c) => "%25" + c.charCodeAt(0).toString(16))}.json` }, // %2570arty.json
+  { t: "triple encoding", p: `/data/${n.replace(/^./, (c) => "%2525" + c.charCodeAt(0).toString(16))}.json` },
+  { t: "every letter encoded", p: `/data/${[...n].map((c) => "%" + c.charCodeAt(0).toString(16)).join("")}.json` },
+  { t: "full-width letters", p: `/data/${[...n].map((c) => c.replace(/[a-z]/, (x) => String.fromCharCode(x.charCodeAt(0) + 0xfee0))).join("")}.json` }, // NFKC folds them
 ]);
 
 test("every private variant of every private file is recognised by the canonical request check", () => {
   let n = 0;
-  for (const name of NAMES) for (const v of variantsOf(name)) { n++; assert.equal(isPrivateRequestPath(v), true, `${v} must be private (canon: ${canonRequestPath(v)})`); }
+  for (const name of NAMES) for (const { p } of variantsOf(name)) { n++; assert.equal(isPrivateRequestPath(p), true, `${p} must be private (canon: ${canonRequestPath(p)})`); }
   assert.ok(n > 200, `${n} variants tried`);
+});
+
+// ---- Which variants can reach the Function at all (docs/runbooks/member-data-worker-only.md, "The stale copy") ----
+// The Function only sees a request when a _routes.json include rule matches its path. This is the rule matcher of wrangler's `pages dev` (templates/pages-dev-util.ts isRoutingRuleMatch, wrangler 4.148.0),
+// the reference implementation of the documented syntax: case-sensitive, `*` is any run of characters (slashes included) anywhere in the rule, a rule that does not end in `*` also matches with one trailing slash.
+function ruleMatches(pathname, rule) {
+  let r;
+  if (rule === "/" || rule === "/*") r = rule;
+  else if (rule.endsWith("/*")) r = `${rule.slice(0, -2)}(/*)?`;
+  else if (rule.endsWith("/")) r = `${rule.slice(0, -1)}(/)?`;
+  else if (rule.endsWith("*")) r = rule;
+  else r = `${rule}(/)?`;
+  return new RegExp(`^${r.replaceAll(/\./g, "\\.").replaceAll(/\*/g, ".*")}$`).test(pathname);
+}
+const routed = (pathname, routes = privateRoutes()) => routes.include.some((rule) => ruleMatches(pathname, rule)) && !routes.exclude.some((rule) => ruleMatches(pathname, rule));
+// wrangler's validateRoutes (routes-validation.ts): at most 100 rules, 100 characters each, every rule starts with "/", a rule ending in "/*" may not overlap another rule of the same list.
+function routesProblems(r) {
+  const out = [];
+  if (r.version !== 1 || !Array.isArray(r.include) || !Array.isArray(r.exclude) || !r.include.length) out.push("not a version 1 spec with at least one include rule");
+  const all = [...r.include, ...r.exclude];
+  if (all.length > 100) out.push("more than 100 rules");
+  for (const x of all) { if (x.length > 100) out.push(`${x}: over 100 characters`); if (!x.startsWith("/")) out.push(`${x}: does not start with /`); }
+  for (const list of [r.include, r.exclude]) for (const splat of list.filter((x) => x.endsWith("/*"))) for (const other of list) if (other !== splat && other.startsWith(splat.slice(0, -1))) out.push(`${splat} overlaps ${other}`);
+  return out;
+}
+// What goes over the wire: a request target cannot hold a raw space, control character or non-ASCII character, so those travel percent-encoded (the URL parser of every client does that).
+const wire = (p) => p.replace(/[\u0000-\u0020\u007f-\uffff]/gu, (c) => encodeURIComponent(c));
+// Variants no include rule can express, with what the asset layer answered when they were requested on https://leeroy.party and https://leeroy-board.pages.dev (curl --path-as-is, 2026-11-16, for party.json):
+// the current deployment's 404, text/html, no Age header. They matter only if the asset layer ever serves a private file under a different case or spelling; it is case-sensitive and did not.
+// A 404 from one edge node is not proof for every node (the stale exact path itself answered 404 on some pages.dev nodes), which is why every class a route CAN express is routed instead of listed here.
+const MEASURED_ASSET_404 = {
+  "/DATA/{N}.JSON": 404, // case: rules are case-sensitive, a pattern per spelling is not possible
+  "/Data/{n}.Json": 404,
+  "/data/./{n}": 404, // extensionless dot-segment forms: no asset exists at the extensionless name, the stale copy is the .json one (those forms are routed by /*{n}.json*)
+  "/data/../data/{n}": 404,
+};
+
+test("every variant the Function treats as private is either matched by a _routes.json include rule or listed as a measured asset-layer 404", () => {
+  const uncovered = new Map();
+  let routedCount = 0;
+  for (const name of NAMES) for (const { t, p } of variantsOf(name)) {
+    const path = wire(p.replace(/[?#].*$/, "")); // a query or fragment is not part of the route match
+    if (routed(path)) { routedCount++; continue; }
+    uncovered.set(t, [...(uncovered.get(t) || []), p]);
+  }
+  for (const [t, ps] of uncovered) assert.ok(t in MEASURED_ASSET_404, `${t} (for example ${ps[0]}) is private to the Function but no _routes.json rule matches it and no measured 404 is recorded: route it or measure it`);
+  for (const t of Object.keys(MEASURED_ASSET_404)) assert.ok(uncovered.has(t), `MEASURED_ASSET_404 lists ${t} but a route now matches it: remove the entry`);
+  for (const [t, st] of Object.entries(MEASURED_ASSET_404)) assert.equal(st, 404, t);
+  assert.ok(routedCount > 200, `${routedCount} variants are routed`);
+});
+
+test("the stale-copy classes measured on 2026-11-16 are all routed: exact, dot segments, parent segments, backslash, a trailing slash, any percent-encoding, a suffix, //", () => {
+  for (const name of NAMES) for (const p of [
+    `/data/${name}.json`, `/data/./${name}.json`, `/./data/${name}.json`, `/data/x/../${name}.json`, `/data/../data/${name}.json`, "/data\\" + `${name}.json`, `/data/${name}.json/`, `//data//${name}.json`,
+    `/data/%70${name.slice(1)}.json`, `/data%2F${name}.json`, `/data/${name}.json;v=1`, `/data/${name}`,
+  ]) assert.equal(routed(p), true, `${p} must reach the Function`);
+  // and what must NOT: ordinary assets, other public data (so the Free plan's Function allowance is not spent on them)
+  for (const p of ["/", "/index.html", "/js/board.js", "/css/board.css", "/scenes/sheet.js", "/img/tavern-plate.jpg", "/data/timeline.json", "/data/stats.json", "/data/library/glossary.json", "/data/atlas/links.json", "/data/trust.json", "/data/cta.json", "/data/launch.json", "/data/sheet-vocab.json", "/fonts/alegreya-latin.woff2"]) assert.equal(routed(p), false, `${p} must not invoke the Function`);
+});
+
+test("the matcher follows the documented rule syntax (a self-check of the test's own matcher)", () => {
+  assert.equal(ruleMatches("/foo", "/foo"), true);
+  assert.equal(ruleMatches("/foo/", "/foo"), true, "one trailing slash is optional");
+  assert.equal(ruleMatches("/foo//", "/foo"), false);
+  assert.equal(ruleMatches("/Foo", "/foo"), false, "case-sensitive");
+  assert.equal(ruleMatches("/foo/bar/baz", "/foo/*"), true, "a wildcard spans segments");
+  assert.equal(ruleMatches("/foo", "/foo/*"), true);
+  assert.equal(ruleMatches("/a/b/party.json.bak", "/*party.json*"), true);
+  assert.equal(ruleMatches("/a/b/party.jso", "/*party.json*"), false);
+  assert.equal(ruleMatches("/x%y", "/*%*"), true);
+  assert.equal(ruleMatches("/xy", "/*%*"), false);
+  assert.equal(ruleMatches("/dataXjson", "/data.json"), false, "a dot in a rule is a dot");
 });
 
 test("more encoding layers than the check unwraps are treated as private (fail closed), and a malformed escape does not throw", () => {
@@ -146,17 +220,27 @@ test("the module's default export is the Pages Worker (fetch handler) and notFou
   assert.equal((await notFound()).status, 404);
 });
 
-test("_routes.json: exactly the private paths, literal (no wildcard), within Cloudflare's limits, every route is itself private", () => {
+test("_routes.json: the literal paths, the file-name wildcard and the percent class per private file; valid for wrangler; no catch-all", () => {
   const r = privateRoutes();
-  assert.equal(r.version, 1);
+  assert.deepEqual(routesProblems(r), [], "the spec wrangler pages deploy validates");
   assert.deepEqual(r.exclude, []);
-  assert.deepEqual([...r.include].sort(), PRIVATE_DATA_FILES.flatMap((f) => ["/" + f, "/" + f.replace(/\.json$/, "")]).sort());
-  assert.ok(r.include.length >= 1 && r.include.length <= 100, "at least one and at most 100 rules");
-  for (const x of r.include) {
-    assert.ok(x.length <= 100 && x.startsWith("/"), x);
-    assert.ok(!x.includes("*"), `${x}: no wildcard, so a data file that is public can never be routed to the Function`);
-    assert.equal(isPrivateRequestPath(x), true, `${x} is a private path`);
-  }
+  const expected = PRIVATE_DATA_FILES.flatMap((f) => ["/" + f, "/" + f.replace(/\.json$/, ""), `/*${f.replace(/^data\//, "")}*`]).concat(["/*%*"]);
+  assert.deepEqual([...r.include].sort(), expected.sort());
+  assert.ok(!r.include.includes("/*") && !r.include.includes("/data/*") && !r.include.some((x) => x.endsWith("/*")), "no catch-all and no /data/*: public data files and assets never invoke the Function");
+  for (const f of PRIVATE_DATA_FILES) for (const lit of ["/" + f, "/" + f.replace(/\.json$/, "")]) assert.ok(r.include.includes(lit), `${lit}: the literal path stays a rule of its own (certain to be understood even if wildcards were not)`);
+  assert.deepEqual(routesProblems({ version: 1, include: ["/data/*", "/data/party.json"], exclude: [] }), ["/data/* overlaps /data/party.json"], "the self-check of routesProblems: wrangler refuses a /* rule next to a rule it covers");
+  assert.ok(routesProblems({ version: 1, include: [], exclude: [] }).length > 0);
+  assert.ok(routesProblems({ version: 1, include: ["data/x"], exclude: [] }).length > 0);
+});
+
+test("the wildcard rules cost nothing for the files the site really requests, except a public sample that shares a private file's name", () => {
+  // every static path a visit was measured to request (first load and all 13 scenes, local fixture, 2026-11-16) plus the library and atlas files the code fetches
+  const requested = ["/data/cta.json", "/data/trust.json", "/data/sheet-vocab.json", "/data/launch.json", "/data/stats.json", "/data/timeline.json", "/data/actions.json", "/data/foley.json", "/data/library/index.json", "/data/library/glossary.json",
+    "/data/library/classes.json", "/data/atlas/marks.json", "/data/atlas/links.json", "/data/library/news.json", "/data/library/refresh.json"];
+  for (const p of requested) assert.equal(routed(p), false, `${p} invokes the Function`);
+  const sharing = ["/data/sample/party.json", "/data/sample/signups.json"];
+  for (const p of sharing) assert.equal(routed(p), true, `${p}: the public sample shares a private file's name, so it is routed and handed through unchanged`);
+  for (const p of sharing) assert.equal(isPrivateRequestPath(p), false, `${p} is public: the Function passes it to the assets`);
 });
 
 test("Cloudflare Pages: the repo has no functions/ folder next to the Pages Function (wrangler would build it as well and the two would conflict)", () => {
