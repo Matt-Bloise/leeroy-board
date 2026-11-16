@@ -8,7 +8,7 @@
 
 ## Where requests come from
 
-A request is counted when it reaches a Worker: every `/api/...` call of a page, every WebSocket upgrade (`/api/live`), every API test. Static Pages files (`/js`, `/css`, `/img`, `/data/...` on the Pages origin) are not Worker requests. The preview Worker is deleted after the run but its requests still count.
+A request is counted when it reaches a Worker: every `/api/...` call of a page, every WebSocket upgrade (`/api/live`), every API test. Static Pages files (`/js`, `/css`, `/img`, `/data/...` on the Pages origin) are not Worker requests. The preview Worker is deleted after the run but its requests still count. One exception: the six private member data paths (`/data/party.json` and the others, with or without `.json`) are routed to a Pages Function (`pages-worker/`, `_routes.json`), and a request to a Function is a Workers request. The site never asks for them (it reads the Worker), so only strangers, scanners and the production probe do: the probe asks 24 times per run (at most 72 with its retries), added to the figures below. docs/runbooks/member-data-worker-only.md.
 
 ## How CI spends them now
 
