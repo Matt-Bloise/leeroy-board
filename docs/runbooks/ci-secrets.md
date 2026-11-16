@@ -6,7 +6,7 @@ Why: a workflow file in a pull request runs with the secrets the repository give
 
 | Secret | Where it lives | Used by |
 | :--- | :--- | :--- |
-| `CLOUDFLARE_API_TOKEN` | **repository level, deliberately** (see "Previews share the production Cloudflare token") | `deploy-cloudflare.yml`, and the preview spin-up, preview teardown and preview-secrets steps of `pr-preview-cloudflare.yml` / `preview-tests.yml` |
+| `CLOUDFLARE_API_TOKEN` | **repository level, deliberately** (see "Previews share the production Cloudflare token") | `deploy-cloudflare.yml`, the manual-only `roster-upsert.yml` (docs/runbooks/roster-upsert.md), and the preview spin-up, preview teardown and preview-secrets steps of `pr-preview-cloudflare.yml` / `preview-tests.yml` |
 | `BOARD_ADMIN_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` | **repository level, deliberately** (see below) | `deploy-cloudflare.yml` only (no PR workflow references them) |
 | `CLOUDFLARE_AIG_TOKEN`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
