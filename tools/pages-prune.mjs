@@ -120,7 +120,8 @@ export function backoffMs(attempt, retryAfter, rand = Math.random, { baseMs = BA
   return Math.min(capMs, Math.floor(exp / 2 + rand() * (exp / 2)));
 }
 
-export const isDryRun = (value) => String(value ?? "").trim() !== "false";
+// Real runs need the exact string "false" (what the workflow's boolean input renders as). No trim, no case folding, no coercion: anything else is a dry run.
+export const isDryRun = (value) => value !== "false";
 const clean = (v) => String(v ?? "").replace(/[\r\n\s]/g, "").replace(/^["']|["']$/g, "");
 
 // Repo-relative private paths -> the URLs to purge. Only leeroy.party can be purged through the zone API; the pages.dev URLs are returned separately so the log can say so.

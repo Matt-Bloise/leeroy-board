@@ -201,6 +201,31 @@ test("anything but the exact string false is a dry run (unset, empty, True, 0, n
   assert.equal(isDryRun("false"), false);
 });
 
+test("only the exact string false turns the dry run off: padded, re-cased, empty, numeric and non-string values all stay dry runs", async () => {
+  const variants = [" false", "false ", " false ", "False", "FALSE", "fAlSe", "false\n", "false\r\n", "\tfalse", "\nfalse", "", " ", "0", "no", "off", "true", undefined, null, false, 0, "false;", "'false'", '"false"', "fals", "falsey"];
+  for (const v of variants) {
+    assert.equal(isDryRun(v), true, `isDryRun(${JSON.stringify(v)}) must be a dry run`);
+    const h = harness({ env: { DRY_RUN: v } });
+    if (v === undefined) delete h.opts.env.DRY_RUN;
+    assert.equal(await prune(h.opts), 0);
+    assert.deepEqual(h.f.writes(), [], `DRY_RUN=${JSON.stringify(v)} made a write call`);
+    const p = zoneFake({ env: { DRY_RUN: v } });
+    if (v === undefined) delete p.opts.env.DRY_RUN;
+    await purge(p.opts);
+    assert.equal(p.calls.length, 0, `DRY_RUN=${JSON.stringify(v)}: the purge step made a call`);
+  }
+  assert.equal(isDryRun("false"), false);
+  assert.doesNotMatch(isDryRun.toString(), /trim|toLowerCase|toUpperCase|Boolean|String\(/, "isDryRun does not normalize its input");
+  const dryLine = read("tools/pages-prune.mjs").split("\n").find((l) => /DRY_RUN/.test(l) && /isDryRun\(/.test(l) && /ctx|dryRun:/.test(l));
+  assert.match(dryLine, /isDryRun\(env\.DRY_RUN\)/, "the raw environment value goes to isDryRun, not a cleaned copy");
+  const real = harness({ env: { DRY_RUN: "false" } });
+  assert.equal(await prune(real.opts), 0);
+  assert.equal(real.f.deletes().length, 69, "exactly false deletes");
+  const realPurge = zoneFake({ env: { DRY_RUN: "false" } });
+  await purge(realPurge.opts);
+  assert.equal(realPurge.calls.filter((c) => c.method === "POST").length, 1, "exactly false purges");
+});
+
 // ---- prune: real run ----
 
 test("a real run sends DELETE with force=true for exactly the non-kept ids, at most 3 at a time, and prints progress every 25", async () => {
