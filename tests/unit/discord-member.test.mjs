@@ -17,6 +17,7 @@ const GUILD = "400000000000000004";
 const OTHER_GUILD = "999999999999999999";
 const ADMIN_TOKEN = "admin-token-for-tests-0123456789ab";
 const ALDOUS = "100000000000000101", BRISEIS = "100000000000000102", CORVIN = "100000000000000103";
+const BOT = ["bot", "token", "built", "at", "runtime"].join("-") + "." + "x".repeat(24);
 const ROSTER = { guildId: GUILD, channels: {} };
 
 const quiet = async (fn) => { const e = console.error, w = console.warn, l = console.log; console.error = console.warn = console.log = () => {}; try { return await fn(); } finally { console.error = e; console.warn = w; console.log = l; } };
@@ -29,7 +30,7 @@ function makeEnv({ roster = ROSTER } = {}) {
   if (roster !== null) DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run("discord_roster", JSON.stringify(roster), AT);
   const signer = createDiscordSigner();
   const room = { fetch: async () => new Response(JSON.stringify({ ok: true })) };
-  return { DB, signer, BOARD_ADMIN_TOKEN: ADMIN_TOKEN, USER_SALT: "user-salt-for-tests-0123456789", KEY_SALT: "salt-for-tests-0123456789", DISCORD_PUBLIC_KEY: signer.publicKeyHex, BOARD_ROOM: { idFromName: () => "r", get: () => room } };
+  return { DB, signer, DISCORD_BOT_TOKEN: BOT, BOARD_ADMIN_TOKEN: ADMIN_TOKEN, USER_SALT: "user-salt-for-tests-0123456789", KEY_SALT: "salt-for-tests-0123456789", DISCORD_PUBLIC_KEY: signer.publicKeyHex, BOARD_ROOM: { idFromName: () => "r", get: () => room } };
 }
 async function run(env, interaction) {
   const res = await quiet(() => handleDiscordInteraction(env.signer.signedRequest(interaction), env, ctx, ORIGIN));
@@ -37,7 +38,17 @@ async function run(env, interaction) {
   return res.json();
 }
 const base = (permissions, guild = GUILD) => ({ id: "1", application_id: "2", token: "t", channel_id: "3", guild_id: guild, member: { nick: "Adm", user: { id: "100000000000000042", username: "adm" }, ...(permissions === undefined ? {} : { permissions }) } });
-const add = (env, permissions, { user, name, match } = {}, guild) => run(env, {
+let calls = [];
+const inGuild = async () => new Response(JSON.stringify({ user: { id: "x" } }), { status: 200 });
+async function withFetch(impl, fn) {
+  const real = globalThis.fetch;
+  calls = [];
+  globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init }); return impl(url, init); };
+  try { return await fn(); } finally { globalThis.fetch = real; }
+}
+const add = (env, permissions, o = {}, guild, impl = inGuild) => withFetch(impl, () => addRaw(env, permissions, o, guild));
+const audit = (env) => env.DB.raw.prepare("SELECT * FROM audit_log").all();
+const addRaw = (env, permissions, { user, name, match } = {}, guild) => run(env, {
   ...base(permissions, guild), type: 2,
   data: { name: "member", options: [{ name: "add", type: 1, options: [
     ...(user === undefined ? [] : [{ name: "user", type: 6, value: user }]),
@@ -77,13 +88,13 @@ test("cache invalidation: a stale cached read is replaced by the write", async (
   assert.equal((await loadConfigKey(env, "discord_members")).length, 1);
 });
 
-test("add with no match leaves the match list empty (the id identifies the member); adding a second keeps the first", async () => {
+test("add with no match defaults to the lowercased display-name tokens; adding a second keeps the first", async () => {
   const env = makeEnv();
   await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
   await add(env, "32", { user: BRISEIS, name: "Briseis Vane", match: "bri" });
   const rows = readRow(env);
   assert.equal(rows.length, 2);
-  assert.deepEqual(rows[0].match, []);
+  assert.deepEqual(rows[0].match, ["aldous", "thorne"]);
   assert.deepEqual(rows[1], { slug: "briseis-vane", name: "Briseis Vane", match: ["bri"], id: BRISEIS });
 });
 
@@ -95,6 +106,10 @@ test("add on an existing slug updates it (upsert), one row per slug", async () =
   assert.deepEqual(readRow(env), [{ slug: "aldous-thorne", name: "Aldous Thorne", match: ["al"], id: CORVIN }]);
   await add(env, "32", { user: CORVIN, name: "Aldous Thorne" });
   assert.deepEqual(readRow(env)[0].match, ["al"], "an update with no match keeps the existing list");
+  seed(env, [{ slug: "aldous-thorne", name: "Aldous Thorne", match: [], id: ALDOUS }]);
+  invalidateConfigCache();
+  await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
+  assert.deepEqual(readRow(env)[0].match, ["aldous", "thorne"], "an update with no match fills an empty list from the name");
 });
 
 test("an id already held by another slug is refused with the validator's message and never names the other member", async () => {
@@ -197,4 +212,88 @@ test("route POST /api/admin/members: same statuses and bodies", async () => {
   assert.deepEqual(readRow(env), [{ slug: "aldous-thorne", name: "Aldous Thorne", match: ["aldo"], id: ALDOUS }]);
   env.DB.raw.prepare("UPDATE kv_state SET json = 'not json' WHERE key = 'discord_members'").run();
   assert.deepEqual(await post(env, JSON.stringify({ slug: "x", name: "X", match: [] })), { status: 500, text: JSON.stringify({ error: "Could not read the roster" }) });
+});
+
+// ---- guild membership check (GET /guilds/{id}/members/{id}, bot token, no privileged intent) ----
+const status = (s) => async () => new Response("{}", { status: s });
+const NOT_IN = "That user is not in this server.";
+const UNSURE = "Could not confirm membership with Discord; nothing was written.";
+
+test("guild check: a 200 lets the add through; the request is a bot-token GET for the roster guild and the picked user", async () => {
+  const env = makeEnv();
+  await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, `https://discord.com/api/v10/guilds/${GUILD}/members/${ALDOUS}`);
+  assert.equal(calls[0].init.method || "GET", "GET");
+  assert.equal(calls[0].init.headers.Authorization, `Bot ${BOT}`);
+  assert.equal(readRow(env).length, 1);
+});
+
+test("guild check: 404 says the user is not in the server and writes nothing", async () => {
+  const env = makeEnv();
+  const r = await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" }, undefined, status(404));
+  ephemeral(r);
+  assert.equal(r.data.content, NOT_IN);
+  assert.equal(readRow(env), null);
+  assert.equal(audit(env).length, 0);
+});
+
+test("guild check fails closed: 500, 403, 429, a thrown fetch, a timeout and no bot token all write nothing", async () => {
+  for (const impl of [status(500), status(403), status(429), async () => { throw new Error("net"); },
+    (u, init) => new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(new Error("aborted"))))]) {
+    const env = makeEnv();
+    const r = await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" }, undefined, impl);
+    ephemeral(r);
+    assert.equal(r.data.content, UNSURE);
+    assert.equal(readRow(env), null);
+    assert.equal(audit(env).length, 0);
+  }
+  const env = makeEnv();
+  delete env.DISCORD_BOT_TOKEN;
+  const r = await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
+  assert.equal(r.data.content, UNSURE);
+  assert.equal(calls.length, 0);
+  assert.equal(readRow(env), null);
+});
+
+test("guild check is not reached for invalid input or a refused caller", async () => {
+  const env = makeEnv();
+  await add(env, "32", { user: ALDOUS, name: "   " });
+  await add(env, "0", { user: ALDOUS, name: "Aldous Thorne" });
+  assert.equal(calls.length, 0);
+});
+
+// ---- audit row (existing audit_log table) ----
+test("a successful add writes exactly one audit_log row: actor, added id, slug, time; no name or match text", async () => {
+  const env = makeEnv();
+  env.DB.raw.prepare("INSERT INTO users (discord_user_id, created_at) VALUES (?, ?)").run("100000000000000042", AT);
+  await add(env, "32", { user: ALDOUS, name: "Aldous Thorne", match: "secretword" });
+  const rows = audit(env);
+  assert.equal(rows.length, 1);
+  const row = rows[0];
+  assert.equal(row.action, "member.add");
+  assert.equal(row.target, "aldous-thorne");
+  assert.equal(row.actor_discord_user_id, "100000000000000042");
+  assert.deepEqual(JSON.parse(row.detail_json), { by: "100000000000000042", added: ALDOUS });
+  assert.ok(!Number.isNaN(Date.parse(row.at)));
+  assert.ok(!JSON.stringify(row).includes("Thorne") && !JSON.stringify(row).includes("secretword"));
+});
+
+test("an admin who is not in users still gets the audit row (actor column empty, id kept in detail)", async () => {
+  const env = makeEnv();
+  await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
+  const rows = audit(env);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].actor_discord_user_id, null);
+  assert.equal(JSON.parse(rows[0].detail_json).by, "100000000000000042");
+});
+
+test("failed adds write no audit row: gate, validation, taken id", async () => {
+  const env = makeEnv();
+  await add(env, "0", { user: ALDOUS, name: "Aldous Thorne" });
+  await add(env, "32", { user: ALDOUS, name: "x".repeat(41) });
+  assert.equal(audit(env).length, 0);
+  await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
+  await add(env, "32", { user: ALDOUS, name: "Briseis Vane" });
+  assert.equal(audit(env).length, 1);
 });

@@ -36,7 +36,7 @@ import { MAX_QUESTION_CHARS } from "./limits.js";
 import { hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply, buildAnnounceBody, lookupRosterId, postChannelMessage, DISCORD_CONTENT_MAX } from "./announce.js";
 import { resolveMember } from "./members.js";
-import { saveMember } from "./member-write.js";
+import { saveMember, checkGuildMember, readStoredMembers, auditMemberAdd } from "./member-write.js";
 import { slugify } from "./member-model.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { saltProblems, SaltMissingError } from "./salts.js";
@@ -1877,10 +1877,24 @@ ${GATE_OFF_NOTE}` : ""}`);
         if (!userId) return memberReply("Nothing added: pick a user.");
         const slug = slugify(name);
         if (!slug) return memberReply("Nothing added: the name needs at least one letter or digit.");
-        const tokens = [...new Set(subOpt("match").toLowerCase().split(/[\s,]+/).filter(Boolean))];
-        const entry = { slug, name, id: userId, ...(tokens.length ? { match: tokens } : {}) };
+        // Fail closed: the picked user must be in the roster guild (or the guild this ran in when no roster server is set).
+        const rosterRow = await loadConfigKey(env, "discord_roster");
+        const guildId = rosterRow && typeof rosterRow.guildId === "string" ? rosterRow.guildId : String(interaction.guild_id || "");
+        const here = await checkGuildMember(env, guildId, userId);
+        if (here === "absent") return memberReply("That user is not in this server.");
+        if (here !== "in") return memberReply("Could not confirm membership with Discord; nothing was written.");
+        const typed = [...new Set(subOpt("match").toLowerCase().split(/[\s,]+/).filter(Boolean))];
+        const stored = await readStoredMembers(env);
+        if (stored === null) return memberReply("Nothing added: Could not read the roster.");
+        const prior = stored.find((m) => m && m.slug === slug);
+        // No match typed: an update keeps its non-empty list, otherwise the lowercased display-name tokens are used.
+        const keep = !typed.length && prior && Array.isArray(prior.match) && prior.match.length > 0;
+        const tokens = typed.length ? typed : [...new Set(name.toLowerCase().split(/[\s,]+/).filter(Boolean))];
+        const entry = { slug, name, id: userId, ...(keep ? {} : { match: tokens }) };
         const saved = await saveMember(env, entry);
         if (!saved.ok) return memberReply(`Nothing added: ${saved.status === 413 ? "that entry is too large (too many match words)." : inert(saved.error) + "."}`);
+        const audited = await auditMemberAdd(env, { by: user.id || "", added: userId, slug: saved.slug });
+        if (!audited) console.error("member.add audit row failed");
         return memberReply(`Saved ${inert(saved.slug)} (${inert(name)}), id ${userId}. ${saved.entries} on the roster.${gateNote}`);
       }
       return memberReply("Use /member add or /member list.");
