@@ -331,6 +331,46 @@ test("no output line carries the token or the account id, even when wrangler's e
   }
 });
 
+// Redact first, THEN truncate: a 300-character cut that lands inside the token must not leave a fragment of it in the log.
+test("a truncation cutoff inside the token or the account id leaks no fragment of either (redact the full text, then slice)", async () => {
+  const token = "cfut_" + Array.from({ length: 40 }, (_, i) => "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"[(i * 7 + 3) % 36]).join("");
+  const account = Array.from({ length: 32 }, (_, i) => "0123456789abcdef"[(i * 5 + 1) % 16]).join("");
+  const fragments = (s) => { const out = []; for (let i = 0; i + 6 <= s.length; i++) out.push(s.slice(i, i + 6)); return out; };
+  const leaks = (text) => [...fragments(token), ...fragments(account)].filter((f) => text.includes(f));
+  const env = (extra) => ({ ...envFor([MIRELLE], extra), CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: account });
+  const cases = [];
+  for (const secret of [token, account]) {
+    for (const keep of [1, 5, 6, 12, secret.length - 6, secret.length - 1]) {
+      // the secret starts `keep` characters before the 300-character cut
+      // (word padding with spaces, so no long token-like run helps the pattern-based redaction: only redact-then-cut passes)
+      cases.push({ secret, stderr: "ab ".repeat(100).slice(0, 300 - keep) + secret + " trailing text" });
+    }
+  }
+  cases.push({ secret: token, stderr: "ab ".repeat(100).slice(0, 280) + `Authorization: Bearer ${token} for ${account}` });
+  for (const c of cases) {
+    // a read failure
+    let db = makeDb({ text: "[]", rows: () => ({ status: 1, stdout: "", stderr: c.stderr }) });
+    let lines = [];
+    let code = await main({ env: env(), exec: db.exec, log: (l) => lines.push(l), now: () => "T" });
+    assert.equal(code, 1);
+    assert.deepEqual(leaks(lines.join("\n")), [], "read failure");
+    // a write failure, and a failed audit row
+    for (const failing of ["UPDATE", "INSERT"]) {
+      db = makeDb({ text: roster(ALDOUS) });
+      const inner = db.exec;
+      db.exec = (args) => {
+        const f = args.indexOf("--file");
+        if (f >= 0 && readFileSync(args[f + 1], "utf8").startsWith(failing)) return { status: 1, stdout: "", stderr: c.stderr };
+        return inner(args);
+      };
+      lines = [];
+      code = await main({ env: env(), exec: db.exec, log: (l) => lines.push(l), now: () => "T" });
+      assert.equal(code, 1, failing);
+      assert.deepEqual(leaks(lines.join("\n")), [], `${failing} failure`);
+    }
+  }
+});
+
 test("the diff summary names added slugs and changed field names only, never other members", () => {
   const plan = planUpsert([ALDOUS, MIRELLE], [BRAM, { slug: "mirelle-voss", name: "Mirelle V", match: ["mirelle"], id: id(5) }]);
   const text = diffLines(plan).join("\n");

@@ -172,6 +172,25 @@ export function proofLines(entries, storedMembers, plannedMembers) {
   return { lines, ok };
 }
 
+// ---- redaction ---------------------------------------------------------------------------------------------------------------------------
+
+// Exact secret values, longest first, wherever they occur.
+export function redactSecrets(text, secrets) {
+  let s = String(text);
+  for (const secret of [...secrets].filter((x) => typeof x === "string" && x.length >= 4).sort((a, b) => b.length - a.length)) s = s.split(secret).join("[redacted]");
+  return s;
+}
+
+// Text captured from a child process (wrangler). The exact secrets first, then anything shaped like a credential: a Bearer header, key=value pairs for
+// token/key/secret names, a 32-hex id (an account id), a long token-like run. ALWAYS call this on the whole text before any truncation.
+export function redactChildOutput(text, secrets) {
+  return redactSecrets(text, secrets)
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/=-]+/gi, "Bearer [redacted]")
+    .replace(/\b((?:api[-_ ]?key|token|secret|authorization)\w*\s*[:=]\s*)\S+/gi, "$1[redacted]")
+    .replace(/\b[0-9a-f]{32}\b/gi, "[redacted]")
+    .replace(/[A-Za-z0-9_-]{40,}/g, "[redacted]");
+}
+
 // ---- I/O --------------------------------------------------------------------------------------------------------------------------------------
 
 // Runs wrangler from infrastructure/ (where wrangler.toml and the patched D1 database id are). No shell, so no quoting problems.
@@ -185,11 +204,7 @@ const READ_SQL = `SELECT json FROM kv_state WHERE key = '${KEY}'`;
 // Returns the exit code. exec, log, now and tmp are injectable; the tests pass fakes, so no network and no wrangler.
 export async function main({ env = process.env, exec = defaultExec, log = console.log, now = () => new Date().toISOString(), tmp = tmpdir } = {}) {
   const secrets = [env.CLOUDFLARE_API_TOKEN, env.CLOUDFLARE_ACCOUNT_ID].filter((s) => typeof s === "string" && s.length >= 4);
-  const out = (line) => {
-    let s = String(line);
-    for (const secret of secrets) s = s.split(secret).join("[redacted]");
-    log(s);
-  };
+  const out = (line) => log(redactSecrets(String(line), secrets));
   const db = env.D1_DATABASE_NAME;
   if (!db) { out("roster-upsert: D1_DATABASE_NAME is not set. Nothing was read or written."); return 1; }
   const dryRun = env.DRY_RUN !== "false";
@@ -204,7 +219,8 @@ export async function main({ env = process.env, exec = defaultExec, log = consol
     return r && typeof r.then === "function" ? r : Promise.resolve(r);
   };
   const failExec = (what, r) => {
-    const detail = String(r.stderr || "").trim().slice(0, 300);
+    // Redact the FULL captured text first, then cut: a cut inside a secret would leave a fragment that no exact match can find.
+    const detail = redactChildOutput(String(r.stderr || ""), secrets).trim().slice(0, 300);
     out(`roster-upsert: ${what} failed (exit ${r.status}).${detail ? " wrangler said: " + detail : ""}`);
   };
   const readRoster = async () => {
@@ -295,8 +311,8 @@ export async function main({ env = process.env, exec = defaultExec, log = consol
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main().then((c) => { process.exitCode = c; }, (e) => {
-    let m = String(e && e.message ? e.message : e);
-    for (const secret of [process.env.CLOUDFLARE_API_TOKEN, process.env.CLOUDFLARE_ACCOUNT_ID]) if (secret && secret.length >= 4) m = m.split(secret).join("[redacted]");
+    // Whole message redacted first, then cut.
+    const m = redactChildOutput(String(e && e.message ? e.message : e), [process.env.CLOUDFLARE_API_TOKEN, process.env.CLOUDFLARE_ACCOUNT_ID]).slice(0, 300);
     console.log(`roster-upsert: unexpected error: ${m}`);
     process.exitCode = 1;
   });
