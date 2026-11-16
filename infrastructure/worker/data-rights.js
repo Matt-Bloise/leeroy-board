@@ -317,7 +317,7 @@ async function collect(env, who) {
     t.builds = await rows(env, "SELECT b.id, b.character_id, b.source, b.status, b.title, b.data_json, b.created_at, b.confirmed_at FROM builds b JOIN characters c ON c.id = b.character_id WHERE c.discord_user_id = ?", id);
     t.group_slots = await rows(env, "SELECT s.group_id, s.slot_index, s.role, s.character_id, s.status FROM group_slots s JOIN characters c ON c.id = s.character_id WHERE c.discord_user_id = ?", id);
     t.signups_v2 = await rows(env, "SELECT group_id, user_id, character_id, rsvp, updated_at FROM signups_v2 WHERE user_id = ?", id);
-    t.audit_log_as_actor = await rows(env, "SELECT id, tenant_id, action, target, detail_json, at FROM audit_log WHERE actor_discord_user_id = ?", id);
+    t.audit_log_as_actor = await rows(env, "SELECT id, tenant_id, action, target, detail_json, at FROM audit_log WHERE actor_discord_user_id = ? OR (action = 'member.add' AND json_extract(detail_json, '$.added') = ?)", id, id); // member.add rows name the added person in detail_json only
     out.tenancy = t;
   }
   return out;
@@ -416,6 +416,8 @@ async function eraseData(request, env, who, now) {
   if (id) {
     st.push(db.prepare("DELETE FROM sessions_v2 WHERE discord_user_id = ?").bind(id));
     st.push(db.prepare("DELETE FROM humans WHERE id IN (SELECT human_id FROM human_members WHERE discord_user_id = ?) AND (SELECT COUNT(*) FROM human_members h WHERE h.human_id = humans.id) = 1").bind(id));
+    // /member add audit rows hold the added person's id in detail_json (no foreign key, so the users delete does not reach them): scrub them.
+    st.push(db.prepare("UPDATE audit_log SET detail_json = '{}', target = NULL WHERE action = 'member.add' AND json_extract(detail_json, '$.added') = ?").bind(id));
     st.push(db.prepare("DELETE FROM users WHERE discord_user_id = ?").bind(id));
   }
   // A random target: the audit row proves an erase happened and when, and cannot be tied back to the person.

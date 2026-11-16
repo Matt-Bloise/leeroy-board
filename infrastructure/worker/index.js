@@ -24,7 +24,7 @@ import { runScheduledSourceSweep, recomputeCategoryAndIndex, acquireRefreshCoold
 import { feedbackReport, cleanupAnswerUx, insertAskTurn, newGuestSecret, privateTurnAccess, RELOAD_ANSWER_LINE } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
-import { handleListen } from "./listener.js";
+import { handleListen, latestTurn } from "./listener.js";
 import { manifestFor } from "./setup-command.js";
 import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
@@ -39,7 +39,7 @@ import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, hashId } from "./budget.js";
 import { askWallPlan } from "./research/no-wall.js";
 import { groupWikiCronOn, maybeRefreshGroupWiki } from "./research/group-wiki.js";
-import { upsertMember } from "./members.js";
+import { saveMember } from "./member-write.js";
 import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
@@ -864,23 +864,9 @@ const worker = {
           return jsonResp({ error: "Body must be valid JSON" }, 400, cors);
         }
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) return jsonResp({ error: "member must be an object" }, 400, cors);
-        let current = [];
-        try {
-          const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'discord_members'").first();
-          if (row && row.json) current = JSON.parse(row.json);
-        } catch {
-          return jsonResp({ error: "Could not read the roster" }, 500, cors);
-        }
-        const result = upsertMember(Array.isArray(current) ? current : [], entry);
-        if (result.error) return jsonResp({ error: result.error }, 400, cors);
-        const problem = validateConfigValue("discord_members", result.members);
-        if (problem) return jsonResp({ error: problem }, 400, cors);
-        const now = new Date().toISOString();
-        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
-          .bind("discord_members", JSON.stringify(result.members), now)
-          .run();
-        invalidateConfigCache("discord_members");
-        return jsonResp({ ok: true, slug: entry.slug, entries: result.members.length }, 200, cors);
+        const saved = await saveMember(env, entry);
+        if (!saved.ok) return jsonResp({ error: saved.error }, saved.status, cors);
+        return jsonResp({ ok: true, slug: saved.slug, entries: saved.entries }, 200, cors);
       }
 
       // Admin only, and only when EVAL_ENABLED is on (default off; 404 otherwise). Model bake-off: runs a few cells of questions x
@@ -1295,17 +1281,14 @@ const worker = {
             if (!mine.includes(row.by_name)) row = null;
           }
         } else if (auth.ok && auth.member) {
-          row = await env.DB.prepare(
-            "SELECT * FROM ask_turns WHERE ((by_name = ? OR by_name = ?) AND by_name <> 'Visitor') OR share = 1 ORDER BY created_at DESC LIMIT 1" // a member named "Visitor" is not every guest
-          ).bind(auth.member.name, auth.member.slug).first();
+          // latestTurn leaves out every turn the listener created (a message in a channel is not a /ask for the whole board)
+          row = await latestTurn(env, "((by_name = ? OR by_name = ?) AND by_name <> 'Visitor') OR share = 1", [auth.member.name, auth.member.slug]); // a member named "Visitor" is not every guest
         } else {
           // No key and no id: the visitor is anonymous. The latest shared turn is a member's question and answer, so it is for signed-in
           // members and web sessions only (audit 2026-11-06 finding 4). A guest polls their own just-created ask by its random id (above).
           const ws = await webSessionFrom(req, env, Date.now());
           if (ws) {
-            row = await env.DB.prepare(
-              "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
-            ).first();
+            row = await latestTurn(env, "share = 1", []);
           }
         }
 

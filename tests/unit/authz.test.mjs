@@ -22,7 +22,7 @@ const SESSION = [M]; // per-user Discord session token (account.js): neither ano
 // route -> principals allowed through. Hand written on purpose; do not generate it from the code.
 const TABLE = {
   "POST /discord": PUBLIC, // Discord signs the request; the signature is checked inside the handler, not a board key
-  "POST /listen": PUBLIC, // the PC forwarder signs the event (HMAC with LISTENER_SECRET, checked inside the handler, not a board key); 404 while LISTENER is off
+  "POST /listen": PUBLIC, // the PC forwarder signs the event (HMAC with a key derived from the bot token, checked inside the handler, not a board key); 404 while LISTENER is off
   "GET /discord/commands": PUBLIC,
   "GET /votes": PUBLIC,
   "GET /me": MEMBER,

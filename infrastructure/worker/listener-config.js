@@ -42,17 +42,45 @@ export const isSnow = (v) => typeof v === "string" && SNOWFLAKE.test(v);
 
 const toHex = (buf) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
 
-// The signature is HMAC-SHA256 over `${timestamp}.${rawBody}` with the shared secret, hex. The compare is constant time (equal length first, then every byte).
-export async function signListen(secret, timestamp, rawBody) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(String(secret)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return toHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${rawBody}`)));
+// SIGNING KEY. There is no separately provisioned secret: the key is derived from the bot token the Worker and the PC forwarder both already hold.
+//   key       = HMAC-SHA256(key = the bot token as UTF-8 bytes, message = the ASCII string "leeroy-listener-v1")   -> 32 raw bytes
+//   signature = lowercase hex of HMAC-SHA256(key = those 32 raw bytes (NOT their hex text), message = UTF-8 of `${timestamp}.${rawBody}`)
+//   headers   = X-Listen-Timestamp: unix seconds as a base-10 integer string; X-Listen-Signature: the 64 hex characters (upper case is accepted on verify)
+// The label separates this use of the token from any other. docs/runbooks/listener.md has a test vector the PC forwarder can reproduce.
+export const LISTEN_KEY_LABEL = "leeroy-listener-v1";
+export const LISTEN_MIN_TOKEN_CHARS = 16; // a Discord bot token is far longer; anything shorter is a mistake and never derives a key
+
+// -> Uint8Array(32), or null when the token is missing or too short (the route then fails closed).
+export async function listenerKey(botToken) {
+  if (typeof botToken !== "string" || botToken.length < LISTEN_MIN_TOKEN_CHARS) return null;
+  const enc = new TextEncoder();
+  const k = await crypto.subtle.importKey("raw", enc.encode(botToken), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(LISTEN_KEY_LABEL)));
 }
 
-export async function verifyListen(secret, timestamp, rawBody, signature, nowSeconds) {
-  if (!secret || typeof secret !== "string" || secret.length < 16) return false; // a missing or short secret never verifies
+// One derived key per isolate: re-derived only when the token changes (a rotation).
+let keyCache = { token: null, key: null };
+export async function listenerKeyFor(env) {
+  const token = env && env.DISCORD_BOT_TOKEN;
+  if (typeof token !== "string" || token.length < LISTEN_MIN_TOKEN_CHARS) return null;
+  if (keyCache.token === token && keyCache.key) return keyCache.key;
+  const key = await listenerKey(token);
+  keyCache = { token, key };
+  return key;
+}
+export function resetListenerKeyCacheForTests() { keyCache = { token: null, key: null }; }
+
+// key: the 32 derived bytes from listenerKey (a string is not a key). The compare in verifyListen is constant time (equal length first, then every byte).
+export async function signListen(key, timestamp, rawBody) {
+  const hmac = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return toHex(await crypto.subtle.sign("HMAC", hmac, new TextEncoder().encode(`${timestamp}.${rawBody}`)));
+}
+
+export async function verifyListen(key, timestamp, rawBody, signature, nowSeconds) {
+  if (!(key instanceof Uint8Array) || key.length !== 32) return false; // no derived key never verifies (a token or any other string is not a key)
   const ts = Number(timestamp);
   if (!Number.isInteger(ts) || Math.abs(nowSeconds - ts) > LISTEN_MAX_AGE_SECONDS) return false;
-  const want = await signListen(secret, String(timestamp), rawBody);
+  const want = await signListen(key, String(timestamp), rawBody);
   const got = String(signature || "").toLowerCase();
   if (got.length !== want.length) return false;
   let diff = 0;

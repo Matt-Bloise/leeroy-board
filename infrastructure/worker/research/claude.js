@@ -257,10 +257,23 @@ const guardReason = (e) => {
   }
   return "guard:config";
 };
-const failReason = (e) => {
+// A fixed, value-free class for whatever the Claude hop threw (it ends up in the stored model label, so it must say what failed and never carry a value):
+//   claude:timeout        a deadline
+//   claude:http-NNN       the provider answered with that status
+//   claude:subrequests    the Workers subrequest limit ("Too many subrequests")
+//   claude:header         a header or token value the runtime refuses (our gateway token check, or the runtime's "Invalid header value" TypeError)
+//   claude:error-<Name>   anything else: the error's NAME only (letters and digits, at most 24 characters), never the message; "claude:error" when it has no usable name
+export const ERROR_NAME_MAX = 24;
+export const failReason = (e) => {
   if (e && (e.code === "ai_timeout" || e.name === "AiTimeoutError" || e.name === "TimeoutError")) return "claude:timeout";
-  const m = /HTTP (\d{3})/.exec(String((e && e.message) || ""));
-  return m ? `claude:http-${m[1]}` : "claude:error";
+  const message = String((e && e.message) || "");
+  const m = /HTTP (\d{3})/.exec(message);
+  if (m) return `claude:http-${m[1]}`;
+  if (e && e.code === "AI_GATEWAY_TOKEN_INVALID") return "claude:header";
+  if (/too many subrequests/i.test(message)) return "claude:subrequests";
+  if (e && e.name === "TypeError" && /\bheader|ByteString/i.test(message)) return "claude:header";
+  const name = String((e && e.name) || "").replace(/[^A-Za-z0-9]/g, "").slice(0, ERROR_NAME_MAX);
+  return name ? `claude:error-${name}` : "claude:error";
 };
 // Overload-class failures that justify the one Haiku-class retry: Anthropic 529, any 5xx, or a timeout. Never 401/403/400/429/other 4xx.
 const overloaded = (e) => Boolean(e) && (e.code === "ai_timeout" || e.name === "AiTimeoutError" || e.name === "TimeoutError" || Number(e.status) === 529 || (Number(e.status) >= 500 && Number(e.status) < 600));
@@ -376,14 +389,14 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
 // in callAnthropicClaude; secrets and long ids here). One send on the fast (Haiku-class) model; the only second send is the 4.5 id after a model-not-found answer, which is not billed.
 // Returns { answer, model } or { reason } with a short fixed code. call: callAnthropicClaude from ai-models.js (injected, as for tryResearchClaude).
 export const CAPPED_TIMEOUT_MS = 30000;
-export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, maxTokens, now = () => new Date(), timeoutMs = CAPPED_TIMEOUT_MS }) {
+export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, maxTokens, now = () => new Date(), timeoutMs = CAPPED_TIMEOUT_MS, subCounter = subCounterKey }) { // subCounter: the caller's own sub-cap counter key (default: the group-wiki refresher's), so another caller cannot starve it
   if (typeof call !== "function") return { reason: "claude:no-call" };
   if (!anthropicAvailable(env)) return { reason: "claude:no-key" };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
   const at = now();
   const cap = monthlyTokenCap(env);
   const estimate = Math.max(1, estimateTokens(systemPrompt, userPrompt) - RESEARCH_MAX_TOKENS + Math.max(1, Math.floor(maxTokens)));
-  const subKey = subCounterKey(at);
+  const subKey = subCounter(at);
   try {
     // The refresher's own sub-cap first (a tenth of the monthly cap), then the monthly cap itself; a reservation the second refuses is given back to the first.
     if (!(await reserveTokens(env, estimate, Math.floor(cap * SUBCAP_FRACTION), at, subKey))) return { reason: "claude:subcap" };

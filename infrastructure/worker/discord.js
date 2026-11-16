@@ -36,6 +36,8 @@ import { MAX_QUESTION_CHARS } from "./limits.js";
 import { hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply, buildAnnounceBody, lookupRosterId, postChannelMessage, DISCORD_CONTENT_MAX } from "./announce.js";
 import { resolveMember } from "./members.js";
+import { saveMember, checkGuildMember, readStoredMembers, auditMemberAdd } from "./member-write.js";
+import { slugify } from "./member-model.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { saltProblems, SaltMissingError } from "./salts.js";
 import { BUILD_MODAL_ID, buildModalEnabled, buildProjectEnabled, buildModalResponse, parseBuildSubmit, saveConfirmedBuild, isSnowflake } from "./build-modal.js";
@@ -365,6 +367,23 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
     options: [
       { name: "channel", description: "Channel key from the roster (pick from the list)", type: 3, required: true, autocomplete: true },
       { name: "text", description: "What to post (max 2000 characters)", type: 3, required: true, max_length: 2000 },
+    ],
+  },
+  {
+    name: "member",
+    description: "Add or list roster members (server admins only)",
+    default_member_permissions: "32", // Manage Server: hides it from everyone else in Discord; the handler enforces the same admin gate as /say.
+    dm_permission: false,
+    options: [
+      {
+        name: "add", description: "Add or update a roster member", type: 1,
+        options: [
+          { name: "user", description: "The Discord user", type: 6, required: true },
+          { name: "name", description: "Display name (1 to 40 characters)", type: 3, required: true },
+          { name: "match", description: "Extra match words, separated by spaces or commas", type: 3, required: false },
+        ],
+      },
+      { name: "list", description: "List roster members (slug, name, id)", type: 1 },
     ],
   },
   {
@@ -1835,6 +1854,71 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       if (!posted.ok) return sayReply("Discord refused the post");
       return sayReply(`Posted to ${channelKey}.${sayGate.gateOff ? `
 ${GATE_OFF_NOTE}` : ""}`);
+    }
+
+    // 2r3. `/member add|list`: an admin edits the discord_members roster. Same gate as /say. `add` goes through saveMember, the code POST /api/admin/members runs.
+    // Replies are ephemeral with no mentions; ids are shown as plain digits and any "@" or "<" in a stored name is broken so nothing renders as a mention.
+    if (cmd === "member") {
+      const memberReply = (content) => new Response(
+        JSON.stringify({ type: 4, data: { content, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+      const memberGate = await rosterAdminCheck(env, interaction);
+      if (!memberGate.ok) return memberReply("That command is for server admins.");
+      // Stored text shown to an admin: no mentions, no markdown, no line breaks.
+      const inert = (s) => String(s).replace(/[\r\n]+/g, " ").replace(/@/g, "@​").replace(/</g, "<​").replace(/[\\[\]()`*_~|]/g, "\\$&");
+      if (memberGate.gateOff) return memberReply("Set the roster server first.");
+      const gateNote = "";
+      const sub = opts.find((x) => x.type === 1 || x.name === "add" || x.name === "list");
+      const subOpts = (sub && sub.options) || [];
+      const subOpt = (n) => {
+        const o = subOpts.find((x) => x.name === n);
+        return o && o.value !== undefined && o.value !== null ? String(o.value).trim() : "";
+      };
+      if (sub && sub.name === "list") {
+        const rows = await loadConfigKey(env, "discord_members");
+        const list = Array.isArray(rows) ? rows.filter((m) => m && typeof m === "object") : [];
+        if (!list.length) return memberReply(`No members on the roster.${gateNote}`);
+        const lines = [];
+        let used = 0;
+        for (const m of list) {
+          const line = `${inert(m.slug)} | ${inert(m.name)} | ${typeof m.id === "string" && /^[0-9]{17,20}$/.test(m.id) ? m.id : "no id"}`;
+          if (used + line.length + 1 > 1700) break;
+          lines.push(line);
+          used += line.length + 1;
+        }
+        const more = list.length - lines.length;
+        return memberReply(`Roster (${list.length}), slug | name | id:\n${lines.join("\n")}${more > 0 ? `\n...and ${more} more.` : ""}${gateNote}`);
+      }
+      if (sub && sub.name === "add") {
+        const name = subOpt("name");
+        const userId = subOpt("user");
+        if (!name) return memberReply("Nothing added: name is empty.");
+        if (!userId) return memberReply("Nothing added: pick a user.");
+        const slug = slugify(name);
+        if (!slug) return memberReply("Nothing added: the name needs at least one letter or digit.");
+        // Fail closed: the picked user must be in the roster guild (the gate above guarantees one is set).
+        const rosterRow = await loadConfigKey(env, "discord_roster");
+        const guildId = rosterRow && typeof rosterRow.guildId === "string" ? rosterRow.guildId : "";
+        const here = await checkGuildMember(env, guildId, userId);
+        if (here === "absent") return memberReply("That user is not in this server.");
+        if (here !== "in") return memberReply("Could not confirm membership with Discord; nothing was written.");
+        const typed = [...new Set(subOpt("match").toLowerCase().split(/[\s,]+/).filter(Boolean))];
+        const stored = await readStoredMembers(env);
+        if (stored === null) return memberReply("Nothing added: Could not read the roster.");
+        const prior = stored.find((m) => m && m.slug === slug);
+        // No match typed: an update keeps its non-empty list, otherwise the lowercased display-name tokens are used.
+        const keep = !typed.length && prior && Array.isArray(prior.match) && prior.match.length > 0;
+        const tokens = typed.length ? typed : [...new Set(name.toLowerCase().split(/[\s,]+/).filter((w) => w.length >= 3))];
+        const entry = { slug, name, id: userId, ...(keep ? {} : { match: tokens }) };
+        const saved = await saveMember(env, entry, { noRebind: true });
+        if (!saved.ok && saved.code === "taken") return memberReply("Nothing added: that name is already on the roster; use a different name.");
+        if (!saved.ok) return memberReply(`Nothing added: ${saved.status === 413 ? "that entry is too large (too many match words)." : inert(saved.error) + "."}`);
+        const audited = await auditMemberAdd(env, { by: user.id || "", added: userId, slug: saved.slug });
+        if (!audited) console.error("member.add audit row failed");
+        return memberReply(`Saved ${inert(saved.slug)} (${inert(name)}), id ${userId}. ${saved.entries} on the roster.${gateNote}`);
+      }
+      return memberReply("Use /member add or /member list.");
     }
 
     // 2s. `/ack`
