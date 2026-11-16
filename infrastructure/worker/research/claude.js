@@ -23,11 +23,24 @@ import { RESEARCH_MAX_TOKENS } from "./rules.js";
 import { prepareRealPrompt, guardSecretsInBody, cleanRealReply, scanSecrets, defangPings, redactHex } from "./real-names.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 5000000;
-export const CLAUDE_TIMEOUT_MS = 9000; // one budget for the first call and the model-id retry together; Workers AI keeps its own 12s after it, inside the 24s ask deadline
-export const CLAUDE_COMPOSE_MS = 6000; // the compose send's own deadline inside CLAUDE_TIMEOUT_MS; a timeout there still leaves >= RETRY_MIN_MS for the Haiku-class retry
+// The Claude hop's budget. The ask's hard end is the deadline minus a sixth (research/no-wall.js hardEndMs): with ASK_DEADLINE_MS 26 s that is 22 s after the ask started. The Worker runs the ask under ctx.waitUntil, which
+// Cloudflare ends 30 s after the response is sent (developers.cloudflare.com/workers/runtime-apis/context/ and /workers/platform/limits/: Workers Free has no wall-clock limit for a connected HTTP request, waitUntil gets up to
+// 30 s); the Discord delivery edit has a 28 s budget (discord.js DELIVERY_BUDGET_MS). Sonnet composing a real-names research answer (a large prompt, up to RESEARCH_MAX_TOKENS 700 output tokens, one non-streaming call)
+// needs seconds to the first token and several more to finish a long answer, so the old 6 s compose budget aborted real asks ("claude:timeout"). The 22 s is split: compose 16 s, then the Haiku-class retry the rest, at most 8 s.
+export const CLAUDE_TIMEOUT_MS = 22000; // one budget for compose and the retry together, always clamped to the ask's hard end; Workers AI is never used for a member
+export const CLAUDE_COMPOSE_MS = 16000; // the compose send's own deadline inside CLAUDE_TIMEOUT_MS; a timeout there still leaves >= RETRY_MIN_MS for the Haiku-class retry (see splitBudget)
+export const CLAUDE_RETRY_MAX_MS = 8000; // the retry's own cap: min(what is left, 8 s); a Haiku-class answer finishes well inside it
 export const PAUSE_MS = 10 * 60 * 1000;
 export const USAGE_CLAMP = 200000; // per usage field, per call
-const RETRY_MIN_MS = 2500;
+export const RETRY_MIN_MS = 2500;
+// How the time left (ms until the hop's end) is split between compose and the retry. Compose never takes the retry's minimum: with room for both it gets min(CLAUDE_COMPOSE_MS, remaining - RETRY_MIN_MS);
+// with room for only one send (a short ask deadline or a slow start) it gets everything left and there is no retry.
+export function splitBudget(remainingMs) {
+  const r = Math.max(0, Math.floor(Number(remainingMs) || 0));
+  if (r < 2 * RETRY_MIN_MS) return { compose: r, retry: 0 };
+  const compose = Math.min(CLAUDE_COMPOSE_MS, r - RETRY_MIN_MS);
+  return { compose, retry: Math.min(CLAUDE_RETRY_MAX_MS, r - compose) };
+}
 const MAX_PROMPT_CHARS = 60000; // CPU proxy that does not depend on a clock (Workers freezes timers during pure compute)
 // Wall-clock budget for tokenise + guards per ask (measured with performance.now; in a Worker the clock may not advance during compute, so MAX_PROMPT_CHARS is the backstop).
 export const privacyBudget = { ms: 8 };
@@ -264,8 +277,10 @@ const guardReason = (e) => {
 //   claude:header         a header or token value the runtime refuses (our gateway token check, or the runtime's "Invalid header value" TypeError)
 //   claude:error-<Name>   anything else: the error's NAME only (letters and digits, at most 24 characters), never the message; "claude:error" when it has no usable name
 export const ERROR_NAME_MAX = 24;
-export const failReason = (e) => {
-  if (e && (e.code === "ai_timeout" || e.name === "AiTimeoutError" || e.name === "TimeoutError")) return "claude:timeout";
+// A timeout from the ask hop also says WHICH send timed out and after how many whole seconds: `claude:timeout@compose-16s`, `claude:timeout@retry-6s` (stage "compose" or "retry", the send's own elapsed time capped at 99 s).
+export const timeoutBucket = (stage, ms) => ((stage === "compose" || stage === "retry") && Number.isFinite(ms) ? `@${stage}-${Math.min(99, Math.max(0, Math.round(ms / 1000)))}s` : "");
+export const failReason = (e, sent = null) => {
+  if (e && (e.code === "ai_timeout" || e.name === "AiTimeoutError" || e.name === "TimeoutError")) return `claude:timeout${sent ? timeoutBucket(sent.stage, Date.now() - sent.at) : ""}`;
   const message = String((e && e.message) || "");
   const m = /HTTP (\d{3})/.exec(message);
   if (m) return `claude:http-${m[1]}`;
@@ -335,7 +350,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   const { primary, fallback } = researchClaudeModels(env, true);
   const { primary: fastModel } = researchClaudeModels(env, false);
   const deadlineAt = Math.min(budgetStart + CLAUDE_TIMEOUT_MS, hardEnd);
-  const composeDeadlineAt = Math.min(budgetStart + CLAUDE_COMPOSE_MS, hardEnd); // leaves the Haiku-class retry its share of the budget after a compose timeout
+  const composeDeadlineAt = budgetStart + splitBudget(deadlineAt - budgetStart).compose; // compose never takes the retry's minimum: a compose timeout still leaves the Haiku-class retry its share
   if (composeDeadlineAt - Date.now() < RETRY_MIN_MS) {
     await settle(-estimate); // the reservation write ate the budget: no send is started that cannot finish; the unused reservation goes back
     return { reason: "claude:no-time" };
@@ -345,11 +360,16 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
     if (roster) guardBody(body, roster);
     guardSecretsInBody(body, env, secretKey ? [secretKey] : []);
   };
-  const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: sendSystem, userPrompt: sendUser, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
+  // sent: the send in flight (or the last one), so a timeout says which one it was and how long it ran (failReason). The retry is capped at CLAUDE_RETRY_MAX_MS and never past the hop's end.
+  let sent = null;
+  const attempt = (modelOverride, stage = "retry", dl = stage === "retry" ? Math.min(deadlineAt, Date.now() + CLAUDE_RETRY_MAX_MS) : deadlineAt) => {
+    sent = { stage, at: Date.now() };
+    return call({ env, systemPrompt: sendSystem, userPrompt: sendUser, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
+  };
   let res;
   try {
     try {
-      res = await attempt(primary, composeDeadlineAt);
+      res = await attempt(primary, "compose", composeDeadlineAt);
     } catch (e) {
       if (e && e.modelMissing === true && fallback && fallback !== primary && deadlineAt - Date.now() >= RETRY_MIN_MS) {
         res = await attempt(fallback); // same reservation: a model-not-found answer is not billed
@@ -367,7 +387,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
         if (deadlineAt - Date.now() < RETRY_MIN_MS) {
           // The reservation write itself ate the budget: do not start a send that cannot finish. Give the unused reservation back.
           await settle(-estimate);
-          return { reason: failReason(e) };
+          return { reason: failReason(e, sent) };
         }
         res = await attempt(fastModel);
       } else throw e;
@@ -375,7 +395,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   } catch (e) {
     if (notBilled(e)) await settle(-estimate);
     if (e && GUARD_CODES.includes(e.code)) return { reason: guardReason(e) };
-    return { reason: failReason(e) };
+    return { reason: failReason(e, sent) };
   }
   await settle(usageTokens(res.usage, estimate) - estimate);
   const text = cleanReply(res.answer);

@@ -56,9 +56,9 @@ export function memberAck(persona, seed = "") {
 
 // Timeout for one Workers AI attempt in research mode: never past (deadline - 4 s), so the worst case after Claude's 9 s still leaves 4 s to store and deliver.
 // Returns null when less than 1 s is left: the caller skips the attempt (library facts), it never starts one past the margin.
-// The margin is 4 s of a 24 s deadline (a sixth, at most 4 s), so an ASK_DEADLINE_MS override keeps the same proportions.
-export const hardEndMs = (deadlineMs = 24000) => Math.floor(deadlineMs - Math.min(4000, deadlineMs / 6));
-export const researchTimeoutMs = (elapsedMs, maxMs, deadlineMs = 24000, marginMs = Math.min(4000, deadlineMs / 6)) => {
+// The margin is 4 s of a 26 s deadline (a sixth, at most 4 s), so an ASK_DEADLINE_MS override keeps the same proportions.
+export const hardEndMs = (deadlineMs = 26000) => Math.floor(deadlineMs - Math.min(4000, deadlineMs / 6));
+export const researchTimeoutMs = (elapsedMs, maxMs, deadlineMs = 26000, marginMs = Math.min(4000, deadlineMs / 6)) => {
   const left = Math.floor(deadlineMs - marginMs - elapsedMs);
   return left < 1000 ? null : Math.min(maxMs, left);
 };

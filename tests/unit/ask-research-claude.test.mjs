@@ -11,7 +11,7 @@ import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { ROSTER_DATA } from "../../infrastructure/worker/bot-data.js";
 import { scanBody, CANARY } from "../../infrastructure/worker/privacy/outbound-guard.js";
 import { researchRoster, setFirstNameSource, genericAliases } from "../../infrastructure/worker/privacy/roster-config.js";
-import { resetResearchClaudeForTests, privacyBudget, classifyField, STRUCTURED_FIELDS, FREE_TEXT_FIELDS, prepareResearchPrivacy, reserveTokens, counterKey, estimateTokens, usageTokens } from "../../infrastructure/worker/research/claude.js";
+import { CLAUDE_COMPOSE_MS, CLAUDE_TIMEOUT_MS, CLAUDE_RETRY_MAX_MS, resetResearchClaudeForTests, privacyBudget, classifyField, STRUCTURED_FIELDS, FREE_TEXT_FIELDS, prepareResearchPrivacy, reserveTokens, counterKey, estimateTokens, usageTokens } from "../../infrastructure/worker/research/claude.js";
 import { buildNameMap, tokenise } from "../../infrastructure/worker/privacy/tokenise.js";
 import { RESEARCH_MAX_TOKENS } from "../../infrastructure/worker/research/rules.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
@@ -812,15 +812,15 @@ function recordTimeouts() {
 }
 const GW = (e) => { e.CLOUDFLARE_ACCOUNT_ID = "acct"; e.AI_GATEWAY_ID = "gw"; };
 
-test("F1. research sends get the budget they were promised, with and without a gateway: compose ~6000 ms, the retry the remaining budget (>= 2500 ms)", async () => {
+test("F1. research sends get the budget they were promised, with and without a gateway: compose ~CLAUDE_COMPOSE_MS (16 s), the retry min(remaining, CLAUDE_RETRY_MAX_MS) and at least 2500 ms (CHANGED with the budget split: was 6 s and up to 9 s)", async () => {
   for (const [label, envPatch] of [["gateway", GW], ["no gateway", () => {}]]) {
     const rec = recordTimeouts();
     try {
       await ask(ABSTAIN_Q, { env: envPatch, claude: (b) => (b.model === SONNET ? errOf(529) : { status: 200, text: OKT }) });
     } finally { rec.stop(); }
     const [compose, retry] = rec.seen;
-    assert.ok(compose > 5800 && compose <= 6000, `${label} compose ${compose}`);
-    assert.ok(retry >= 2500 && retry <= 9000, `${label} retry ${retry}`);
+    assert.ok(compose > CLAUDE_COMPOSE_MS - 200 && compose <= CLAUDE_COMPOSE_MS, `${label} compose ${compose}`);
+    assert.ok(retry >= 2500 && retry <= CLAUDE_RETRY_MAX_MS, `${label} retry ${retry}`);
   }
 });
 
@@ -856,7 +856,7 @@ test("F3. a slow second reservation write cannot push the retry past the Claude 
       const o = bind(...a);
       if (String(a[0] || "").startsWith("claude_tokens_") && /RETURNING/.test(sql) && ++reserves === 2) {
         const all = o.all.bind(o);
-        o.all = async () => { mock.timers.tick(7000); return all(); }; // the second reservation "takes" 7 s of the 9 s budget
+        o.all = async () => { mock.timers.tick(CLAUDE_TIMEOUT_MS - 2000); return all(); }; // the second reservation "takes" all but 2 s of the Claude budget
       }
       return o;
     };

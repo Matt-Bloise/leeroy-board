@@ -33,7 +33,7 @@ Ask one ordinary question as the owner, then check each line:
 
 1. Label: in D1 `SELECT id, model, status, created_at, answered_at FROM ask_turns ORDER BY created_at DESC LIMIT 3;` the newest row's `model` must read `claude:...+research`. `gemini`, `workers-ai` or `library` means the Claude hop did not answer; read the label suffix for the reason (`guard:*`, `claude:no-time`, `cpu:*`, budget) before doing anything else.
 2. Status: `status` is `answered`, not `thinking` or `error`.
-3. Latency: `answered_at` minus `created_at` is under 24 s and, for a normal question, near the compose p95 measured above.
+3. Latency: `answered_at` minus `created_at` is under 26 s and, for a normal question, near the compose p95 measured above.
 4. Answer: show the owner the answer as posted. The owner's reading is the voice test; the A/B judge was unreliable, so no number replaces it.
 5. Privacy: the answer must contain no member name that the question did not contain; look at the row once by eye.
 6. Spend: read the monthly Claude counter row and confirm it moved by roughly one compose.

@@ -161,7 +161,7 @@ Columns: wins, losses, ties, both bad and strength.
 | Everything is close, many ties | The candidates are equivalent for this voice | Choose the cheapest or fastest one, or the one with the best lint pass rate |
 | Most pairs are "both bad" | No candidate reproduces the voice | Work on the prompt and persona pack before comparing models again |
 
-Latency: the lint summary command above prints median milliseconds per candidate. Discord needs an answer within 24 seconds (`ASK_DEADLINE_MS`), and the chosen provider gets 12 seconds (`ASK_CHOSEN_TIMEOUT_MS`).
+Latency: the lint summary command above prints median milliseconds per candidate. Discord needs an answer within 26 seconds (`ASK_DEADLINE_MS`; the Worker has 30 s of waitUntil after the response), and the chosen provider gets 12 seconds (`ASK_CHOSEN_TIMEOUT_MS`).
 
 ## 7. Set the chosen model (through Josh's deploy)
 
