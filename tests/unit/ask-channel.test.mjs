@@ -6,12 +6,12 @@ import { readFileSync } from "node:fs";
 import { insertAskTurn, askChannel } from "../../infrastructure/worker/answer-ux.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
-const MIGRATION = readFileSync(new URL("../../infrastructure/migrations/0012_ask_turns_channel.sql", import.meta.url), "utf8");
+const MIGRATION = readFileSync(new URL("../../infrastructure/migrations/0013_ask_turns_channel.sql", import.meta.url), "utf8");
 const USER_SALT = "user-salt-for-tests-0123456789";
 const ME = "100000000000000001";
 const CH = "200000000000000002";
 const ROW = (id, channel) => ({ id, byName: "Red Fox", question: "q", provider: "p", share: true, createdAt: "2026-11-01T00:00:00.000Z", ...(channel === undefined ? {} : { channel }) });
-// The state after deploy: schema.sql, then migration 0012.
+// The state after deploy: schema.sql, then migration 0013.
 const migratedDb = () => { const d = schemaDb(); d.raw.exec(MIGRATION); return d; };
 const chan = (db, id) => db.raw.prepare("SELECT channel FROM ask_turns WHERE id = ?").get(id).channel;
 const askers = (db, id) => Number(db.raw.prepare("SELECT COUNT(*) AS c FROM ask_turn_askers WHERE intent_id = ?").get(id).c);
@@ -55,7 +55,7 @@ test("the batch stays atomic: a failing asker insert leaves neither the row nor 
   assert.equal(Number(db.raw.prepare("SELECT COUNT(*) AS c FROM ask_turns").get().c), 0);
 });
 
-test("before migration 0012 (no column) a channel ask still lands, without the channel, and the askers land with it", async () => {
+test("before migration 0013 (no column) a channel ask still lands, without the channel, and the askers land with it", async () => {
   const db = schemaDb(), env = { DB: db, USER_SALT };
   await insertAskTurn(env, ROW("q-old", CH), { discordId: ME });
   assert.equal(Number(db.raw.prepare("SELECT COUNT(*) AS c FROM ask_turns WHERE id = 'q-old'").get().c), 1);
@@ -63,7 +63,7 @@ test("before migration 0012 (no column) a channel ask still lands, without the c
   assert.ok(!db.raw.prepare("PRAGMA table_info(ask_turns)").all().some((c) => c.name === "channel"), "schema.sql must not carry the column");
 });
 
-test("migration 0012 applies on top of schema.sql, as CI does, and the column is nullable", () => {
+test("migration 0013 applies on top of schema.sql, as CI does, and the column is nullable", () => {
   const db = schemaDb();
   db.raw.exec(MIGRATION);
   const col = db.raw.prepare("PRAGMA table_info(ask_turns)").all().find((c) => c.name === "channel");

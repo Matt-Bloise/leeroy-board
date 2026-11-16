@@ -108,8 +108,8 @@ export const RELOAD_ANSWER_LINE = "This page is out of date, so it cannot show y
 // The Discord channel an /ask came from, kept so a later reply can go back to the same channel. Digits-only snowflake or null (web, DM, malformed).
 const CHANNEL_ID_RE = /^[0-9]{5,25}$/;
 export function askChannel(value) { return typeof value === "string" && CHANNEL_ID_RE.test(value) ? value : null; }
-// ask_turns.channel is added by migration 0012 only (never in schema.sql: ALTER ... ADD COLUMN is not idempotent, see schema-source-of-truth.md rule 2).
-// A row with no channel is written with the pre-0012 statement, so web/DM asks and a database not yet migrated behave exactly as before.
+// ask_turns.channel is added by migration 0013 only (never in schema.sql: ALTER ... ADD COLUMN is not idempotent, see schema-source-of-truth.md rule 2).
+// A row with no channel is written with the pre-0013 statement, so web/DM asks and a database not yet migrated behave exactly as before.
 export async function insertAskTurn(env, row, who) {
   if (who && (who.discordId || who.slug) && !saltReady(env)) throw new SaltMissingError(["USER_SALT"]);
   const channel = askChannel(row.channel);
@@ -129,7 +129,7 @@ export async function insertAskTurn(env, row, who) {
     try { await write(Boolean(channel)); }
     catch (e) {
       if (!channel || !missingChannelColumn(e)) throw e;
-      console.error("ask_turns.channel missing: apply migration 0012");
+      console.error("ask_turns.channel missing: apply migration 0013");
       await write(false);
     }
   };
