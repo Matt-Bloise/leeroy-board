@@ -4,6 +4,7 @@
 // No AI call, nothing sent. Clocks from tests/helpers/clock-arg.mjs LAUNCH_CLOCKS. Sizes 390x844 and 1440x900. Exit 0 when every check passes.
 import { pageUrl } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
+import { repoDoc } from "../helpers/api-stub.mjs";
 import { LAUNCH_CLOCKS } from "../helpers/clock-arg.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -24,7 +25,7 @@ async function outagePage(opts, { api = "down", hash = "", params = {} } = {}) {
   await ctx.route(dead, async (route) => {
     const u = new URL(route.request().url());
     const dm = /^\/api\/data\/([^/]+?)(\.json)?$/.exec(u.pathname); /* the data documents are fine; only the live state API is down (as in a brain outage that leaves the files up) */
-    if (dm) { try { const r = await route.fetch({ url: new URL(`/data/${dm[1]}.json${u.search}`, BASE).href }); return await route.fulfill({ response: r }); } catch (e) { return route.abort().catch(() => {}); } }
+    if (dm) { try { const doc = repoDoc(`/data/${dm[1]}`) || repoDoc(`/data/${dm[1]}.json`); /* member docs are Worker-only: the deployed bundle has no static copy, so the stand-in brain serves the checkout's file like the API stub does */ if (doc) return await route.fulfill({ status: 200, contentType: doc.type, body: doc.body }); const r = await route.fetch({ url: new URL(`/data/${dm[1]}.json${u.search}`, BASE).href }); return await route.fulfill({ response: r }); } catch (e) { return route.abort().catch(() => {}); } }
     if (flags.up) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(u.pathname === "/bootstrap" ? { ver: 1, launch: [] } : { ver: 1 }) }).catch(() => {});
     return route.fulfill({ status: 503, contentType: "text/html", body: "<h1>503</h1>" }).catch(() => {});
   });

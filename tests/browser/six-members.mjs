@@ -68,7 +68,7 @@ async function setup(browser, width, { flagOn = true, count = 6, state = "lookin
   });
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
+  await page.goto(pageUrl(BASE, { defaults: { brain: "local" }, params: { preview: "1" } }), { waitUntil: "load" });
   await page.waitForSelector("#nx-fr2-look, .tn-name", { state: "attached", timeout: 20000 }).catch(() => {});
   if (state !== "gate") {
     // "Just take a look" must be TAKEN, not only looked for: the link (or the chips themselves, on a visit that skips the first-visit sheet) can be attached a moment before it is visible,
@@ -168,7 +168,7 @@ try {
       const front = await copyHits(page, false);
       ok(`${t} first screen: no copy says "five" or "the other four"`, front.length === 0, show(front));
       ok(`${t} the front tile shows ${W} medallions`, (await page.locator("#ts-five .med").count()) === count, String(await page.locator("#ts-five .med").count()));
-      await page.goto(pageUrl(BASE, { params: { preview: "1" }, hash: "five" }), { waitUntil: "load" });
+      await page.goto(pageUrl(BASE, { defaults: { brain: "local" }, params: { preview: "1" }, hash: "five" }), { waitUntil: "load" });
       await page.waitForSelector("#cards .card", { state: "attached", timeout: 20000 }).catch(() => {});
       await page.waitForTimeout(1200);
       ok(`${t} the roster shows ${W} cards`, (await page.locator("#cards .card").count()) === count, String(await page.locator("#cards .card").count()));
@@ -238,7 +238,7 @@ try {
   const w5 = await wording(five.page);
   ok("[flag on, five members] the old copy is unchanged", JSON.stringify(w5) === JSON.stringify(OLD), JSON.stringify(w5));
   ok("[flag on, five members] five chips", (await chipInfo(five.page)).chips.length === 5);
-  await five.page.goto(pageUrl(BASE, { params: { preview: "1" }, hash: "five" }), { waitUntil: "load" });
+  await five.page.goto(pageUrl(BASE, { defaults: { brain: "local" }, params: { preview: "1" }, hash: "five" }), { waitUntil: "load" });
   await five.page.waitForTimeout(1200);
   ok("[flag on, five members] the scene is still titled The five", /The five/.test(await five.page.locator("#sheet-title").innerText().catch(() => "")));
   await five.ctx.close();

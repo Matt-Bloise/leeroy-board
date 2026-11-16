@@ -36,13 +36,12 @@ async function open(browser, c, who) {
     if (c.inGroup) j.slots = [seat("filled", who.role, who.name), ...(c.openSeat ? [seat("open", who.role)] : [])];
     await json(route, j);
   });
-  // on a preview the board reads signups through the Worker (api/data/signups) as well as the static file: stub both the same way
+  // the board reads signups through the Worker only (api/data/signups, and inside /api/bootstrap below); there is no static data/signups.json
   const signupsStub = async (route) => {
     const j = await (await route.fetch()).json(); j.entries = (j.entries || []).filter((e) => e.name !== who.name);
     if (c.rsvp) j.entries.push({ name: who.name, rsvp: c.rsvp, when: "8pm", meet: null, pack: null });
     await json(route, j);
   };
-  await ctx.route("**/data/signups.json*", signupsStub);
   await ctx.route("**/api/data/signups*", signupsStub);
   // the Worker bundles signups inside /api/bootstrap: apply the same edit to that document
   await ctx.route("**/api/bootstrap*", async (route) => {

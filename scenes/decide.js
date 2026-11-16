@@ -34,8 +34,8 @@ function mount() {
 mount();
 
 const decideUrl = () => (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/decide.json")) || "data/decide.json";
-const decideOwn = () => (window.BoardFetch ? window.BoardFetch.json("data/decide.json", { cache: "no-store" }) : fetch("data/decide.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`${"data/decide.json"} answered ${r.status}`); return r.json(); }));
-const decideLoad = () => { const u = decideUrl(); return u === "data/decide.json" ? decideOwn() : fetch(u, { cache: "no-cache", mode: "cors", credentials: "omit" }).then((r) => { if (!r.ok) throw new Error(`the decisions answered ${r.status}`); return r.json(); }); }; /* a brain base: the Worker or nothing. The static file is the whole party and is read only when there is no base (legacy host, plain local) */
+const decideOwn = () => (window.BoardFetch ? window.BoardFetch.json("data/decide.json", { cache: "no-store" }) : Promise.reject(new Error("the decisions need the board's server"))); /* no brain base: BoardFetch asks the ?api= Worker or fails; there is no static file */
+const decideLoad = () => { const u = decideUrl(); return u === "data/decide.json" ? decideOwn() : fetch(u, { cache: "no-cache", mode: "cors", credentials: "omit" }).then((r) => { if (!r.ok) throw new Error(`the decisions answered ${r.status}`); return r.json(); }); }; /* the Worker or nothing: the deploy publishes no static data/decide.json (it is the whole party) */
 const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= decideLoad().then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
 if (window.BoardBrain && window.BoardBrain.on) {
   window.BoardBrain.on("decide", (d) => {
