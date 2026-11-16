@@ -1,9 +1,9 @@
 // THE LISTENER, PART B (flag LISTENER_UNTAGGED, off by default): the signing key derived from the bot token, the untagged-text classifier, the wiki feed and the privacy paragraph.
 // Real Worker code over an in-memory SQLite D1; Discord and Anthropic are fakes; names and text are fictional; token-shaped fixtures are built at run time.
 //   key        HMAC-SHA256(bot token, "leeroy-listener-v1") -> 32 raw bytes; the request signature is hex HMAC-SHA256 of `${timestamp}.${body}` keyed with those bytes. No LISTENER_SECRET exists any more.
-//   rules      empty, short, command and personal-life text are never candidates and never stored; chatter with no question skips the model.
+//   rules      empty, short, command and personal-topic text are never candidates (Leeroy never answers them unprompted); chatter with no question skips the model. The rules say nothing about what is KEPT.
 //   classifier paid Claude only (the group-wiki path), a roster member only, fails closed; 'answer' needs the confidence threshold and the soft daily cap.
-//   wiki       unanswered untagged text feeds group_log through the group-memory appender, never for a stranger, a quiet channel, a personal topic or a secret.
+//   wiki       every untagged text that is not answered is filed in group_log through the group-memory appender (owner decision: nothing the group says is held back, personal topics included); never for a stranger, a quiet channel, a secret or with GROUP_MEMORY off.
 //   off        with LISTENER_UNTAGGED off, 'chatter' is exactly what part A did (a differential test).
 // Run: node --test tests/unit/listener-b.test.mjs
 import test from "node:test";
@@ -18,7 +18,7 @@ import { resetResearchClaudeForTests, privacyBudget, counterKey, subCounterKey }
 import { signListen, verifyListen, listenerKey, listenerKeyFor, resetListenerKeyCacheForTests, LISTEN_KEY_LABEL } from "../../infrastructure/worker/listener-config.js";
 import { processListenEvent } from "../../infrastructure/worker/listener.js";
 import {
-  untaggedOn, untaggedRules, personalLife, parseVerdict, classifyUntagged, untaggedCapReached, listenSubCounterKey,
+  untaggedOn, untaggedRules, personalTopic, parseVerdict, classifyUntagged, untaggedCapReached, listenSubCounterKey,
   UNTAGGED_MIN_CONFIDENCE, UNTAGGED_DAILY_CAP, UNTAGGED_MIN_CHARS, CLASSIFY_SYSTEM,
 } from "../../infrastructure/worker/listener-untagged.js";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
@@ -177,15 +177,15 @@ test("rules: empty, short, commands and personal-life text are never candidates;
   assert.equal(r("lol that boss was so easy tonight").reason, "no-question");
   for (const q of ["what is the cooldown on Divine Shield", "does anyone know the Scarlet Monastery entrance", "the raid starts at eight, right?", "wait how do I get to Stormwind"]) assert.equal(r(q).verdict, "candidate", q);
 });
-test("rules: personal-life topics (health, family, work, location, money, schedule beyond the game) are never candidates, even as a question", () => {
+test("rules: personal topics (health, family, work, location, money, schedule beyond the game) are never candidates, even as a question: Leeroy does not speak up about them (they are still filed)", () => {
   const personal = [
     "my doctor says I need surgery next week", "how do I tell my wife about the raid schedule?", "my dad is in the hospital, can we skip tonight?",
     "my boss moved the meeting so I am late", "I am moving to a new apartment this month", "where I live there is no good internet?",
     "I can not pay my rent this month", "how much money do I owe you for the pizza?", "I have a dentist appointment on Thursday",
     "my kids have school so I am out friday", "happy birthday to my brother today", "Ｍｙ ｗｉｆｅ is coming home soon", "my d\u200bad called about the wedding",
   ];
-  for (const t of personal) { assert.equal(personalLife(t), true, t); assert.deepEqual(untaggedRules(t), { verdict: "ignore", reason: "personal" }, t); }
-  for (const t of ["what is the cooldown on Divine Shield", "does the raid start at eight tonight", "how many talent points at level 40", "we should farm herbs after the raid tonight"]) assert.equal(personalLife(t), false, t);
+  for (const t of personal) { assert.equal(personalTopic(t), true, t); assert.deepEqual(untaggedRules(t), { verdict: "ignore", reason: "personal" }, t); }
+  for (const t of ["what is the cooldown on Divine Shield", "does the raid start at eight tonight", "how many talent points at level 40", "we should farm herbs after the raid tonight"]) assert.equal(personalTopic(t), false, t);
 });
 test("rules (hardened): plural, possessive and apostrophe-less forms, accents, short forms and markup do not hide a personal-life line", () => {
   const personal = [
@@ -246,7 +246,7 @@ test("classifyUntagged: one Haiku-class call on Anthropic only, the message fenc
   assert.equal(DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(subCounterKey(at)), undefined, "the wiki refresher's sub-cap is untouched");
   assert.ok(Number(DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(counterKey(at)).json) > 0, "the monthly counter is charged too");
 });
-test("classifier fails closed: an error, a 529, a timeout-shaped throw, a spent cap, junk output and a secret in the text all mean ignore, nothing posted, nothing stored", async () => {
+test("classifier fails closed: an error, a 529, a timeout-shaped throw, a spent cap and junk output all mean ignore (nothing posted; the text is still filed); a secret in the text means no call and nothing filed", async () => {
   const cases = [
     ["claude 529", () => { anthStatus = 529; }, {}],
     ["claude 500", () => { anthStatus = 500; }, {}],
@@ -260,14 +260,14 @@ test("classifier fails closed: an error, a 529, a timeout-shaped throw, a spent 
     const e = ev();
     const d = await run(env, e, "live");
     assert.equal(posts.length, 0, name);
-    assert.equal(count(DB, "SELECT count(*) c FROM group_log"), 0, name);
+    assert.equal(count(DB, "SELECT count(*) c FROM group_log WHERE source = 'listener'"), 1, `${name}: filed, not answered`);
     assert.match(decisions(DB)[0], /^u:ignore:/, `${name}: ${decisions(DB)[0]}`);
-    assert.ok(d.startsWith("u:ignore:"), name);
+    assert.equal(d, "logged", name);
   }
   const DB = schemaDb(); seed(DB); classify = [];
   const secret = ["sk", "ant", "api03"].join("-") + "-" + "Z9".repeat(24);
   const d = await run(mkEnv(DB), ev({ content: `how do I use this key ${secret}?` }));
-  assert.equal(d, "u:ignore:guard:secret"); assert.equal(classify.length, 0); assert.equal(count(DB, "SELECT count(*) c FROM group_log"), 0);
+  assert.equal(d, "u:not-stored"); assert.equal(classify.length, 0); assert.equal(count(DB, "SELECT count(*) c FROM group_log"), 0);
 });
 test("classifier is paid Claude only: Workers AI is never called and the answer path stays on Anthropic and Discord", async () => {
   const DB = schemaDb(); seed(DB);
@@ -280,22 +280,25 @@ test("classifier is paid Claude only: Workers AI is never called and the answer 
 });
 
 // ---- part 2: the decision --------------------------------------------------------------------------------------------------------------------------
-test("dry: a direct-answer candidate is recorded as a would-be decision only; no text, no author, no turn, no post, no group_log row, nothing else stored", async () => {
-  const DB = schemaDb(); seed(DB);
+test("dry: a direct-answer candidate is recorded as a would-be decision; no text, no author in listen_events, no turn, no post; the text itself is filed as chatter only with GROUP_MEMORY on", async () => {
   const marker = "zanzibar cooldown";
-  const e = ev({ content: `what is the ${marker} on Divine Shield` });
-  const before = dumpAll(DB);
-  assert.equal(await run(mkEnv(DB, { LISTENER: "dry" }), e, "dry"), "dry");
-  assert.equal(posts.length, 0); assert.equal(anth.length, 0); assert.equal(classify.length, 1);
-  assert.deepEqual(decisions(DB), ["u:answer-dry:direct_fact"]);
-  const row = DB.raw.prepare("SELECT * FROM listen_events").get();
-  assert.equal(row.posted, 0); assert.equal(row.ask_id, null);
-  const after = dumpAll(DB);
-  assert.ok(!after.includes(marker) && !after.includes(e.content), "the message text is stored nowhere");
-  assert.ok(!after.includes("red-fox") || before.includes("red-fox"), "the author is not added by the decision");
-  assert.equal(count(DB, "SELECT count(*) c FROM ask_turns"), 0);
-  assert.equal(count(DB, "SELECT count(*) c FROM group_log"), 0);
-  assert.deepEqual(DB.raw.prepare("PRAGMA table_info(listen_events)").all().map((c) => c.name), ["msg_id", "at", "channel", "kind", "decision", "ask_id", "posted"]);
+  for (const memory of ["off", "on"]) {
+    classify = []; anth = []; posts = [];
+    const DB = schemaDb(); seed(DB);
+    const e = ev({ content: `what is the ${marker} on Divine Shield` });
+    const before = dumpAll(DB);
+    assert.equal(await run(mkEnv(DB, { LISTENER: "dry", GROUP_MEMORY: memory }), e, "dry"), "dry");
+    assert.equal(posts.length, 0); assert.equal(anth.length, 0); assert.equal(classify.length, 1);
+    assert.deepEqual(decisions(DB), ["u:answer-dry:direct_fact"]);
+    const row = DB.raw.prepare("SELECT * FROM listen_events").get();
+    assert.equal(row.posted, 0); assert.equal(row.ask_id, null);
+    assert.ok(!JSON.stringify(row).includes(marker) && !JSON.stringify(row).includes("red-fox"), "listen_events holds no text and no author");
+    assert.equal(count(DB, "SELECT count(*) c FROM ask_turns"), 0);
+    const after = dumpAll(DB);
+    if (memory === "off") assert.ok(!after.includes(marker) && before !== undefined, "memory off: the text is stored nowhere");
+    else assert.deepEqual(DB.raw.prepare("SELECT author_slug, kind, source, text FROM group_log").all().map((r) => ({ ...r })), [{ author_slug: "red-fox", kind: "message", source: "listener", text: e.content }], "memory on: filed like any chatter");
+    assert.deepEqual(DB.raw.prepare("PRAGMA table_info(listen_events)").all().map((c) => c.name), ["msg_id", "at", "channel", "kind", "decision", "ask_id", "posted"]);
+  }
 });
 test("live: a confident direct answer goes through part A's answer path: one reply, every ping off, a shared turn; the decision is u:posted and counts as posted", async () => {
   const DB = schemaDb(); seed(DB); const e = ev();
@@ -333,7 +336,7 @@ test("soft daily cap: after UNTAGGED_DAILY_CAP answers (would-be ones in a dry r
   assert.equal(await untaggedCapReached(env, CH), true);
   await run(env, ev({ content: "what is the cooldown on Lay on Hands" }), "dry");
   assert.equal(decisions(DB).at(-1), "u:wiki:cap");
-  assert.equal(count(DB, "SELECT count(*) c FROM group_log WHERE source = 'listener'"), 1);
+  assert.equal(count(DB, "SELECT count(*) c FROM group_log WHERE source = 'listener'"), UNTAGGED_DAILY_CAP + 1, "every text is filed: the would-be answers and the capped one");
   await run(env, ev({ channel_id: "900000000000000002" }), "dry");
   assert.equal(decisions(DB).at(-1), "u:answer-dry:direct_fact");
   DB.raw.prepare("UPDATE listen_events SET at = ?").run(new Date(Date.now() - 25 * 3600 * 1000).toISOString());
@@ -398,31 +401,38 @@ test("wiki feed: no-question chatter and classifier 'wiki_only' are filed as the
   assert.deepEqual(decisions(DB), ["u:wiki:no-question", "u:wiki:planning"]);
   assert.equal(posts.length, 0); assert.equal(anth.length, 0); assert.equal(classify.length, 1);
 });
-test("wiki feed: GROUP_MEMORY off stores nothing (u:memory-off); ignore verdicts and every rule-ignored text are not stored", async () => {
+test("wiki feed: GROUP_MEMORY off stores nothing (u:memory-off); a classifier 'ignore' and every rule-level 'do not speak' text (short, command) are still filed when memory is on", async () => {
   const DB = schemaDb(); seed(DB);
   assert.equal(await run(mkEnv(DB, { GROUP_MEMORY: "off" }), ev({ content: "we should farm herbs after the raid tonight" }), "live"), "u:memory-off");
   assert.equal(count(DB, "SELECT count(*) c FROM group_log"), 0);
   reply = verdict("ignore", "social", 0.9);
-  assert.equal(await run(mkEnv(DB), ev({ content: "does anyone want to hear a joke about gnomes" }), "live"), "u:ignore:social");
+  assert.equal(await run(mkEnv(DB), ev({ content: "does anyone want to hear a joke about gnomes" }), "live"), "logged");
+  assert.equal(decisions(DB).at(-1), "u:ignore:social");
   for (const t of ["lol", "/quiet state:on", "x".repeat(UNTAGGED_MIN_CHARS - 1)]) await run(mkEnv(DB), ev({ content: t }), "live");
-  assert.equal(count(DB, "SELECT count(*) c FROM group_log"), 0);
+  assert.equal(count(DB, "SELECT count(*) c FROM group_log WHERE source = 'listener'"), 4, "ignore means do not speak, not do not remember");
+  assert.equal(posts.length, 0);
 });
-test("wiki feed: a personal-life text is never stored and never sent to the model, with or without a question", async () => {
+test("wiki feed: a personal-topic text IS filed (flag on, as with the flag off), never sent to the model and never answered, with or without a question", async () => {
   const DB = schemaDb(); seed(DB); const env = mkEnv(DB);
-  for (const t of ["my wife and I are moving to a new apartment next week", "how do I tell my wife about the raid schedule?", "my boss fired half the office today"]) {
-    assert.equal(await run(env, ev({ content: t }), "live"), "u:ignore:personal", t);
-  }
-  assert.equal(classify.length, 0); assert.equal(count(DB, "SELECT count(*) c FROM group_log"), 0); assert.equal(posts.length, 0);
+  const texts = ["my wife and I are moving to a new apartment next week", "how do I tell my wife about the raid schedule?", "my boss fired half the office today"];
+  for (const t of texts) assert.equal(await run(env, ev({ content: t }), "live"), "logged", t);
+  assert.deepEqual(decisions(DB), Array(3).fill("u:ignore:personal"));
+  assert.deepEqual(DB.raw.prepare("SELECT author_slug, kind, source, text FROM group_log ORDER BY id").all().map((r) => r.text), texts);
+  assert.equal(classify.length, 0, "no classifier call on a personal topic"); assert.equal(anth.length, 0); assert.equal(posts.length, 0, "never answered");
 });
-test("wiki feed: a classifier verdict of personal is ignore: nothing stored, nothing posted", async () => {
+test("wiki feed: a classifier verdict of personal is never an unprompted answer (live or dry), and the text is still filed", async () => {
   const DB = schemaDb(); seed(DB); reply = verdict("wiki_only", "personal", 0.9);
-  assert.equal(await run(mkEnv(DB), ev({ content: "does anyone know a good way to cope with stress" }), "live"), "u:ignore:personal");
-  assert.equal(count(DB, "SELECT count(*) c FROM group_log"), 0);
+  assert.equal(await run(mkEnv(DB), ev({ content: "does anyone know a good way to cope with stress" }), "live"), "logged");
+  assert.equal(decisions(DB).at(-1), "u:ignore:personal");
+  assert.equal(count(DB, "SELECT count(*) c FROM group_log WHERE source = 'listener'"), 1);
   reply = verdict("answer", "personal", 0.99);
   await run(mkEnv(DB), ev({ content: "does anybody know how to handle burnout" }), "live");
-  assert.equal(decisions(DB).at(-1), "u:ignore:personal"); assert.equal(posts.length, 0);
+  await run(mkEnv(DB, { LISTENER: "dry" }), ev({ content: "does anybody know how to handle burnout today" }), "dry");
+  assert.deepEqual(decisions(DB).slice(-2), ["u:ignore:personal", "u:ignore:personal"]);
+  assert.equal(posts.length, 0); assert.equal(count(DB, "SELECT count(*) c FROM ask_turns"), 0);
+  assert.equal(count(DB, "SELECT count(*) c FROM group_log WHERE source = 'listener'"), 3);
 });
-test("wiki feed: a secret typed into untagged chat is never stored", async () => {
+test("wiki feed: a secret typed into untagged chat is still never stored", async () => {
   const DB = schemaDb(); seed(DB);
   const secret = ["sk", "ant", "api03"].join("-") + "-" + "Z9".repeat(24);
   const d = await run(mkEnv(DB), ev({ content: `my key is ${secret} for the bot` }), "live");
@@ -446,15 +456,14 @@ async function chatterRun(extra) {
   const tables = DB.raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT IN ('listen_events', 'group_log') ORDER BY name").all().map((t) => `${t.name}:${DB.raw.prepare(`SELECT count(*) c FROM "${t.name}"`).get().c}`);
   return { results, listen, log, tables, anth: anth.length + classify.length, posts: posts.length, secret };
 }
-test("LISTENER_UNTAGGED off (unset, off or any other value): chatter responses and writes are identical to part A except ONE deliberate difference (personal-life text is no longer filed), with no classifier call and no post (differential)", async () => {
+test("LISTENER_UNTAGGED off (unset, off or any other value): chatter responses and writes are byte-identical to part A, personal-topic text included, with no classifier call and no post (differential)", async () => {
   const base = await chatterRun({ LISTENER_UNTAGGED: undefined });
-  // what part A did: every non-empty text stored as the author's message row, a secret refused, empty is 'empty'; nothing answered. The single deliberate difference (review M3): text 2, a personal-life
-  // line, is now decision 'personal' and is not filed, even with the flag off.
-  assert.deepEqual(base.results, ["logged", "personal", "logged", "logged", "not-stored", "logged", "logged", "empty"]);
-  assert.deepEqual(base.listen.map((r) => r.decision), ["logged", "personal", "logged", "logged", "not-stored", "logged", "logged", "empty"]);
-  assert.equal(base.log.length, 5);
+  // what part A did: every non-empty text stored as the author's message row, a secret refused, empty is 'empty'; nothing answered. No keyword filter on filing (owner decision, Matt 2026-11-15).
+  assert.deepEqual(base.results, ["logged", "logged", "logged", "logged", "not-stored", "logged", "logged", "empty"]);
+  assert.deepEqual(base.listen.map((r) => r.decision), ["logged", "logged", "logged", "logged", "not-stored", "logged", "logged", "empty"]);
+  assert.equal(base.log.length, 6);
   assert.ok(base.log.every((r) => r.kind === "message" && r.source === "listener" && r.channel === CH));
-  assert.ok(!base.log.some((r) => r.text === "my wife is in the hospital again"), "personal-life text is not filed, whatever the flag says");
+  assert.ok(base.log.some((r) => r.text === "my wife is in the hospital again"), "personal-topic text is filed: there is no keyword filter on filing");
   assert.ok(!base.log.some((r) => r.text.includes(base.secret)));
   assert.equal(base.anth, 0); assert.equal(base.posts, 0);
   for (const v of ["off", "", "dry", "live", "true", "1", "maybe"]) {
@@ -478,7 +487,7 @@ test("LISTENER_UNTAGGED on does not change mention or reply handling at all", as
 });
 
 // ---- part 4: documents ------------------------------------------------------------------------------------------------------------------------------
-test("docs/privacy.md has a plain paragraph on listening: what is read and when, what is kept and for how long, who sees it, how to stop, never published; it says the listening is off until announced", () => {
+test("docs/privacy.md has a plain paragraph on listening: what is read and when, what is kept (everything, personal things included) and for how long, who sees it, how to stop, never published; it says the listening is off until announced", () => {
   const md = read("docs/privacy.md");
   const at = md.indexOf("**Listening in Discord**");
   assert.ok(at > 0, "the paragraph exists");
@@ -486,7 +495,14 @@ test("docs/privacy.md has a plain paragraph on listening: what is read and when,
   assert.match(para, /off today/i);
   assert.match(para, /until (?:the owner|we|Matt) (?:announce|say)/i, "off until announced");
   assert.match(para, /Message Content/i);
-  assert.match(para, /only .*members/i);
+  assert.match(para, /messages of members on the roster/i);
+  assert.match(para, /personal things are kept too/i, "personal text is kept, and the page says so");
+  assert.match(para, /Messages from anyone who is not on the roster are ignored and nothing about them is kept/);
+  assert.match(para, /only to Anthropic's paid API and nowhere else/);
+  assert.match(para, /never speaks up on his own about a personal topic[^.]*only decides whether he talks, not whether a message is kept/);
+  assert.match(para, /nothing deletes that on a timer yet/);
+  // no sentence may claim personal-life text is not kept or not sent
+  assert.ok(!/(?:is|are) not kept|not sent to anyone|never (?:kept|stored)|not stored/i.test(para), "no claim that anything personal is withheld");
   assert.match(para, /\/quiet/);
   assert.match(para, /admin/i);
   assert.match(para, /never published|never put on any public page|never public/i);
@@ -563,5 +579,13 @@ test("docs: M2 sentence on answered messages in the privacy page, the retention 
   assert.ok(read("privacy/index.html").includes("treated as a question to him"));
   assert.match(read("docs/runbooks/listener.md"), /No retention purge yet \(a follow-up\)[^\n]*plain form/);
   const t = read("infrastructure/wrangler.toml");
-  assert.match(t.slice(t.indexOf("LISTENER_UNTAGGED =")).split("\n")[0], /dry: the classifier is still called[^#]*still filed in group_log/);
+  assert.match(t.slice(t.indexOf("LISTENER_UNTAGGED =")).split("\n")[0], /dry: the classifier is still called[^#]*every text that is not answered is filed in group_log[^#]*personal topics included/);
+});
+test("runbook and flag comments say personal-topic text is filed and only never answered unprompted; no document claims it is withheld", () => {
+  const rb = read("docs/runbooks/listener.md");
+  assert.match(rb, /personal-topic text is filed like any other/);
+  assert.match(rb, /None of these rules decides what is kept/);
+  for (const f of ["docs/runbooks/listener.md", "docs/runbooks/flags.md", "infrastructure/wrangler.toml", "docs/privacy.md"]) {
+    assert.ok(!/personal-life (?:topics|text) (?:never|is not|are not)|never stored by this path|personal-life topics never|is not kept and is not sent/i.test(read(f)), f);
+  }
 });

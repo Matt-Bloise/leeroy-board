@@ -10,7 +10,7 @@
 //   - kind 'chatter': files the text as the author's 'message' row in the group memory log when GROUP_MEMORY is on and the channel is not quiet (mentions and replies are filed by answerWithAi).
 // Part B (flag LISTENER_UNTAGGED, off by default; listener-untagged.js): the signing key is derived from the bot token (listener-config.js listenerKey; no separate secret), and untagged text
 // (kind 'chatter') goes through rules, a Haiku-class classifier for candidates and a soft daily cap: answered only when a direct checkable answer exists, otherwise fed to the group wiki
-// (personal-life topics never). With the flag off, 'chatter' behaves exactly as above.
+// (nothing the group says is held back from the memory, personal topics included; personal topics are only never answered unprompted). With the flag off, 'chatter' behaves exactly as above.
 // Never throws to the caller after the signature passes; every failure is a short code in a log line and a decision in listen_events, never message text.
 import { answerWithAi, resolveAiProvider, isPrPreviewEnv, callAnthropicClaude } from "./ai-models.js";
 import { insertAskTurn } from "./answer-ux.js";
@@ -26,7 +26,7 @@ import { postChannelMessage } from "./announce.js";
 import { clampContent } from "./discord-safety.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { listenerMode, verifyListen, parseListenEvent, LISTEN_MAX_BODY, isSnow, listenerKeyFor } from "./listener-config.js";
-import { untaggedOn, untaggedRules, classifyUntagged, untaggedCapReached, personalLife, UNTAGGED_MIN_CONFIDENCE } from "./listener-untagged.js";
+import { untaggedOn, untaggedRules, classifyUntagged, untaggedCapReached, UNTAGGED_MIN_CONFIDENCE } from "./listener-untagged.js";
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 
@@ -98,7 +98,6 @@ export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = 
     if (!ev.content) { await decide(env, ev.id, "empty"); return "empty"; }
     if ((await isQuiet(env, ev.channel_id)) || (ev.parent_id && (await isQuiet(env, ev.parent_id)))) { await decide(env, ev.id, "quiet"); return "quiet"; }
     if (untaggedOn(env)) return untaggedText(env, origin, ev, member, mode, { fetchImpl });
-    if (personalLife(ev.content)) { await decide(env, ev.id, "personal"); return "personal"; } // personal-life text is not filed, with or without LISTENER_UNTAGGED
     if (!(await groupMemoryOn(env))) { await decide(env, ev.id, "memory-off"); return "memory-off"; }
     const n = await appendGroupLog(env, [{ at: new Date().toISOString(), channel: ev.channel_id, author_slug: member.slug, kind: "message", text: ev.content, reply_to: ev.id, source: "listener" }]);
     const d = n ? "logged" : "not-stored";
@@ -154,13 +153,19 @@ async function answerEvent(env, origin, ev, member, mode, { fetchImpl, tag = "",
 }
 
 // Untagged channel text (kind 'chatter') with LISTENER_UNTAGGED on. The author is already a roster member in the roster guild and the channel is not quiet (processListenEvent checked both).
-// Decisions recorded in listen_events (never text, never an author), all prefixed "u:": ignore:<reason>, wiki:<reason> (filed in the group memory log), memory-off, not-stored, answer-dry:<reason> (dry: nothing is run or
-// posted), posted / post-failed:<status> / no-answer / no-token (live: the part A answer path).
+// Two separate questions. SPEAKING: may Leeroy answer it unprompted (rules, classifier, confidence, daily cap)? REMEMBERING: always yes (owner decision, Matt 2026-11-15): every text that is not answered is filed
+// through the group-memory appender, personal topics included, when GROUP_MEMORY is on (private D1, the secret screen and the roster slug check stay). A live answer is filed by the answer path as the author's ask;
+// a dry-run would-be answer is filed as chatter, because nothing was said.
+// Decisions recorded in listen_events (never text, never an author), all prefixed "u:": ignore:<reason> / wiki:<reason> (not answered, and filed), memory-off, not-stored (the appender refused it, e.g. a secret),
+// answer-dry:<reason> (dry: no answer was run or posted), posted / post-failed:<status> / no-answer / no-token (live: the part A answer path).
 async function untaggedText(env, origin, ev, member, mode, { fetchImpl } = {}) {
   const done = async (d, ret) => { await decide(env, ev.id, d); return ret || d; };
+  const fileChatter = async () => {
+    if (!(await groupMemoryOn(env))) return -1;
+    return appendGroupLog(env, [{ at: new Date().toISOString(), channel: ev.channel_id, author_slug: member.slug, kind: "message", text: ev.content, reply_to: ev.id, source: "listener" }]);
+  };
   const rules = untaggedRules(ev.content);
-  if (rules.verdict === "ignore") return done(`u:ignore:${rules.reason}`);
-  let decision = "wiki_only", reason = rules.reason;
+  let decision = rules.verdict === "candidate" ? "answer?" : rules.verdict, reason = rules.reason;
   if (rules.verdict === "candidate") {
     const v = await classifyUntagged(env, { text: ev.content, isMember: Boolean(member), call: callAnthropicClaude });
     decision = v.decision; reason = v.reason;
@@ -169,15 +174,13 @@ async function untaggedText(env, origin, ev, member, mode, { fetchImpl } = {}) {
       else if (await untaggedCapReached(env, ev.channel_id)) { decision = "wiki_only"; reason = "cap"; }
     }
   }
-  if (decision === "ignore") return done(`u:ignore:${reason}`);
   if (decision === "answer") {
-    if (mode !== "live") return done(`u:answer-dry:${reason}`, "dry");
+    if (mode !== "live") { await fileChatter(); return done(`u:answer-dry:${reason}`, "dry"); }
     return answerEvent(env, origin, ev, member, mode, { fetchImpl, tag: "u:", allowFallback: false });
   }
-  // wiki_only: the group wiki's own appender, as part A does for chatter (private storage, secret screen, roster slug); nothing when memory is off
-  if (!(await groupMemoryOn(env))) return done("u:memory-off");
-  const n = await appendGroupLog(env, [{ at: new Date().toISOString(), channel: ev.channel_id, author_slug: member.slug, kind: "message", text: ev.content, reply_to: ev.id, source: "listener" }]);
-  return n ? done(`u:wiki:${reason}`, "logged") : done("u:not-stored");
+  const n = await fileChatter();
+  if (n < 0) return done("u:memory-off");
+  return n ? done(`u:${decision === "ignore" ? "ignore" : "wiki"}:${reason}`, "logged") : done("u:not-stored");
 }
 
 // The latest ask turn matching `where` (a SQL condition over ask_turns with its binds), never one the listener created: a turn the listener answered (a mention, a reply or an unprompted answer) is

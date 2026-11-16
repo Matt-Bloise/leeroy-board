@@ -1,13 +1,14 @@
 // The listener, part B: what to do with untagged channel text (kind 'chatter'). Flag LISTENER_UNTAGGED (off by default; docs/runbooks/listener.md). Owner decisions (Matt, 2026-11-15): answer untagged text only when a
-// DIRECT, checkable answer exists; everything else may feed the group wiki; personal-life topics are never read by a model and never stored by this path.
+// DIRECT, checkable answer exists. Owner decision (Matt, 2026-11-15, "stop holding back"): the group memory keeps EVERYTHING the group says, personal-life details included, so nothing here decides what is KEPT:
+// this file only decides whether Leeroy may SPEAK UP unprompted. Every text that is not answered is filed (listener.js untaggedText), whatever its topic.
 //
-// Three steps, cheapest first:
-//   1. rules (no model): bot-free by construction (parseListenEvent refuses bots), then empty, too short, a command, a personal-life topic (never a candidate, never stored), and obvious chatter with no
-//      question (not a candidate: it may feed the wiki, no model sees it). Anything else with a question is a CANDIDATE.
+// Three steps, cheapest first (all of them about speaking, none about remembering):
+//   1. rules (no model): bot-free by construction (parseListenEvent refuses bots), then empty, too short, a command, a personal-life topic (never a candidate: Leeroy never answers one unprompted, and no model
+//      is called on it), and obvious chatter with no question (not a candidate: no model sees it). Anything else with a question is a CANDIDATE. A verdict of 'ignore' means "do not speak"; the text is still filed.
 //   2. classifier (candidates only): ONE Haiku-class call through the same paid-Claude path as the group-wiki refresher (research/claude.js claudeCappedCall -> ai-models.js callAnthropicClaude). Paid Claude only: no
 //      Workers AI, no Gemini, no other provider ever sees a friend's text. Its own sub-cap of the monthly token cap (a tenth, its own counter) so it can never starve the wiki refresher or an /ask. It only runs for a
 //      roster member in the roster guild (the caller resolved that; classifyUntagged refuses again), only with RESEARCH_NAMES real, and it fails CLOSED to 'ignore' on any error, timeout, cap or unreadable reply.
-//   3. the decision: 'answer' only when the classifier says a direct checkable answer exists AND its confidence reaches UNTAGGED_MIN_CONFIDENCE AND the channel's soft daily cap is not spent. Otherwise 'wiki_only'.
+//   3. the decision: 'answer' only when the classifier says a direct checkable answer exists AND its confidence reaches UNTAGGED_MIN_CONFIDENCE AND the channel's soft daily cap is not spent. Otherwise the text is not answered ('wiki_only' or 'ignore') and is filed.
 // The classifier never sees the author, the channel or any other message: one fenced text only.
 import { anthropicAvailable } from "./ai-keys.js";
 import { fence } from "./prompt-fence.js";
@@ -31,11 +32,12 @@ export const REASONS = Object.freeze(["direct_fact", "opinion", "social", "plann
 export const listenSubCounterKey = (now) => `claude_tokens_listen_${monthTag(now)}`;
 
 // ---- step 1: rules -------------------------------------------------------------------------------------------------------------------------------
-// Personal life: health, family, work, location, money, and schedule beyond game events. Whole words, matched on the text after Unicode NFKC and invisible-character removal. The list errs on the side of silence:
-// a game question that trips a word is simply not answered. A match is never a candidate (no model call) and never stored by this path.
+// PERSONAL TOPICS, for the SPEAKING judgement only: health, family, work, location, money, legal matters and schedule beyond game events. A message that matches is never a candidate: it never reaches the classifier
+// and Leeroy never answers it unprompted. It says NOTHING about what is kept: a personal-topic message is filed like any other (owner decision, see the top of this file). Whole words. The list errs on the side
+// of silence: a game question that trips a word is simply not answered.
 // The text is first folded: Unicode NFKC and invisible characters out (normaliseText), accents off (fiance), apostrophes dropped (moms, wifes, im), and the markup marks * _ ~ | ` removed or turned into spaces
 // (the rules run on both foldings), so "w_i_fe" and "my_wife" are seen as written. Plural and possessive forms count (moms, wives, kids).
-const PERSONAL = [
+const PERSONAL_TOPIC = [
   // health
   /\b(sick|illness|doctors?|hospital|surgery|surgeon|medication|medical|medicine|meds|prescription|therapy|therapist|diagnos\w*|cancer|pregnan\w*|migraine|headache|injur\w*|chemo|ambulance|depress\w*|anxiety|anxious|panic attack|suicid\w*|covid|fever|nurse|clinic|symptoms?|blood pressure|diabet\w*|mental health|icu|stroke|rehab|sober|sobriety|relapse|detox|addict\w*|emergency room|urgent care|seizure|overdose)\b/i,
   /\b(?:ER|ICU)\b/,
@@ -52,22 +54,23 @@ const PERSONAL = [
   // schedule beyond the game
   /\b(appointment|dentist|vacation|holiday|birthday|date night|my schedule|out of town|dinner plans|lunch|the gym|day off|school|homework|exam|midterm|finals)\b/i,
 ];
-export function personalLife(text) {
+// True when the text is on a personal topic, so Leeroy must not speak up about it unprompted.
+export function personalTopic(text) {
   const t = normaliseText(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/['\u2019\u02bc]/g, "");
   const views = [t.replace(/[*_~|`]+/g, ""), t.replace(/[*_~|`]+/g, " ")];
-  return views.some((v) => PERSONAL.some((re) => re.test(v)));
+  return views.some((v) => PERSONAL_TOPIC.some((re) => re.test(v)));
 }
 
 const COMMAND = /^\s*(?:[\/!][a-z0-9]|\.[a-z]{2,}\b)/i;
 const OPENER = /^\s*(?:(?:ok|okay|so|wait|hey|quick question|question)[ ,:]+)*(?:who|whats|what's|what|when|where|why|how|which|whose|does|do|did|is|are|was|were|can|could|should|would|will|has|have|anyone|anybody|any idea|any1)\b/i;
 
-// -> { verdict: 'ignore' | 'wiki_only' | 'candidate', reason }
+// -> { verdict: 'ignore' | 'wiki_only' | 'candidate', reason }. ignore: do not speak (and no model call); wiki_only: not worth speaking, no model call; candidate: ask the classifier. None of them decides what is filed.
 export function untaggedRules(text) {
   const t = normaliseText(text).replace(/\s+/g, " ").trim();
   if (!t) return { verdict: "ignore", reason: "empty" };
   if (t.length < UNTAGGED_MIN_CHARS) return { verdict: "ignore", reason: "short" };
   if (COMMAND.test(t)) return { verdict: "ignore", reason: "command" };
-  if (personalLife(t)) return { verdict: "ignore", reason: "personal" };
+  if (personalTopic(t)) return { verdict: "ignore", reason: "personal" }; // do not speak; still filed
   if (t.includes("?") || OPENER.test(t)) return { verdict: "candidate", reason: "question" };
   return { verdict: "wiki_only", reason: "no-question" };
 }
@@ -81,7 +84,7 @@ export const CLASSIFY_SYSTEM =
   "decision ignore: personal life (health, family, work, where someone lives, money, schedule outside the game), a question put to one particular person, rhetorical or vague, or one that needs context you do not have. " +
   `Output ONLY JSON, nothing before or after it: {"decision":"answer|wiki_only|ignore","reason":"${REASONS.join("|")}","confidence":0.0}. confidence is your own certainty from 0 to 1 that the decision is right and, for answer, that a correct answer exists.`;
 
-// The model's reply is data: strict JSON, whitelisted decision and reason, confidence a number in [0, 1]. Anything else is 'ignore'. A 'personal' reason is always 'ignore' (never wiki).
+// The model's reply is data: strict JSON, whitelisted decision and reason, confidence a number in [0, 1]. Anything else is 'ignore'. A 'personal' reason is always 'ignore' (never an unprompted answer).
 export function parseVerdict(raw) {
   const bad = { decision: "ignore", reason: "bad-output", confidence: 0 };
   let obj = null;
