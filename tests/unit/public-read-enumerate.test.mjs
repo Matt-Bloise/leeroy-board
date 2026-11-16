@@ -54,7 +54,7 @@ const ROUTE_KIND = {
   "POST /intent": P, "POST /refresh": N, "GET /": N, "GET /health": N,
 };
 const ODD_QUERY = "full=1&raw=1&admin=1&debug=1&x=1";
-const DISCORD_RUN = ["ack", "answer", "ask", "build", "countdown", "dates", "didyouknow", "help", "intents", "journey", "launch", "leeroy", "library", "map", "page", "quiz", "say", "sheet", "signup", "start", "tonight", "tooltip", "vote"];
+const DISCORD_RUN = ["ack", "answer", "ask", "build", "countdown", "dates", "didyouknow", "help", "intents", "journey", "launch", "leeroy", "library", "map", "page", "member", "quiz", "say", "sheet", "signup", "start", "tonight", "tooltip", "vote"];
 
 test("every route of ROUTES is on the allow-list as projected, none or refused; a new route fails until it is classified", () => {
   assert.deepEqual(Object.keys(ROUTE_KIND).sort(), [...ROUTES].sort());
