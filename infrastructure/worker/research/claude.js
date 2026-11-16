@@ -389,14 +389,14 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
 // in callAnthropicClaude; secrets and long ids here). One send on the fast (Haiku-class) model; the only second send is the 4.5 id after a model-not-found answer, which is not billed.
 // Returns { answer, model } or { reason } with a short fixed code. call: callAnthropicClaude from ai-models.js (injected, as for tryResearchClaude).
 export const CAPPED_TIMEOUT_MS = 30000;
-export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, maxTokens, now = () => new Date(), timeoutMs = CAPPED_TIMEOUT_MS }) {
+export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, maxTokens, now = () => new Date(), timeoutMs = CAPPED_TIMEOUT_MS, subCounter = subCounterKey }) { // subCounter: the caller's own sub-cap counter key (default: the group-wiki refresher's), so another caller cannot starve it
   if (typeof call !== "function") return { reason: "claude:no-call" };
   if (!anthropicAvailable(env)) return { reason: "claude:no-key" };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
   const at = now();
   const cap = monthlyTokenCap(env);
   const estimate = Math.max(1, estimateTokens(systemPrompt, userPrompt) - RESEARCH_MAX_TOKENS + Math.max(1, Math.floor(maxTokens)));
-  const subKey = subCounterKey(at);
+  const subKey = subCounter(at);
   try {
     // The refresher's own sub-cap first (a tenth of the monthly cap), then the monthly cap itself; a reservation the second refuses is given back to the first.
     if (!(await reserveTokens(env, estimate, Math.floor(cap * SUBCAP_FRACTION), at, subKey))) return { reason: "claude:subcap" };

@@ -8,12 +8,15 @@
 //   - kind 'mention' or 'reply': runs the same research answer as /ask (answerWithAi: paid Claude only, real names, group memory) and, in live mode, posts it as a reply with every ping off.
 //     The answer is a PRIVATE turn in a dry run (share false: filed 'ask-private', shown to no one else) and nothing is posted; a live answer is a public turn like a public /ask;
 //   - kind 'chatter': files the text as the author's 'message' row in the group memory log when GROUP_MEMORY is on and the channel is not quiet (mentions and replies are filed by answerWithAi).
+// Part B (flag LISTENER_UNTAGGED, off by default; listener-untagged.js): the signing key is derived from the bot token (listener-config.js listenerKey; no separate secret), and untagged text
+// (kind 'chatter') goes through rules, a Haiku-class classifier for candidates and a soft daily cap: answered only when a direct checkable answer exists, otherwise fed to the group wiki
+// (nothing the group says is held back from the memory, personal topics included; personal topics are only never answered unprompted). With the flag off, 'chatter' behaves exactly as above.
 // Never throws to the caller after the signature passes; every failure is a short code in a log line and a decision in listen_events, never message text.
-import { answerWithAi, resolveAiProvider, isPrPreviewEnv } from "./ai-models.js";
+import { answerWithAi, resolveAiProvider, isPrPreviewEnv, callAnthropicClaude } from "./ai-models.js";
 import { insertAskTurn } from "./answer-ux.js";
 import { SaltMissingError } from "./salts.js";
 import { askWallPlan, memberLine } from "./research/no-wall.js";
-import { researchModeOn } from "./research/provider.js";
+import { researchModeOn, DEGRADED_SUFFIX } from "./research/provider.js";
 import { groupMemoryOn, appendGroupLog } from "./research/group-memory.js";
 import { hashId } from "./budget.js";
 import { loadConfigKey } from "./config.js";
@@ -22,15 +25,17 @@ import { loadPersona } from "./persona.js";
 import { postChannelMessage } from "./announce.js";
 import { clampContent } from "./discord-safety.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
-import { listenerMode, verifyListen, parseListenEvent, LISTEN_MAX_BODY, isSnow } from "./listener-config.js";
+import { listenerMode, verifyListen, parseListenEvent, LISTEN_MAX_BODY, isSnow, listenerKeyFor } from "./listener-config.js";
+import { untaggedOn, untaggedRules, classifyUntagged, untaggedCapReached, UNTAGGED_MIN_CONFIDENCE } from "./listener-untagged.js";
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 
-// The listener may run only when its flag is on, ASK_RESEARCH is on (friend text must only reach the paid Claude hop) and this is not a PR preview.
+// The listener may run only when its flag is on, a bot token is set (the signing key is derived from it), ASK_RESEARCH is on (friend text must only reach the paid Claude hop) and this is not a PR preview.
 export async function listenerActive(env) {
   const mode = listenerMode(env);
   if (mode === "off") return null;
   if (isPrPreviewEnv(env)) return null;
+  if (!(await listenerKeyFor(env))) return null; // no usable bot token: no signing key, the route does not exist (fails closed exactly like the flag off)
   let research = false;
   try { research = Boolean(await researchModeOn(env, { preview: false })); } catch { research = false; }
   return research ? mode : null;
@@ -80,6 +85,12 @@ async function decide(env, id, decision, { askId = null, posted = false } = {}) 
   } catch {}
 }
 
+// Writes listen_events.ask_id for this event ahead of the turn itself (see answerEvent). Throws when the row is not there or the write fails.
+async function linkAsk(env, id, askId) {
+  const r = await env.DB.prepare("UPDATE listen_events SET ask_id = ? WHERE msg_id = ?").bind(askId, await msgKey(env, id)).run();
+  if (!(r && r.meta && r.meta.changes > 0)) throw new Error("no listen_events row");
+}
+
 // Exposed for tests and for the route. Returns the decision string.
 export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = {}) {
   const roster = await loadConfigKey(env, "discord_roster");
@@ -92,6 +103,7 @@ export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = 
   if (ev.kind === "chatter") {
     if (!ev.content) { await decide(env, ev.id, "empty"); return "empty"; }
     if ((await isQuiet(env, ev.channel_id)) || (ev.parent_id && (await isQuiet(env, ev.parent_id)))) { await decide(env, ev.id, "quiet"); return "quiet"; }
+    if (untaggedOn(env)) return untaggedText(env, origin, ev, member, mode, { fetchImpl });
     if (!(await groupMemoryOn(env))) { await decide(env, ev.id, "memory-off"); return "memory-off"; }
     const n = await appendGroupLog(env, [{ at: new Date().toISOString(), channel: ev.channel_id, author_slug: member.slug, kind: "message", text: ev.content, reply_to: ev.id, source: "listener" }]);
     const d = n ? "logged" : "not-stored";
@@ -99,17 +111,25 @@ export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = 
     return d;
   }
 
-  // mention or reply: answer it the way /ask would
-  if (!ev.content) { await decide(env, ev.id, "empty"); return "empty"; }
+  return answerEvent(env, origin, ev, member, mode, { fetchImpl });
+}
+
+// The answer path shared by a mention or reply and by an untagged text the classifier chose to answer (part B): answer it the way /ask would, and in live mode post it as a reply with every ping off.
+// tag: prefixed to every decision this path records ("" for mention and reply, as in part A; "u:" for an untagged text, which the daily cap counts). allowFallback false: no in-voice filler line.
+async function answerEvent(env, origin, ev, member, mode, { fetchImpl, tag = "", allowFallback = true } = {}) {
+  if (!ev.content) { await decide(env, ev.id, tag + "empty"); return "empty"; }
   const question = (ev.kind === "reply" && ev.ref_text ? `(replying to Leeroy's earlier line: "${ev.ref_text}") ${ev.content}` : ev.content).slice(0, MAX_QUESTION_CHARS);
   const live = mode === "live";
   const share = live; // a dry-run answer is private: filed 'ask-private', shown to no one else
   const intentId = crypto.randomUUID();
   const now = new Date().toISOString();
+  // Link the event to its turn BEFORE the turn exists. GET /ask leaves out every turn listen_events.ask_id points at (latestTurn), so a turn is never visible without its link: not while the answer is
+  // composed, and not if anything fails before decide(). When the link cannot be written the turn is not created at all.
+  try { await linkAsk(env, ev.id, intentId); } catch { await decide(env, ev.id, tag + "store-failed"); return "store-failed"; }
   try {
     await insertAskTurn(env, { id: intentId, byName: member.name, question, provider: resolveAiProvider(env), share, createdAt: now }, { discordId: ev.author_id, slug: member.slug });
   } catch (e) {
-    await decide(env, ev.id, e instanceof SaltMissingError ? "no-salt" : "store-failed");
+    await decide(env, ev.id, tag + (e instanceof SaltMissingError ? "no-salt" : "store-failed"));
     return "store-failed";
   }
   let budget = null;
@@ -121,24 +141,67 @@ export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = 
   }
   let text = "";
   try {
-    const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
-    if (row && row.status !== "error" && row.answer) text = String(row.answer);
+    const row = await env.DB.prepare("SELECT answer, status, model FROM ask_turns WHERE id = ?").bind(intentId).first();
+    if (row && row.status !== "error" && row.answer && (allowFallback || !String(row.model || "").endsWith(DEGRADED_SUFFIX))) text = String(row.answer); // an unprompted reply is never the degraded "my brain is out" line
   } catch {}
   let fallback = false;
-  if (!text) {
+  if (!text && allowFallback) { // an unprompted answer has no in-voice filler line: when Claude cannot answer, nothing is posted
     try { text = memberLine(await loadPersona(env), intentId) || ""; fallback = Boolean(text); } catch {}
   }
-  if (!text) { await decide(env, ev.id, "no-answer", { askId: intentId }); return "no-answer"; }
-  if (!live) { await decide(env, ev.id, fallback ? "dry:fallback" : "dry:answered", { askId: intentId }); return "dry"; }
-  if (!env.DISCORD_BOT_TOKEN) { await decide(env, ev.id, "no-token", { askId: intentId }); return "no-token"; }
+  if (!text) { await decide(env, ev.id, tag + "no-answer", { askId: intentId }); return "no-answer"; }
+  if (!live) { await decide(env, ev.id, tag + (fallback ? "dry:fallback" : "dry:answered"), { askId: intentId }); return "dry"; }
+  if (!env.DISCORD_BOT_TOKEN) { await decide(env, ev.id, tag + "no-token", { askId: intentId }); return "no-token"; }
   const res = await postChannelMessage(env, ev.channel_id, {
     content: clampContent(text),
     allowed_mentions: { parse: [], replied_user: false },
     message_reference: { message_id: ev.id, channel_id: ev.channel_id, fail_if_not_exists: false },
   }, { timeoutMs: 8000, fetchImpl });
   console.log(JSON.stringify({ evt: "listen_post", ok: res.ok, status: res.status, fallback }));
-  await decide(env, ev.id, res.ok ? (fallback ? "posted:fallback" : "posted") : `post-failed:${res.status}`, { askId: intentId, posted: res.ok });
+  await decide(env, ev.id, tag + (res.ok ? (fallback ? "posted:fallback" : "posted") : `post-failed:${res.status}`), { askId: intentId, posted: res.ok });
   return res.ok ? "posted" : "post-failed";
+}
+
+// Untagged channel text (kind 'chatter') with LISTENER_UNTAGGED on. The author is already a roster member in the roster guild and the channel is not quiet (processListenEvent checked both).
+// Two separate questions. SPEAKING: may Leeroy answer it unprompted (rules, classifier, confidence, daily cap)? REMEMBERING: always yes (owner decision, Matt 2026-11-15): every text that is not answered is filed
+// through the group-memory appender, personal topics included, when GROUP_MEMORY is on (private D1, the secret screen and the roster slug check stay). A live answer is filed by the answer path as the author's ask;
+// a dry-run would-be answer is filed as chatter, because nothing was said.
+// Decisions recorded in listen_events (never text, never an author), all prefixed "u:": ignore:<reason> / wiki:<reason> (not answered, and filed), memory-off, not-stored (the appender refused it, e.g. a secret),
+// answer-dry:<reason> (dry: no answer was run or posted), posted / post-failed:<status> / no-answer / no-token (live: the part A answer path).
+async function untaggedText(env, origin, ev, member, mode, { fetchImpl } = {}) {
+  const done = async (d, ret) => { await decide(env, ev.id, d); return ret || d; };
+  const fileChatter = async () => {
+    if (!(await groupMemoryOn(env))) return -1;
+    return appendGroupLog(env, [{ at: new Date().toISOString(), channel: ev.channel_id, author_slug: member.slug, kind: "message", text: ev.content, reply_to: ev.id, source: "listener" }]);
+  };
+  const rules = untaggedRules(ev.content);
+  let decision = rules.verdict === "candidate" ? "answer?" : rules.verdict, reason = rules.reason;
+  if (rules.verdict === "candidate") {
+    const v = await classifyUntagged(env, { text: ev.content, isMember: Boolean(member), call: callAnthropicClaude });
+    decision = v.decision; reason = v.reason;
+    if (decision === "answer") {
+      if (!(v.confidence >= UNTAGGED_MIN_CONFIDENCE)) { decision = "wiki_only"; reason = "lowconf"; }
+      else if (await untaggedCapReached(env, ev.channel_id)) { decision = "wiki_only"; reason = "cap"; }
+    }
+  }
+  if (decision === "answer") {
+    if (mode !== "live") { await fileChatter(); return done(`u:answer-dry:${reason}`, "dry"); }
+    return answerEvent(env, origin, ev, member, mode, { fetchImpl, tag: "u:", allowFallback: false });
+  }
+  const n = await fileChatter();
+  if (n < 0) return done("u:memory-off");
+  return n ? done(`u:${decision === "ignore" ? "ignore" : "wiki"}:${reason}`, "logged") : done("u:not-stored");
+}
+
+// The latest ask turn matching `where` (a SQL condition over ask_turns with its binds), never one the listener created: a turn the listener answered (a mention, a reply or an unprompted answer) is
+// "shared in the reply channel only", so GET /ask must not hand it to every member. Before migration 0012 there is no listen_events table and nothing to exclude.
+export async function latestTurn(env, where, binds) {
+  const run = (extra) => env.DB.prepare(`SELECT * FROM ask_turns WHERE (${where})${extra} ORDER BY created_at DESC LIMIT 1`).bind(...binds).first();
+  try {
+    return await run(" AND id NOT IN (SELECT ask_id FROM listen_events WHERE ask_id IS NOT NULL)");
+  } catch (e) {
+    if (/no such table/i.test(String((e && e.message) || e))) return run("");
+    throw e;
+  }
 }
 
 // The body as text, or null when it is over `max` BYTES. The declared length is checked first and the stream is cancelled the moment the running count passes the limit,
@@ -168,7 +231,7 @@ export async function handleListen(req, env, ctx, origin) {
   if (!mode) return json({ error: "not found" }, 404); // off: the route does not exist
   const raw = await readBounded(req, LISTEN_MAX_BODY);
   if (raw === null) return json({ error: "too large" }, 413);
-  const ok = await verifyListen(env.LISTENER_SECRET, req.headers.get("X-Listen-Timestamp"), raw, req.headers.get("X-Listen-Signature"), Math.floor(Date.now() / 1000));
+  const ok = await verifyListen(await listenerKeyFor(env), req.headers.get("X-Listen-Timestamp"), raw, req.headers.get("X-Listen-Signature"), Math.floor(Date.now() / 1000));
   if (!ok) return json({ error: "unauthorized" }, 401);
   let body;
   try { body = JSON.parse(raw); } catch { return json({ error: "bad json" }, 400); }

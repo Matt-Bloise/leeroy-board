@@ -1,6 +1,6 @@
 // THE LISTENER (flag LISTENER = off | dry | live; POST /api/listen, /quiet). Real Worker code over an in-memory SQLite D1; Discord and Anthropic are fakes; names are fictional.
 //   gate     off (default) is a 404 and /quiet is not in the manifest; it needs ASK_RESEARCH on and is never on in a PR preview.
-//   auth     HMAC over timestamp.body, a stale or wrong signature or a missing secret is 401, an oversized body 413, a bad event 400.
+//   auth     HMAC over timestamp.body with a key derived from the bot token (part B: no separate secret); a stale or wrong signature is 401, a missing bot token is a 404 like the flag off, an oversized body 413, a bad event 400.
 //   who      only the roster guild and a roster member (by Discord id); anyone else leaves nothing behind.
 //   answers  a mention or a reply goes through the /ask research path; dry posts nothing and keeps the turn private; live posts one reply with every ping off.
 //   chatter  filed as the author's 'message' row only with GROUP_MEMORY on and the channel not quiet; /quiet is for roster members.
@@ -14,7 +14,7 @@ import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { resetResearchClaudeForTests, privacyBudget } from "../../infrastructure/worker/research/claude.js";
-import { listenerMode, signListen, verifyListen, parseListenEvent, LISTEN_MAX_BODY } from "../../infrastructure/worker/listener-config.js";
+import { listenerMode, signListen, verifyListen, parseListenEvent, LISTEN_MAX_BODY, listenerKey, resetListenerKeyCacheForTests } from "../../infrastructure/worker/listener-config.js";
 import { processListenEvent, setQuiet, isQuiet, readBounded } from "../../infrastructure/worker/listener.js";
 import { manifestFor } from "../../infrastructure/worker/setup-command.js";
 import { DISCORD_SLASH_COMMANDS_MANIFEST } from "../../infrastructure/worker/discord.js";
@@ -23,7 +23,8 @@ import { schemaDb } from "../helpers/sqlite-d1.mjs";
 const ROOT = new URL("../../", import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, ROOT), "utf8");
 const FAKE_KEY = ["sk", "ant", "FAKE", "TEST", "0000"].join("-");
-const SECRET = "listener-secret-for-tests-0123456789";
+const BOT = "bot-token-for-tests", OTHER_BOT = "another-bot-token-for-tests";
+const KEY = await listenerKey(BOT);
 const GUILD = "800000000000000001", CH = "900000000000000001", OTHER_GUILD = "800000000000000009";
 const FOX = "700000000000000001", OWL = "700000000000000002", STRANGER = "700000000000000099";
 const realFetch = globalThis.fetch;
@@ -39,12 +40,12 @@ globalThis.fetch = async (url, init) => {
   return new Response("{}", { status: 599 });
 };
 test.after(() => { globalThis.fetch = realFetch; });
-test.beforeEach(() => { resetKeyCacheForTests(); resetResearchClaudeForTests(); invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache(); privacyBudget.ms = 1000; anth = []; posts = []; webhook = []; });
+test.beforeEach(() => { resetListenerKeyCacheForTests(); resetKeyCacheForTests(); resetResearchClaudeForTests(); invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache(); privacyBudget.ms = 1000; anth = []; posts = []; webhook = []; });
 
 const roomStub = { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) };
 const fakeAi = { run: async () => { throw new Error("Workers AI must not be called for a member"); } };
 function mkEnv(DB, extra = {}) {
-  return { DB, AI: fakeAi, USER_SALT: "user-salt-for-tests-0123456789", ANTHROPIC_API_KEY: FAKE_KEY, ASK_RESEARCH: "on", RESEARCH_NAMES: "real", GROUP_MEMORY: "on", LISTENER: "live", LISTENER_SECRET: SECRET, DISCORD_BOT_TOKEN: "bot-token-for-tests", DISCORD_WEBHOOK_URL: "https://hooks.test/w", BOARD_ROOM: roomStub, ...extra };
+  return { DB, AI: fakeAi, USER_SALT: "user-salt-for-tests-0123456789", ANTHROPIC_API_KEY: FAKE_KEY, ASK_RESEARCH: "on", RESEARCH_NAMES: "real", GROUP_MEMORY: "on", LISTENER: "live", DISCORD_BOT_TOKEN: BOT, DISCORD_WEBHOOK_URL: "https://hooks.test/w", BOARD_ROOM: roomStub, ...extra };
 }
 function seed(DB) {
   const put = (k, v) => DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(k, JSON.stringify(v));
@@ -57,9 +58,9 @@ const ev = (o = {}) => ({ id: `6000000000000${String(Math.floor(Math.random() * 
 const key = async (id) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`listen:user-salt-for-tests-0123456789:${id}`)))].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
 const count = (DB, sql, ...a) => DB.raw.prepare(sql).get(...a).c;
 const quiet = async (fn) => { const real = { log: console.log, warn: console.warn, error: console.error }; for (const k of Object.keys(real)) console[k] = () => {}; try { return await fn(); } finally { Object.assign(console, real); } };
-async function signedPost(env, obj, { secret = SECRET, ts = Math.floor(Date.now() / 1000), sig = null, raw = null } = {}) {
+async function signedPost(env, obj, { key = KEY, ts = Math.floor(Date.now() / 1000), sig = null, raw = null } = {}) {
   const body = raw ?? JSON.stringify(obj);
-  const signature = sig ?? (await signListen(secret, String(ts), body));
+  const signature = sig ?? (await signListen(key, String(ts), body));
   const waits = [];
   const res = await worker.fetch(new Request("https://worker.test/api/listen", { method: "POST", headers: { "Content-Type": "application/json", "X-Listen-Timestamp": String(ts), "X-Listen-Signature": signature }, body }), env, { waitUntil: (p) => waits.push(p) });
   await Promise.all(waits);
@@ -81,20 +82,24 @@ test("/quiet is in the manifest only while the listener is not off", () => {
   assert.ok(names({ LISTENER: "dry" }).includes("quiet"));
   assert.ok(names({ LISTENER: "live" }).includes("quiet"));
 });
-test("signature: right secret and fresh time verify; wrong secret, short secret, stale time, wrong length and tampered body do not", async () => {
+test("signature: right key and fresh time verify; wrong key, no key, a string for a key, stale time, wrong length and tampered body do not", async () => {
   const body = '{"a":1}', ts = 1_800_000_000;
-  const sig = await signListen(SECRET, String(ts), body);
-  assert.equal(await verifyListen(SECRET, String(ts), body, sig, ts + 5), true);
-  assert.equal(await verifyListen(SECRET, String(ts), body, sig.toUpperCase(), ts + 5), true);
-  assert.equal(await verifyListen("another-secret-0123456789", String(ts), body, sig, ts), false);
-  assert.equal(await verifyListen("short", String(ts), body, await signListen("short", String(ts), body), ts), false);
+  const sig = await signListen(KEY, String(ts), body);
+  assert.equal(await verifyListen(KEY, String(ts), body, sig, ts + 5), true);
+  assert.equal(await verifyListen(KEY, String(ts), body, sig.toUpperCase(), ts + 5), true);
+  const other = await listenerKey(OTHER_BOT);
+  assert.equal(await verifyListen(other, String(ts), body, sig, ts), false);
+  assert.equal(await verifyListen(other, String(ts), body, await signListen(other, String(ts), body), ts), true);
   assert.equal(await verifyListen(undefined, String(ts), body, sig, ts), false);
-  assert.equal(await verifyListen(SECRET, String(ts), body, sig, ts + 121), false);
-  assert.equal(await verifyListen(SECRET, String(ts), body, sig, ts - 121), false);
-  assert.equal(await verifyListen(SECRET, String(ts), body, sig.slice(2), ts), false);
-  assert.equal(await verifyListen(SECRET, String(ts), body + " ", sig, ts), false);
-  assert.equal(await verifyListen(SECRET, "abc", body, sig, ts), false);
-  assert.equal(await verifyListen(SECRET, String(ts), body, null, ts), false);
+  assert.equal(await verifyListen(null, String(ts), body, sig, ts), false);
+  assert.equal(await verifyListen(BOT, String(ts), body, sig, ts), false, "the bot token itself is not the key");
+  assert.equal(await verifyListen(new Uint8Array(8), String(ts), body, sig, ts), false);
+  assert.equal(await verifyListen(KEY, String(ts), body, sig, ts + 121), false);
+  assert.equal(await verifyListen(KEY, String(ts), body, sig, ts - 121), false);
+  assert.equal(await verifyListen(KEY, String(ts), body, sig.slice(2), ts), false);
+  assert.equal(await verifyListen(KEY, String(ts), body + " ", sig, ts), false);
+  assert.equal(await verifyListen(KEY, "abc", body, sig, ts), false);
+  assert.equal(await verifyListen(KEY, String(ts), body, null, ts), false);
 });
 test("parseListenEvent: strict ids and kinds, bots refused, every ping and channel link removed, lengths bounded", () => {
   assert.equal(parseListenEvent(null).ok, false);
@@ -112,7 +117,7 @@ test("parseListenEvent: strict ids and kinds, bots refused, every ping and chann
 // ---- the route ---------------------------------------------------------------------------------------------------------------------------------
 test("off: the route is a 404 and nothing is read or written, even with a valid signature", async () => {
   const DB = schemaDb(); seed(DB);
-  for (const extra of [{ LISTENER: "off" }, { LISTENER: undefined }, { ASK_RESEARCH: "off" }]) {
+  for (const extra of [{ LISTENER: "off" }, { LISTENER: undefined }, { ASK_RESEARCH: "off" }, { DISCORD_BOT_TOKEN: undefined }, { DISCORD_BOT_TOKEN: "" }, { DISCORD_BOT_TOKEN: "short" }]) {
     const res = await signedPost(mkEnv(DB, extra), ev());
     assert.equal(res.status, 404);
   }
@@ -127,11 +132,11 @@ test("never in a PR preview", async () => {
   assert.equal(count(DB, "SELECT count(*) c FROM listen_events"), 0);
   assert.equal(anth.length, 0); assert.equal(posts.length, 0);
 });
-test("auth: bad signature 401, stale 401, missing secret 401, oversized 413, bad json 400, bad event 400; nothing stored", async () => {
+test("auth: bad signature 401, stale 401, a signature from another bot token 401, oversized 413, bad json 400, bad event 400; nothing stored", async () => {
   const DB = schemaDb(); seed(DB); const env = mkEnv(DB);
   assert.equal((await signedPost(env, ev(), { sig: "0".repeat(64) })).status, 401);
   assert.equal((await signedPost(env, ev(), { ts: Math.floor(Date.now() / 1000) - 600 })).status, 401);
-  assert.equal((await signedPost(mkEnv(DB, { LISTENER_SECRET: undefined }), ev())).status, 401);
+  assert.equal((await signedPost(env, ev(), { key: await listenerKey(OTHER_BOT) })).status, 401);
   assert.equal((await signedPost(env, null, { raw: "x".repeat(LISTEN_MAX_BODY + 1) })).status, 413);
   assert.equal((await signedPost(env, null, { raw: "not json" })).status, 400);
   assert.equal((await signedPost(env, { ...ev(), kind: "nope" })).status, 400);
@@ -308,9 +313,9 @@ test("migration 0012 and schema.sql carry the same two tables; the migration is 
   }
   const DB = schemaDb(); DB.raw.exec(mig); DB.raw.exec(mig);
 });
-test("the runbook exists and covers the flag, the secret, dry run, quiet, rollback and the forwarder", () => {
+test("the runbook exists and covers the flag, the key derivation, dry run, quiet, rollback and the forwarder", () => {
   const rb = read("docs/runbooks/listener.md").toLowerCase();
-  for (const k of ["listener", "listener_secret", "dry", "live", "/quiet", "rollback", "forwarder", "listen_events", "ask_id"]) assert.ok(rb.includes(k), k);
+  for (const k of ["listener", "listenerkey", "leeroy-listener-v1", "dry", "live", "/quiet", "rollback", "forwarder", "listen_events", "ask_id"]) assert.ok(rb.includes(k), k);
 });
 test("no public GET route reads the listener tables; the route and the handler never log message text", () => {
   const src = read("infrastructure/worker/listener.js");

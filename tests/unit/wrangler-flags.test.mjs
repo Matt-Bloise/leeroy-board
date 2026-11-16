@@ -14,7 +14,7 @@ const declared = new Set([...varsBlock.matchAll(/^([A-Z][A-Z0-9_]*)\s*=/gm)].map
 const DOCUMENTED = {
   bindings: ["DB", "AI", "BOARD_ROOM", "FLAGS", "ANTHROPIC_KEY_STORE"],
   secrets: ["ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "GITHUB_MODELS_TOKEN", "AI_GATEWAY_TOKEN", "CLOUDFLARE_AIG_TOKEN",
-    "BOARD_ADMIN_TOKEN", "KEY_SALT", "USER_SALT", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_PUBLIC_KEY", "DISCORD_WEBHOOK_URL", "LISTENER_SECRET"],
+    "BOARD_ADMIN_TOKEN", "KEY_SALT", "USER_SALT", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_PUBLIC_KEY", "DISCORD_WEBHOOK_URL"],
   optional: ["CARD_CLASS_EMOJI", "ANSWER_FORMAT", "AI_DAILY_NEURON_CAP", "ASK_DEADLINE_MS", "ACCOUNT_ID", "CF_ACCOUNT_ID"], // the code has a default when unset (ANSWER_FORMAT defaults ON)
   preview: ["IS_PR_PREVIEW", "PR_NUMBER", "WORKER_NAME"], // set by the PR preview deploy / the platform
 };
@@ -51,4 +51,9 @@ test("ANSWER_FORMAT stays undeclared because unset means on", () => {
 
 test("wrangler.toml never mentions the preview-only names: the PR preview deploy skips injecting IS_PR_PREVIEW if that word appears anywhere in the file", () => {
   for (const k of DOCUMENTED.preview) assert.ok(!toml.includes(k), `${k} must not appear in wrangler.toml (not even in a comment)`);
+});
+
+test("the listener flags are declared and default off; there is no separate listener secret", () => {
+  for (const k of ["LISTENER", "LISTENER_UNTAGGED"]) assert.match(varsBlock, new RegExp(`^${k} = "off"`, "m"), k);
+  assert.ok(![...used.keys()].includes(["LISTENER", "SECRET"].join("_")), "the signing key comes from DISCORD_BOT_TOKEN");
 });
