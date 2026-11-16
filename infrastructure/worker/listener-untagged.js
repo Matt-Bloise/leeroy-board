@@ -33,17 +33,29 @@ export const listenSubCounterKey = (now) => `claude_tokens_listen_${monthTag(now
 // ---- step 1: rules -------------------------------------------------------------------------------------------------------------------------------
 // Personal life: health, family, work, location, money, and schedule beyond game events. Whole words, matched on the text after Unicode NFKC and invisible-character removal. The list errs on the side of silence:
 // a game question that trips a word is simply not answered. A match is never a candidate (no model call) and never stored by this path.
+// The text is first folded: Unicode NFKC and invisible characters out (normaliseText), accents off (fiance), apostrophes dropped (moms, wifes, im), and the markup marks * _ ~ | ` removed or turned into spaces
+// (the rules run on both foldings), so "w_i_fe" and "my_wife" are seen as written. Plural and possessive forms count (moms, wives, kids).
 const PERSONAL = [
-  /\b(sick|illness|doctors?|hospital|surgery|surgeon|medication|medical|medicine|meds|prescription|therapy|therapist|diagnos\w*|cancer|pregnan\w*|migraine|headache|injur\w*|chemo|ambulance|depress\w*|anxiety|anxious|panic attack|suicid\w*|covid|fever|nurse|clinic|symptoms?|blood pressure|diabet\w*|mental health)\b/i,
-  /\b(wife|husband|spouse|girlfriend|boyfriend|fiancee?|mom|mum|mother|dad|father|parents?|son|daughter|kids?|children|child|baby|newborn|brother|sister|sibling|grandma|grandpa|grandmother|grandfather|grandparents?|aunt|uncle|cousin|in-laws?|divorce\w*|custody|funeral|wedding|my family)\b/i,
-  /\b(my boss|my job|at work|coworkers?|co-workers?|colleagues?|my manager|fired|laid off|layoffs?|resign\w*|salary|promotion|job interview|my shift|night shift|overtime|my client|my employer|the office)\b/i,
+  // health
+  /\b(sick|illness|doctors?|hospital|surgery|surgeon|medication|medical|medicine|meds|prescription|therapy|therapist|diagnos\w*|cancer|pregnan\w*|migraine|headache|injur\w*|chemo|ambulance|depress\w*|anxiety|anxious|panic attack|suicid\w*|covid|fever|nurse|clinic|symptoms?|blood pressure|diabet\w*|mental health|icu|stroke|rehab|sober|sobriety|relapse|detox|addict\w*|emergency room|urgent care|seizure|overdose)\b/i,
+  /\b(?:ER|ICU)\b/,
+  // family and partners
+  /\b(wife|wifes|wives|husbands?|hubby|spouses?|girlfriends?|boyfriends?|gf|bf|fiancee?s?|partner|moms?|mums?|mothers?|dads?|fathers?|parents?|sons?|daughters?|kids?|child|children|babys?|babies|newborns?|brothers?|sisters?|siblings?|grandmas?|grandpas?|grandmothers?|grandfathers?|grandparents?|aunts?|uncles?|cousins?|in-?laws?|divorce\w*|custody|funeral|wedding|my family|my exs?|exes|ex-?(?:wife|husband|girlfriend|boyfriend|gf|bf))\b/i,
+  // work
+  /\b(my boss(?:es)?|my job|at work|work(?:ing|ed)? late|coworkers?|co-workers?|colleagues?|my manager|fired|laid off|layoffs?|resign\w*|salary|promotion|interviews?|my shift|night shift|overtime|my client|my employer|the office)\b/i,
+  // location
   /\b(my address|where i live|i live in|i live at|moving to|my house|my apartment|my flat|my neighbou?rhood|my zip|my city|my town|hotel|airport|my flight|road trip)\b/i,
-  /\b(rent|mortgage|paycheck|payroll|loan|debt|credit card|bank account|venmo|paypal|cash ?app|taxes|tax return|invoice|my bills?|owe you|owes me|money)\b/i,
+  // money
+  /\b(rent|mortgage|paycheck|payroll|pay ?day|loan|debt|credit card|bank account|venmo|paypal|cash ?app|taxes|tax return|invoice|my bills?|owe you|owes me|money|(?:im|i am|so|flat|totally|stone|dead) broke)\b/i,
+  // legal
+  /\b(court date|court hearing|hearing date|lawyer|attorney|subpoena|jury duty|probation)\b/i,
+  // schedule beyond the game
   /\b(appointment|dentist|vacation|holiday|birthday|date night|my schedule|out of town|dinner plans|lunch|the gym|day off|school|homework|exam|midterm|finals)\b/i,
 ];
 export function personalLife(text) {
-  const t = normaliseText(text);
-  return PERSONAL.some((re) => re.test(t));
+  const t = normaliseText(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/['\u2019\u02bc]/g, "");
+  const views = [t.replace(/[*_~|`]+/g, ""), t.replace(/[*_~|`]+/g, " ")];
+  return views.some((v) => PERSONAL.some((re) => re.test(v)));
 }
 
 const COMMAND = /^\s*(?:[\/!][a-z0-9]|\.[a-z]{2,}\b)/i;
@@ -110,12 +122,13 @@ export async function classifyUntagged(env, { text, isMember, call, now = () => 
 }
 
 // ---- step 3: the soft daily cap ------------------------------------------------------------------------------------------------------------------
-// Unprompted answers in this channel in the last 24 hours, counted from listen_events: posted ones (decision 'u:posted...') and would-be ones from a dry run ('u:answer-dry...'). A count that cannot be read
+// Unprompted answer ATTEMPTS in this channel in the last 24 hours, counted from listen_events: every untagged text that created an ask (decision 'u:...' with an ask_id: posted, post-failed, no-answer...) and the would-be ones from a dry run ('u:answer-dry...').
+// A failed attempt still cost a Claude compose, so it counts. A count that cannot be read
 // counts as spent (silence is the safe side).
 export async function untaggedCapReached(env, channel, nowMs = Date.now()) {
   try {
     const since = new Date(nowMs - 24 * 3600 * 1000).toISOString();
-    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM listen_events WHERE channel = ? AND at >= ? AND (decision LIKE 'u:answer-dry%' OR (decision LIKE 'u:posted%' AND posted = 1))").bind(String(channel), since).first();
+    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM listen_events WHERE channel = ? AND at >= ? AND (decision LIKE 'u:answer-dry%' OR (decision LIKE 'u:%' AND ask_id IS NOT NULL))").bind(String(channel), since).first();
     return Number((row && row.n) || 0) >= UNTAGGED_DAILY_CAP;
   } catch {
     return true;

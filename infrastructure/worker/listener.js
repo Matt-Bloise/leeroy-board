@@ -26,7 +26,7 @@ import { postChannelMessage } from "./announce.js";
 import { clampContent } from "./discord-safety.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { listenerMode, verifyListen, parseListenEvent, LISTEN_MAX_BODY, isSnow, listenerKeyFor } from "./listener-config.js";
-import { untaggedOn, untaggedRules, classifyUntagged, untaggedCapReached, UNTAGGED_MIN_CONFIDENCE } from "./listener-untagged.js";
+import { untaggedOn, untaggedRules, classifyUntagged, untaggedCapReached, personalLife, UNTAGGED_MIN_CONFIDENCE } from "./listener-untagged.js";
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 
@@ -98,6 +98,7 @@ export async function processListenEvent(env, origin, ev, mode, { fetchImpl } = 
     if (!ev.content) { await decide(env, ev.id, "empty"); return "empty"; }
     if ((await isQuiet(env, ev.channel_id)) || (ev.parent_id && (await isQuiet(env, ev.parent_id)))) { await decide(env, ev.id, "quiet"); return "quiet"; }
     if (untaggedOn(env)) return untaggedText(env, origin, ev, member, mode, { fetchImpl });
+    if (personalLife(ev.content)) { await decide(env, ev.id, "personal"); return "personal"; } // personal-life text is not filed, with or without LISTENER_UNTAGGED
     if (!(await groupMemoryOn(env))) { await decide(env, ev.id, "memory-off"); return "memory-off"; }
     const n = await appendGroupLog(env, [{ at: new Date().toISOString(), channel: ev.channel_id, author_slug: member.slug, kind: "message", text: ev.content, reply_to: ev.id, source: "listener" }]);
     const d = n ? "logged" : "not-stored";
@@ -177,6 +178,18 @@ async function untaggedText(env, origin, ev, member, mode, { fetchImpl } = {}) {
   if (!(await groupMemoryOn(env))) return done("u:memory-off");
   const n = await appendGroupLog(env, [{ at: new Date().toISOString(), channel: ev.channel_id, author_slug: member.slug, kind: "message", text: ev.content, reply_to: ev.id, source: "listener" }]);
   return n ? done(`u:wiki:${reason}`, "logged") : done("u:not-stored");
+}
+
+// The latest ask turn matching `where` (a SQL condition over ask_turns with its binds), never one the listener created: a turn the listener answered (a mention, a reply or an unprompted answer) is
+// "shared in the reply channel only", so GET /ask must not hand it to every member. Before migration 0012 there is no listen_events table and nothing to exclude.
+export async function latestTurn(env, where, binds) {
+  const run = (extra) => env.DB.prepare(`SELECT * FROM ask_turns WHERE (${where})${extra} ORDER BY created_at DESC LIMIT 1`).bind(...binds).first();
+  try {
+    return await run(" AND id NOT IN (SELECT ask_id FROM listen_events WHERE ask_id IS NOT NULL)");
+  } catch (e) {
+    if (/no such table/i.test(String((e && e.message) || e))) return run("");
+    throw e;
+  }
 }
 
 // The body as text, or null when it is over `max` BYTES. The declared length is checked first and the stream is cancelled the moment the running count passes the limit,

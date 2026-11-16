@@ -21,6 +21,9 @@ import {
   untaggedOn, untaggedRules, personalLife, parseVerdict, classifyUntagged, untaggedCapReached, listenSubCounterKey,
   UNTAGGED_MIN_CONFIDENCE, UNTAGGED_DAILY_CAP, UNTAGGED_MIN_CHARS, CLASSIFY_SYSTEM,
 } from "../../infrastructure/worker/listener-untagged.js";
+import { sha256Hex } from "../../infrastructure/worker/crypto.js";
+import { webSessionHash, SESS_COOKIE } from "../../infrastructure/worker/web-auth.js";
+import { latestTurn } from "../../infrastructure/worker/listener.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const ROOT = new URL("../../", import.meta.url);
@@ -184,6 +187,20 @@ test("rules: personal-life topics (health, family, work, location, money, schedu
   for (const t of personal) { assert.equal(personalLife(t), true, t); assert.deepEqual(untaggedRules(t), { verdict: "ignore", reason: "personal" }, t); }
   for (const t of ["what is the cooldown on Divine Shield", "does the raid start at eight tonight", "how many talent points at level 40", "we should farm herbs after the raid tonight"]) assert.equal(personalLife(t), false, t);
 });
+test("rules (hardened): plural, possessive and apostrophe-less forms, accents, short forms and markup do not hide a personal-life line", () => {
+  const personal = [
+    "my moms in the ICU, cant raid tonight", "the wifes making me log, gn", "my gf is pissed i raided till 3", "back from rehab, 30 days sober",
+    "im so broke until payday", "court date thursday so no raid", "flying to denver friday for the interview",
+    "my mom's in the hospital tonight", "my wife\u2019s sick again", "my fianc\u00e9 is pissed at me", "my hubby wants me off the pc", "my exs been texting me nonstop",
+    "had a stroke scare, gonna sit out", "the ER said its just a sprain", "working late again so no raid", "my boss is making me stay late",
+    "my k*ids are up so afk", "my w_i_fe is mad", "my_wife is mad about the raid", "my **dad** called about the move", "my kids have the flu", "my parents are visiting this week", "i'm broke again this month", "i\u2019m broke again this month",
+  ];
+  for (const t of personal) assert.deepEqual(untaggedRules(t), { verdict: "ignore", reason: "personal" }, t);
+  for (const t of ["anyone know the boss order in the raid?", "what is the boss order for Molten Core", "does the boss drop a mount", "my gear broke, where do I repair", "who is the last boss in Scholomance?", "how does the ex-hunter quest work"]) {
+    assert.notEqual(untaggedRules(t).reason, "personal", t);
+  }
+  assert.equal(untaggedRules("anyone know the boss order in the raid?").verdict, "candidate");
+});
 test("parseVerdict: strict JSON, whitelisted decision and reason, a bounded confidence; anything else is ignore; a personal reason is always ignore", () => {
   assert.deepEqual(parseVerdict(verdict("answer", "direct_fact", 0.9)), { decision: "answer", reason: "direct_fact", confidence: 0.9 });
   assert.deepEqual(parseVerdict(`Sure! ${verdict("wiki_only", "planning", 0.4)} done`), { decision: "wiki_only", reason: "planning", confidence: 0.4 });
@@ -324,14 +341,27 @@ test("soft daily cap: after UNTAGGED_DAILY_CAP answers (would-be ones in a dry r
   const broken = { ...env, DB: { ...DB, prepare: () => { throw new Error("bad day"); } } };
   assert.equal(await untaggedCapReached(broken, CH), true, "an unreadable count is silence");
 });
-test("cap counts only unprompted answers: mentions, wiki rows and failed posts do not use it up", async () => {
+test("cap counts every unprompted answer attempt that created an ask (posted, failed post, no answer); mentions and wiki rows do not use it up", async () => {
   const DB = schemaDb(); seed(DB); const env = mkEnv(DB);
   for (let i = 0; i < UNTAGGED_DAILY_CAP + 1; i++) await run(env, ev({ kind: "mention", content: "who tanks tonight" }), "live");
   for (let i = 0; i < 3; i++) await run(env, ev({ content: "we should farm herbs after the raid tonight" }), "live");
-  assert.equal(await untaggedCapReached(env, CH), false);
-  await run(env, ev(), "live", { fetchImpl: async () => new Response("{}", { status: 403 }) });
+  assert.equal(await untaggedCapReached(env, CH), false, "mentions and wiki rows are not unprompted answers");
+  const fail403 = { fetchImpl: async () => new Response("{}", { status: 403 }) };
+  for (let i = 0; i < UNTAGGED_DAILY_CAP - 1; i++) await run(env, ev(), "live", fail403);
   assert.equal(decisions(DB).at(-1), "u:post-failed:403");
-  assert.equal(await untaggedCapReached(env, CH), false);
+  assert.equal(await untaggedCapReached(env, CH), false, "one attempt short of the cap");
+  await run(env, ev(), "live", fail403);
+  assert.equal(await untaggedCapReached(env, CH), true, "failed posts count: each one cost a compose");
+  await run(env, ev(), "live");
+  assert.equal(decisions(DB).at(-1), "u:wiki:cap", "the next 'answer' becomes wiki-only");
+});
+test("cap counts an attempt where Claude could not compose (u:no-answer) too", async () => {
+  const DB = schemaDb(); seed(DB); const env = mkEnv(DB);
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (u, i) => (String(u).includes("anthropic") && !JSON.stringify(JSON.parse(i.body)).includes("triage ONE message") ? new Response("{}", { status: 529 }) : prev(u, i));
+  try { for (let i = 0; i < UNTAGGED_DAILY_CAP; i++) await run(env, ev(), "live"); } finally { globalThis.fetch = prev; }
+  assert.deepEqual(decisions(DB), Array(UNTAGGED_DAILY_CAP).fill("u:no-answer"));
+  assert.equal(await untaggedCapReached(env, CH), true);
 });
 test("a stranger and a foreign guild never reach the classifier, the wiki or listen_events", async () => {
   const DB = schemaDb(); seed(DB); const env = mkEnv(DB);
@@ -416,14 +446,15 @@ async function chatterRun(extra) {
   const tables = DB.raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT IN ('listen_events', 'group_log') ORDER BY name").all().map((t) => `${t.name}:${DB.raw.prepare(`SELECT count(*) c FROM "${t.name}"`).get().c}`);
   return { results, listen, log, tables, anth: anth.length + classify.length, posts: posts.length, secret };
 }
-test("LISTENER_UNTAGGED off (unset, off or any other value): chatter responses and writes are byte-identical to part A, with no classifier call and no post (differential)", async () => {
+test("LISTENER_UNTAGGED off (unset, off or any other value): chatter responses and writes are identical to part A except ONE deliberate difference (personal-life text is no longer filed), with no classifier call and no post (differential)", async () => {
   const base = await chatterRun({ LISTENER_UNTAGGED: undefined });
-  // what part A did: every non-empty text stored as the author's message row, a secret refused, empty is 'empty'; nothing answered
-  assert.deepEqual(base.results, ["logged", "logged", "logged", "logged", "not-stored", "logged", "logged", "empty"]);
-  assert.deepEqual(base.listen.map((r) => r.decision), ["logged", "logged", "logged", "logged", "not-stored", "logged", "logged", "empty"]);
-  assert.equal(base.log.length, 6);
+  // what part A did: every non-empty text stored as the author's message row, a secret refused, empty is 'empty'; nothing answered. The single deliberate difference (review M3): text 2, a personal-life
+  // line, is now decision 'personal' and is not filed, even with the flag off.
+  assert.deepEqual(base.results, ["logged", "personal", "logged", "logged", "not-stored", "logged", "logged", "empty"]);
+  assert.deepEqual(base.listen.map((r) => r.decision), ["logged", "personal", "logged", "logged", "not-stored", "logged", "logged", "empty"]);
+  assert.equal(base.log.length, 5);
   assert.ok(base.log.every((r) => r.kind === "message" && r.source === "listener" && r.channel === CH));
-  assert.ok(base.log.some((r) => r.text === "my wife is in the hospital again"), "part A stores personal text too: it is the owner's earlier decision and this flag does not touch it");
+  assert.ok(!base.log.some((r) => r.text === "my wife is in the hospital again"), "personal-life text is not filed, whatever the flag says");
   assert.ok(!base.log.some((r) => r.text.includes(base.secret)));
   assert.equal(base.anth, 0); assert.equal(base.posts, 0);
   for (const v of ["off", "", "dry", "live", "true", "1", "maybe"]) {
@@ -476,4 +507,61 @@ test("the untagged code path never logs message text and no public route reads i
   const src = read("infrastructure/worker/listener-untagged.js") + read("infrastructure/worker/listener.js");
   assert.ok(!/console\.\w+\([^)]*(content|text)\b/.test(src.replace(/evt: "listen[^}]*}/g, "")), "a console call carries message text");
   assert.ok(!/LISTENER_UNTAGGED/.test(read("infrastructure/worker/index.js")));
+});
+
+// ---- review M1: a turn the listener created is never served by GET /ask ----------------------------------------------------------------------------
+const KEY_SALT = "key-salt-for-tests-0123456789", MEMBER_KEY = "member-key-for-tests-0123456789ab";
+async function askEnv(extra = {}) {
+  const DB = schemaDb(); seed(DB);
+  DB.raw.prepare("INSERT INTO members (slug, key_hash, created_at) VALUES ('santa', ?, '2026-11-01T00:00:00Z')").run(await sha256Hex(`${KEY_SALT}:${MEMBER_KEY}`));
+  const TOKEN = "B".repeat(43), exp = new Date(Date.now() + 86400000).toISOString(), now = new Date().toISOString();
+  DB.raw.prepare("INSERT INTO users (discord_user_id, display_name, created_at) VALUES (?, 'Fox', 'x')").run(FOX);
+  DB.raw.prepare("INSERT INTO sessions_v2 (token_hash, discord_user_id, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)").run(await webSessionHash(TOKEN), FOX, now, exp, now);
+  return { DB, TOKEN, env: mkEnv(DB, { KEY_SALT, WEB_LOGIN: "on", ALLOWED_ORIGINS: "", ...extra }) };
+}
+const getAsk = async (env, headers) => {
+  const silence = console.error; console.error = () => {};
+  try { return await (await worker.fetch(new Request("https://api.test/api/ask", { headers: { "CF-Connecting-IP": "203.0.113.9", ...headers } }), env, { waitUntil() {}, passThroughOnException() {} })).json(); } finally { console.error = silence; }
+};
+const putTurn = (DB, id, by, q, share, at) => DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, answer, status, share, created_at) VALUES (?, ?, ?, 'an answer', 'answered', ?, ?)").run(id, by, q, share, at);
+const putListen = (DB, askId) => DB.raw.prepare("INSERT INTO listen_events (msg_id, at, channel, kind, decision, ask_id, posted) VALUES (?, ?, ?, 'mention', 'posted', ?, 1)").run(`k${askId}`, new Date().toISOString(), CH, askId);
+test("GET /ask (no id): a share=1 turn the listener created is not served to a member or a web session; a normal share=1 turn still is", async () => {
+  const { DB, TOKEN, env } = await askEnv();
+  putTurn(DB, "turn-normal", "Blue Owl", "NORMAL-SHARED-QUESTION", 1, "2026-11-05T10:00:00Z");
+  putTurn(DB, "turn-listener", "Red Fox", "LISTENER-CHANNEL-QUESTION", 1, "2026-11-05T11:00:00Z"); // newer
+  putTurn(DB, "turn-listener-own", "Santa", "LISTENER-OWN-QUESTION", 0, "2026-11-05T12:00:00Z"); // the member's own, newest
+  const member = { Authorization: `Board ${MEMBER_KEY}` }, web = { Cookie: `${SESS_COOKIE}=${TOKEN}` };
+  assert.equal((await getAsk(env, member)).ask.text, "LISTENER-OWN-QUESTION", "before the link exists the newest turn wins (the probe works)");
+  assert.equal((await getAsk(env, web)).ask.text, "LISTENER-CHANNEL-QUESTION");
+  putListen(DB, "turn-listener"); putListen(DB, "turn-listener-own");
+  assert.equal((await getAsk(env, member)).ask.text, "NORMAL-SHARED-QUESTION");
+  assert.equal((await getAsk(env, web)).ask.text, "NORMAL-SHARED-QUESTION");
+  assert.ok(!JSON.stringify(await getAsk(env, member)).includes("LISTENER-"));
+  DB.raw.exec("DELETE FROM ask_turns WHERE id = 'turn-normal'");
+  assert.equal((await getAsk(env, member)).ask, null, "with only listener turns there is nothing to serve");
+  assert.equal((await getAsk(env, web)).ask, null);
+});
+test("a live mention and a live unprompted answer both create turns that GET /ask never returns (end to end)", async () => {
+  const { DB, env } = await askEnv();
+  putTurn(DB, "turn-normal", "Blue Owl", "NORMAL-SHARED-QUESTION", 1, "2026-01-01T00:00:00Z");
+  await run(env, ev({ kind: "mention", content: "who tanks tonight" }), "live");
+  await run(env, ev(), "live");
+  assert.equal(count(DB, "SELECT count(*) c FROM ask_turns WHERE share = 1 AND id <> 'turn-normal'"), 2, "two shared listener turns exist");
+  assert.equal((await getAsk(env, { Authorization: `Board ${MEMBER_KEY}` })).ask.text, "NORMAL-SHARED-QUESTION");
+});
+test("latestTurn works before migration 0012 (no listen_events table) and keeps the member's own-or-shared condition intact", async () => {
+  const DB = schemaDb(); const env = { DB };
+  putTurn(DB, "t1", "Santa", "mine", 0, "2026-11-05T10:00:00Z"); putTurn(DB, "t2", "Other", "theirs private", 0, "2026-11-05T11:00:00Z"); putTurn(DB, "t3", "Other", "shared", 1, "2026-11-05T09:00:00Z");
+  assert.equal((await latestTurn(env, "((by_name = ? OR by_name = ?) AND by_name <> 'Visitor') OR share = 1", ["Santa", "santa"])).id, "t1");
+  DB.raw.exec("DROP TABLE listen_events");
+  assert.equal((await latestTurn(env, "((by_name = ? OR by_name = ?) AND by_name <> 'Visitor') OR share = 1", ["Santa", "santa"])).id, "t1");
+  assert.equal((await latestTurn(env, "share = 1", [])).id, "t3");
+});
+test("docs: M2 sentence on answered messages in the privacy page, the retention note and the comment fixes", () => {
+  const md = read("docs/privacy.md");
+  assert.match(md, /When Leeroy decides to answer, the message is treated as a question to him: it is sent to Anthropic with its author's name and the group's notes, and it is kept as described above, in the ask history and in the group notes\./);
+  assert.ok(read("privacy/index.html").includes("treated as a question to him"));
+  assert.match(read("docs/runbooks/listener.md"), /No retention purge yet \(a follow-up\)[^\n]*plain form/);
+  const t = read("infrastructure/wrangler.toml");
+  assert.match(t.slice(t.indexOf("LISTENER_UNTAGGED =")).split("\n")[0], /dry: the classifier is still called[^#]*still filed in group_log/);
 });

@@ -24,7 +24,7 @@ import { runScheduledSourceSweep, recomputeCategoryAndIndex, acquireRefreshCoold
 import { feedbackReport, cleanupAnswerUx, insertAskTurn, newGuestSecret, privateTurnAccess, RELOAD_ANSWER_LINE } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
-import { handleListen } from "./listener.js";
+import { handleListen, latestTurn } from "./listener.js";
 import { manifestFor } from "./setup-command.js";
 import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
@@ -1295,17 +1295,14 @@ const worker = {
             if (!mine.includes(row.by_name)) row = null;
           }
         } else if (auth.ok && auth.member) {
-          row = await env.DB.prepare(
-            "SELECT * FROM ask_turns WHERE ((by_name = ? OR by_name = ?) AND by_name <> 'Visitor') OR share = 1 ORDER BY created_at DESC LIMIT 1" // a member named "Visitor" is not every guest
-          ).bind(auth.member.name, auth.member.slug).first();
+          // latestTurn leaves out every turn the listener created (a message in a channel is not a /ask for the whole board)
+          row = await latestTurn(env, "((by_name = ? OR by_name = ?) AND by_name <> 'Visitor') OR share = 1", [auth.member.name, auth.member.slug]); // a member named "Visitor" is not every guest
         } else {
           // No key and no id: the visitor is anonymous. The latest shared turn is a member's question and answer, so it is for signed-in
           // members and web sessions only (audit 2026-11-06 finding 4). A guest polls their own just-created ask by its random id (above).
           const ws = await webSessionFrom(req, env, Date.now());
           if (ws) {
-            row = await env.DB.prepare(
-              "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
-            ).first();
+            row = await latestTurn(env, "share = 1", []);
           }
         }
 
