@@ -98,18 +98,54 @@ test("add with no match defaults to the lowercased display-name tokens; adding a
   assert.deepEqual(rows[1], { slug: "briseis-vane", name: "Briseis Vane", match: ["bri"], id: BRISEIS });
 });
 
-test("add on an existing slug updates it (upsert), one row per slug", async () => {
+test("re-adding the SAME id updates name and match (upsert), one row per slug", async () => {
   const env = makeEnv();
   await add(env, "32", { user: ALDOUS, name: "Aldous Thorne", match: "aldo" });
-  const r = await add(env, "32", { user: CORVIN, name: "Aldous Thorne", match: "al" });
+  const r = await add(env, "32", { user: ALDOUS, name: "Aldous Thorne", match: "alder" });
   ephemeral(r);
-  assert.deepEqual(readRow(env), [{ slug: "aldous-thorne", name: "Aldous Thorne", match: ["al"], id: CORVIN }]);
-  await add(env, "32", { user: CORVIN, name: "Aldous Thorne" });
-  assert.deepEqual(readRow(env)[0].match, ["al"], "an update with no match keeps the existing list");
+  assert.deepEqual(readRow(env), [{ slug: "aldous-thorne", name: "Aldous Thorne", match: ["alder"], id: ALDOUS }]);
+  await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
+  assert.deepEqual(readRow(env)[0].match, ["alder"], "an update with no match keeps the existing list");
   seed(env, [{ slug: "aldous-thorne", name: "Aldous Thorne", match: [], id: ALDOUS }]);
   invalidateConfigCache();
   await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
   assert.deepEqual(readRow(env)[0].match, ["aldous", "thorne"], "an update with no match fills an empty list from the name");
+});
+
+test("an existing slug is never rebound to a different user: refused, nothing written, no audit row", async () => {
+  const env = makeEnv();
+  await add(env, "32", { user: ALDOUS, name: "Aldous Thorne", match: "aldo" });
+  const before = JSON.stringify(readRow(env));
+  const r = await add(env, "32", { user: CORVIN, name: "Aldous Thorne", match: "al" });
+  ephemeral(r);
+  assert.equal(r.data.content, "Nothing added: that name is already on the roster; use a different name.");
+  assert.equal(JSON.stringify(readRow(env)), before);
+  assert.equal(audit(env).length, 1, "only the first add was audited");
+  // a prior entry with no id is also not claimable
+  seed(env, [{ slug: "briseis-vane", name: "Briseis Vane", match: [] }]);
+  invalidateConfigCache();
+  const r2 = await add(env, "32", { user: BRISEIS, name: "Briseis Vane" });
+  assert.equal(r2.data.content, "Nothing added: that name is already on the roster; use a different name.");
+  assert.equal(readRow(env)[0].id, undefined);
+  assert.equal(audit(env).length, 1);
+});
+
+test("the rebind refusal is atomic: it is judged on the row at write time, not on an earlier read", async () => {
+  const env = makeEnv();
+  seed(env, []);
+  invalidateConfigCache();
+  const real = env.DB;
+  let raced = false;
+  env.DB = { raw: real.raw, batch: (...a) => real.batch(...a), prepare: (sql) => {
+    if (/^UPDATE kv_state|^INSERT OR IGNORE INTO kv_state/.test(sql) && !raced) {
+      raced = true; // another admin claims the slug between our read and our write
+      real.raw.prepare("UPDATE kv_state SET json = ? WHERE key = 'discord_members'").run(JSON.stringify([{ slug: "aldous-thorne", name: "Aldous Thorne", match: [], id: CORVIN }]));
+    }
+    return real.prepare(sql);
+  } };
+  const r = await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
+  assert.equal(r.data.content, "Nothing added: that name is already on the roster; use a different name.");
+  assert.equal(readRow(env)[0].id, CORVIN);
 });
 
 test("an id already held by another slug is refused with the validator's message and never names the other member", async () => {
@@ -274,18 +310,19 @@ test("a successful add writes exactly one audit_log row: actor, added id, slug, 
   assert.equal(row.action, "member.add");
   assert.equal(row.target, "aldous-thorne");
   assert.equal(row.actor_discord_user_id, "100000000000000042");
-  assert.deepEqual(JSON.parse(row.detail_json), { by: "100000000000000042", added: ALDOUS });
+  assert.deepEqual(JSON.parse(row.detail_json), { added: ALDOUS });
   assert.ok(!Number.isNaN(Date.parse(row.at)));
   assert.ok(!JSON.stringify(row).includes("Thorne") && !JSON.stringify(row).includes("secretword"));
 });
 
-test("an admin who is not in users still gets the audit row (actor column empty, id kept in detail)", async () => {
+test("an admin who is not in users still gets the audit row (actor column empty, no admin id in detail)", async () => {
   const env = makeEnv();
   await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
   const rows = audit(env);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].actor_discord_user_id, null);
-  assert.equal(JSON.parse(rows[0].detail_json).by, "100000000000000042");
+  assert.deepEqual(JSON.parse(rows[0].detail_json), { added: ALDOUS });
+  assert.ok(!JSON.stringify(rows[0]).includes("100000000000000042"));
 });
 
 test("failed adds write no audit row: gate, validation, taken id", async () => {
@@ -296,4 +333,59 @@ test("failed adds write no audit row: gate, validation, taken id", async () => {
   await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
   await add(env, "32", { user: ALDOUS, name: "Briseis Vane" });
   assert.equal(audit(env).length, 1);
+});
+
+// ---- no roster server set: the command does nothing ----
+test("with no roster guildId (gate off) add and list refuse and touch nothing", async () => {
+  for (const roster of [{ channels: {} }, null]) {
+    const env = makeEnv({ roster });
+    seed(env, [{ slug: "aldous-thorne", name: "Aldous Thorne", match: [], id: ALDOUS }]);
+    invalidateConfigCache();
+    const a = await add(env, "32", { user: BRISEIS, name: "Briseis Vane" }, "777777777777777777");
+    const l = await list(env, "32", "777777777777777777");
+    for (const r of [a, l]) { ephemeral(r); assert.equal(r.data.content, "Set the roster server first."); }
+    assert.equal(calls.length, 0);
+    assert.equal(readRow(env).length, 1);
+    assert.equal(audit(env).length, 0);
+  }
+});
+
+// ---- the small things ----
+test("default match drops display-name words shorter than 3 characters", async () => {
+  const env = makeEnv();
+  await add(env, "32", { user: ALDOUS, name: "Al Thorne of Oz" });
+  assert.deepEqual(readRow(env)[0].match, ["thorne"]);
+  await add(env, "32", { user: BRISEIS, name: "Bo Vi" });
+  assert.deepEqual(readRow(env)[1].match, []);
+});
+
+test("list and add replies neutralise markdown and line breaks in stored names", async () => {
+  const env = makeEnv();
+  seed(env, [{ slug: "x-y", name: "A*b_c[d](e)`f~g|h\nZ\r\nW", match: [], id: ALDOUS }]);
+  const r = await list(env, "32");
+  const body = r.data.content.split("\n").slice(1).join("\n");
+  assert.equal(body.split("\n").filter((l) => l.startsWith("x-y")).length, 1, "one line per entry: no CR or LF from a name");
+  assert.ok(!r.data.content.includes("\r"));
+  const nameCell = body.split(" | ")[1];
+  for (const ch of ["*", "_", "[", "]", "(", ")", "`", "~", "|"]) {
+    const bare = [...nameCell].some((c, i) => c === ch && nameCell[i - 1] !== "\\");
+    assert.ok(!bare, `${ch} is escaped`);
+  }
+});
+
+test("the roster write is compare-and-set: a concurrent change between read and write is not lost", async () => {
+  const env = makeEnv();
+  seed(env, [{ slug: "briseis-vane", name: "Briseis Vane", match: [], id: BRISEIS }]);
+  invalidateConfigCache();
+  const real = env.DB;
+  let raced = false;
+  env.DB = { raw: real.raw, batch: (...a) => real.batch(...a), prepare: (sql) => {
+    if (/^UPDATE kv_state/.test(sql) && !raced) {
+      raced = true;
+      real.raw.prepare("UPDATE kv_state SET json = ? WHERE key = 'discord_members'").run(JSON.stringify([{ slug: "briseis-vane", name: "Briseis Vane", match: [], id: BRISEIS }, { slug: "corvin-ash", name: "Corvin Ash", match: [], id: CORVIN }]));
+    }
+    return real.prepare(sql);
+  } };
+  await add(env, "32", { user: ALDOUS, name: "Aldous Thorne" });
+  assert.deepEqual(readRow(env).map((m) => m.slug).sort(), ["aldous-thorne", "briseis-vane", "corvin-ash"]);
 });

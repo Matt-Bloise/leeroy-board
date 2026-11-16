@@ -1847,8 +1847,10 @@ ${GATE_OFF_NOTE}` : ""}`);
       );
       const memberGate = await rosterAdminCheck(env, interaction);
       if (!memberGate.ok) return memberReply("That command is for server admins.");
-      const inert = (s) => String(s).replace(/@/g, "@​").replace(/</g, "<​");
-      const gateNote = memberGate.gateOff ? `\n${GATE_OFF_NOTE}` : "";
+      // Stored text shown to an admin: no mentions, no markdown, no line breaks.
+      const inert = (s) => String(s).replace(/[\r\n]+/g, " ").replace(/@/g, "@​").replace(/</g, "<​").replace(/[\\[\]()`*_~|]/g, "\\$&");
+      if (memberGate.gateOff) return memberReply("Set the roster server first.");
+      const gateNote = "";
       const sub = opts.find((x) => x.type === 1 || x.name === "add" || x.name === "list");
       const subOpts = (sub && sub.options) || [];
       const subOpt = (n) => {
@@ -1877,9 +1879,9 @@ ${GATE_OFF_NOTE}` : ""}`);
         if (!userId) return memberReply("Nothing added: pick a user.");
         const slug = slugify(name);
         if (!slug) return memberReply("Nothing added: the name needs at least one letter or digit.");
-        // Fail closed: the picked user must be in the roster guild (or the guild this ran in when no roster server is set).
+        // Fail closed: the picked user must be in the roster guild (the gate above guarantees one is set).
         const rosterRow = await loadConfigKey(env, "discord_roster");
-        const guildId = rosterRow && typeof rosterRow.guildId === "string" ? rosterRow.guildId : String(interaction.guild_id || "");
+        const guildId = rosterRow && typeof rosterRow.guildId === "string" ? rosterRow.guildId : "";
         const here = await checkGuildMember(env, guildId, userId);
         if (here === "absent") return memberReply("That user is not in this server.");
         if (here !== "in") return memberReply("Could not confirm membership with Discord; nothing was written.");
@@ -1889,9 +1891,10 @@ ${GATE_OFF_NOTE}` : ""}`);
         const prior = stored.find((m) => m && m.slug === slug);
         // No match typed: an update keeps its non-empty list, otherwise the lowercased display-name tokens are used.
         const keep = !typed.length && prior && Array.isArray(prior.match) && prior.match.length > 0;
-        const tokens = typed.length ? typed : [...new Set(name.toLowerCase().split(/[\s,]+/).filter(Boolean))];
+        const tokens = typed.length ? typed : [...new Set(name.toLowerCase().split(/[\s,]+/).filter((w) => w.length >= 3))];
         const entry = { slug, name, id: userId, ...(keep ? {} : { match: tokens }) };
-        const saved = await saveMember(env, entry);
+        const saved = await saveMember(env, entry, { noRebind: true });
+        if (!saved.ok && saved.code === "taken") return memberReply("Nothing added: that name is already on the roster; use a different name.");
         if (!saved.ok) return memberReply(`Nothing added: ${saved.status === 413 ? "that entry is too large (too many match words)." : inert(saved.error) + "."}`);
         const audited = await auditMemberAdd(env, { by: user.id || "", added: userId, slug: saved.slug });
         if (!audited) console.error("member.add audit row failed");
