@@ -84,7 +84,7 @@ function PAGE_PROBE() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const launch = { args: REMOTE ? [] : [`--host-resolver-rules=MAP ${HOST} 127.0.0.1`, "--ignore-certificate-errors", "--no-proxy-server"], ...(process.env.PW_EXECUTABLE ? { executablePath: process.env.PW_EXECUTABLE } : {}) };
 const browser = await pw.chromium.launch(launch);
-const slug = await (async () => { if (REMOTE) { try { const r = await fetch(new URL("data/party.json", REMOTE)); const j = await r.json(); return String(j.members[0].name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); } catch (e) { return "just-looking"; } } try { const j = JSON.parse(readFileSync(path.join(ROOT, "data", "party.json"), "utf8")); return String(j.members[0].name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); } catch (e) { return "just-looking"; } })();
+const slug = await (async () => { /* the member route comes from the checkout: a deployed site publishes no static party document (member data is Worker-only) */ try { const j = JSON.parse(readFileSync(path.join(ROOT, "data", "party.json"), "utf8")); return String(j.members[0].name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); } catch (e) { return "just-looking"; } })();
 
 async function once(cell, { throttle, shotDir }) {
   const opts = { viewport: { width: cell.w, height: cell.h }, serviceWorkers: "block", ignoreHTTPSErrors: true };

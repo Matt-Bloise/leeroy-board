@@ -81,6 +81,8 @@ export const DATA_MAP = Object.freeze({
   noise_ledger: { links: null, erase: null, member: null },
   vote_ballots: { links: "voter_hash = voterHash(discord id, vote id, USER_SALT), one row per ballot (migration 0010, PR 173)", erase: "DELETE by voter_hash, in the erase batch; skipped while the table does not exist", member: "legacy.vote_ballots" },
   request_gauge: { links: null, erase: null, member: null }, // Worker requests per UTC day, counts only (migration 0008)
+  listen_events: { links: null, erase: null, member: null }, // the listener (migration 0012): message id, channel, kind, decision, ask_turns id; no text and no author (the question and answer sit in ask_turns, which the asker's erase reaches)
+  listen_quiet: { links: null, erase: null, member: null }, // the listener (migration 0012): channels where /quiet is on; a channel id and a time, no person
   group_log: { links: "author_slug = the member's roster slug (the slug of the member key, or the roster entry whose Discord id is the web session's); migration 0011, flag GROUP_MEMORY", erase: "DELETE by author_slug, in the erase batch; skipped while the table does not exist", member: "legacy.group_log" },
   group_wiki: { links: "page_key person-<slug> or <slug>, and any page whose title or text mentions the member's slug or name; migration 0011, flag GROUP_MEMORY", erase: "pages keyed to the person deleted; pages that mention the slug or name have those spellings replaced by 'a former member' and are flagged note = 'rebuild:erase' for the next refresh", member: "legacy.group_wiki" },
 });

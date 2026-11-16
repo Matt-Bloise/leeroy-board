@@ -395,12 +395,9 @@ jobs:
       - name: Stage Static Site Bundle & Deploy to Cloudflare Pages Production
         run: |
           set -e
-          mkdir -p .cloudflare-dist
-          for item in index.html 404.html privacy terms _headers og-1200x630.jpg robots.txt atlas cloth css data fonts img js landing rate next room scenes vendor; do
-            if [ -e "$item" ]; then
-              cp -R "$item" .cloudflare-dist/
-            fi
-          done
+          # The bundle is staged by tools/pages-bundle.mjs (shared by the production deploy and the PR preview). It leaves out the member data files
+          # (the Worker serves those through its privacy projection) and fails this step when one is present. docs/runbooks/member-data-worker-only.md
+          node tools/pages-bundle.mjs .cloudflare-dist
 
           # Stamp the resolved production Worker URL into .cloudflare-dist/js/brain.js
           node -e '

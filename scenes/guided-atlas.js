@@ -16,9 +16,9 @@ const sched = (f) => (typeof requestAnimationFrame === "function" ? requestAnima
 const focus = (el) => { try { if (el) el.focus({ preventScroll: true }); } catch (e) {} };
 
 function facts() {
-  const own = () => (window.BoardFetch ? window.BoardFetch.json("data/guided-atlas.json", { cache: "no-cache" }) : fetch("data/guided-atlas.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)));
+  const own = () => (window.BoardFetch ? window.BoardFetch.json("data/guided-atlas.json", { cache: "no-cache" }) : Promise.resolve(null)); /* no brain base: BoardFetch asks the ?api= Worker or fails (no data); there is no static file */
   const u = (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/guided-atlas.json")) || "";
-  return (G.dataP ||= (u ? fetch(u, { cache: "no-cache", mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r.json() : null)) /* a brain base: the Worker or nothing; never the static file, which is the whole party */ : own()).catch(() => { G.dataP = null; return null; }).then((d) => { G.data = d; return d; }));
+  return (G.dataP ||= (u ? fetch(u, { cache: "no-cache", mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r.json() : null)) /* a brain base: the Worker or nothing; there is no static file (the deploy leaves it out) */ : own()).catch(() => { G.dataP = null; return null; }).then((d) => { G.data = d; return d; }));
 }
 const mine = () => { const m = MEM.member(), d = G.data; return m && d && d.classes ? d.classes[m.class_key] || null : null; };
 function meetLine() {

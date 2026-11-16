@@ -502,3 +502,19 @@ CREATE TABLE IF NOT EXISTS group_wiki (
   rev INTEGER NOT NULL DEFAULT 1,
   note TEXT
 );
+
+-- listen_events / listen_quiet: the listener (flag LISTENER; migration 0012). Private storage; no route reads them.
+CREATE TABLE IF NOT EXISTS listen_events (
+  msg_id TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  ask_id TEXT,
+  posted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_listen_events_at ON listen_events(at);
+CREATE TABLE IF NOT EXISTS listen_quiet (
+  channel TEXT PRIMARY KEY,
+  at TEXT NOT NULL
+);

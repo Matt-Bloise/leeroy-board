@@ -8,6 +8,9 @@
 // at most 3 items; no stamp (first visit) and a stamp in the future mark nothing; the stamp is written when the page is hidden; CLS stays 0; marks cool (class removed at 8 s,
 // checked with a fast clock) and reduced motion keeps no animation on a mark.
 import { pageUrl } from "../helpers/page-url.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
+import { assertMemberState } from "../helpers/member-state.mjs";
+const MEMBER = standIn(0).name; // the first member of the party the API stub serves (never a literal name)
 import { stubbed } from "../helpers/browser-stub.mjs";
 import { loadSnapshot } from "../helpers/api-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
@@ -23,13 +26,14 @@ const E = (iso) => String(Date.parse(iso));
 const ENTRIES = JSON.parse(loadSnapshot().routes["/bootstrap"].body).signups.entries.map((e) => ({ name: e.name.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "").toLowerCase(), at: Date.parse(e.updated) }));
 const changedAfter = (iso) => ENTRIES.filter((e) => e.at > Date.parse(iso)).map((e) => e.name).sort();
 const browser = stubbed(await pw.chromium.launch());
+await assertMemberState(browser, url, MEMBER); // fails loudly when MEMBER is not on the board (else the suite runs as nobody chosen)
 
 async function visit(view, epoch, { reduced = false, openScene = null } = {}) {
   const ctx = await browser.newContext({ ...VIEW[view], serviceWorkers: "block", ...(reduced ? { reducedMotion: "reduce" } : {}) });
-  await ctx.addInitScript((epoch) => {
-    try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); if (epoch) localStorage.setItem("board-last-visit", epoch); } catch (e) {}
+  await ctx.addInitScript(([epoch, member]) => {
+    try { localStorage.setItem("board-as", member); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); if (epoch) localStorage.setItem("board-last-visit", epoch); } catch (e) {}
     window.__cls = 0; window.__lsrc = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) { window.__cls += e.value; window.__lsrc.push(`${e.value.toFixed(4)}@${Math.round(e.startTime)} ` + e.sources.map((s) => { const n = s.node; return (n && (n.id ? "#" + n.id : n.tagName + "." + String(n.className && n.className.baseVal === undefined ? n.className : "").split(" ")[0])) + " " + Math.round(s.previousRect.y) + ">" + Math.round(s.currentRect.y); }).join(",")); } }).observe({ type: "layout-shift", buffered: true }); } catch (e) {}
-  }, epoch);
+  }, [epoch, MEMBER]);
   const page = await ctx.newPage(), errors = []; page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(url, { waitUntil: "load" });
   await page.waitForFunction(() => !!window.BoardSince && !!document.querySelector("#wall .tile"), null, { timeout: 15000 });

@@ -1301,6 +1301,7 @@ export async function answerWithAi({
   isMember, // is the asker a party member? Defaults to "not the Visitor placeholder".
   storeDetails = false, // ANSWER_UX: keep the ---more--- and ---sources--- text in answer_details for the Discord buttons
   channel = "", // the Discord channel id of the ask ("" for the website): group memory (GROUP_MEMORY) files and reads by channel
+  noFanout = false, // the listener: a turn that is shared in the reply channel only. No webhook post, no stats.recent, no site broadcast of the question or answer
   messageTarget = null, // the right-click "Ask Leeroy": { authorSlug } of the message asked about; group memory files that text as the author's message, not as this asker's ask
 }) {
   const t0 = Date.now();
@@ -1606,7 +1607,7 @@ export async function answerWithAi({
         const stats = JSON.parse(statsRow.json);
         stats.answers = (Number(stats.answers) || 0) + 1;
         stats.updated = answeredAt.slice(0, 10);
-        if (share) stats.recent = [
+        if (share && !noFanout) stats.recent = [
           {
             id: intentId,
             by,
@@ -1649,7 +1650,7 @@ export async function answerWithAi({
     // A private turn (share false: every guest ask, "private" asks) puts no question or answer on the shared socket or in stats.
     // The bare "ask" message makes the owner's page re-read its turn with its own key or id.
     const broadcastSlug = memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    if (share) {
+    if (share && !noFanout) {
       await broadcastToRoom(env, { type: "data", key: "stats", intent: completedItem });
       await broadcastToRoom(env, { type: "ask", slug: broadcastSlug, ask: completedItem });
     } else {
@@ -1659,7 +1660,7 @@ export async function answerWithAi({
     }
 
     // 5. Optional Discord Webhook post to #wow-forever
-    if (share && env.DISCORD_WEBHOOK_URL) {
+    if (share && !noFanout && env.DISCORD_WEBHOOK_URL) {
       const label = AI_PROVIDER_LABELS[provider] || provider;
       await fetch(env.DISCORD_WEBHOOK_URL, {
         signal: AbortSignal.timeout(AI_TIMEOUT_MS),

@@ -8,7 +8,7 @@
 const K = window.__boardKit; if (!K) return;
 const root = document.documentElement;
 let core = null;
-const loadCore = () => (core ? Promise.resolve(core) : import("./roads-buffs-core.js?v=beb92990cb").then((m) => (core = m)).catch(() => null));
+const loadCore = () => (core ? Promise.resolve(core) : import("./roads-buffs-core.js?v=27ac097f74").then((m) => (core = m)).catch(() => null));
 const el = (tag, attrs, ...kids) => { const n = document.createElement(tag); for (const [k, v] of Object.entries(attrs || {})) { if (k === "text") n.textContent = v; else n.setAttribute(k, v); } for (const c of kids) if (c) n.append(c); return n; };
 
 /* ---------- Roads ----------
