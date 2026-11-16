@@ -31,7 +31,7 @@ import { loadPublicInputs, projectForAnonymous, projectLaunch } from "./public-p
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
 import { mapPlanChoices, resolveMapPlan, MAP_PLAN_ALIASES } from "./map-plan.js";
-import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
+import { askChannel, isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply, buildAnnounceBody, lookupRosterId, postChannelMessage, DISCORD_CONTENT_MAX } from "./announce.js";
@@ -99,6 +99,11 @@ function sayChannelKeys(roster) {
   if (!map || typeof map !== "object" || Array.isArray(map)) return [];
   return Object.keys(map).filter((k) => lookupRosterId(roster, "channels", k) !== null);
 }
+// The channel an /ask came from, for ask_turns.channel: a guild channel only. A DM has no guild_id and stores null.
+function askOriginChannel(interaction) {
+  return interaction && interaction.guild_id ? askChannel(String(interaction.channel_id || "")) : null;
+}
+
 export const GATE_OFF_NOTE = "Server check is off: no roster server is set, so any server admin can use this.";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
 import { readTextCapped } from "./limits.js";
@@ -830,7 +835,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     const now = new Date().toISOString();
 
     try {
-      await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now, channel: askOriginChannel(interaction) }, { discordId: user.id, slug: member && member.slug });
     } catch (e) {
       if (!(e instanceof SaltMissingError)) throw e;
       return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -2038,7 +2043,7 @@ ${GATE_OFF_NOTE}` : ""}`,
       const intentId = crypto.randomUUID();
       const provider = resolveAiProvider(env);
       try {
-        await insertAskTurn(env, { id: intentId, byName, question: text, provider, share: true, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+        await insertAskTurn(env, { id: intentId, byName, question: text, provider, share: true, createdAt: now, channel: askOriginChannel(interaction) }, { discordId: user.id, slug: member && member.slug });
       } catch (e) {
         if (!(e instanceof SaltMissingError)) throw e;
         return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });

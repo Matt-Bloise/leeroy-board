@@ -274,6 +274,25 @@ jobs:
             exit 1
           fi
 
+      - name: Record D1 Time Travel bookmark before migrations
+        # Read-only (wrangler d1 time-travel info changes nothing). Never blocks a deploy: continue-on-error, and the summary is written even if the call fails.
+        # Prints the bookmark only; the output of this command carries no token or account secret.
+        continue-on-error: true
+        working-directory: infrastructure
+        run: |
+          set +e
+          OUT="$(npx wrangler d1 time-travel info "$D1_DATABASE_NAME" 2>&1)"
+          CODE=$?
+          {
+            echo "### D1 Time Travel bookmark before migrations"
+            echo ""
+            echo '```'
+            echo "$OUT"
+            echo '```'
+            if [ "$CODE" -ne 0 ]; then echo ""; echo "Bookmark lookup failed (exit $CODE); the deploy continues."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$CODE"
+
       - name: Apply Unified D1 Schema (`schema.sql`) & Pending Migrations
         working-directory: infrastructure
         run: |
