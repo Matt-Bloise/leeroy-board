@@ -9,8 +9,14 @@ import assert from "node:assert/strict";
 import worker from "../../infrastructure/worker/index.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { resetResearchClaudeForTests, counterKey, subCounterKey, monthTag } from "../../infrastructure/worker/research/claude.js";
-import { signListen, listenerKey, resetListenerKeyCacheForTests } from "../../infrastructure/worker/listener-config.js";
-import { SELFTEST_RATE_KEY, selftestSubCounterKey, SELFTEST_PROMPT } from "../../infrastructure/worker/selftest.js";
+import { signListen, listenerKey, parseListenEvent, resetListenerKeyCacheForTests } from "../../infrastructure/worker/listener-config.js";
+import { handleSelftestClaude, safeReason, isSelftestBody, SELFTEST_RATE_KEY, selftestSubCounterKey, SELFTEST_PROMPT } from "../../infrastructure/worker/selftest.js";
+import { spawnSync, spawn } from "node:child_process";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import http from "node:http";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const FAKE_KEY = ["sk", "ant", "FAKE", "TEST", "0000"].join("-");
@@ -31,8 +37,10 @@ globalThis.fetch = async (url, init) => {
 test.after(() => { globalThis.fetch = realFetch; });
 test.beforeEach(() => { resetListenerKeyCacheForTests(); resetKeyCacheForTests(); resetResearchClaudeForTests(); sends = []; behave = () => ({ status: 200 }); });
 
+const BODY = { purpose: "claude-selftest" };
+let seq = 0; // each call signs a different second (inside the 120 s window) so a repeat of the SAME signature is the only replay
 const mkEnv = (DB, extra = {}) => ({ DB, ANTHROPIC_API_KEY: FAKE_KEY, DISCORD_BOT_TOKEN: BOT, ...extra });
-async function post(env, obj = { x: 1 }, { key = KEY, ts = Math.floor(Date.now() / 1000), sig = null, raw = null, headers = true } = {}) {
+async function post(env, obj = BODY, { key = KEY, ts = Math.floor(Date.now() / 1000) - (seq++ % 100), sig = null, raw = null, headers = true } = {}) {
   const body = raw ?? JSON.stringify(obj);
   const h = { "Content-Type": "application/json" };
   if (headers) { h["X-Listen-Timestamp"] = String(ts); h["X-Listen-Signature"] = sig ?? (await signListen(key, String(ts), body)); }
@@ -82,13 +90,13 @@ test("no usable bot token: the route does not exist", async () => {
 test("missing, wrong, other-key and tampered signatures are 401 and send nothing", async () => {
   const DB = await schemaDb();
   const env = mkEnv(DB);
-  assert.equal((await post(env, { x: 1 }, { headers: false })).status, 401);
-  assert.equal((await post(env, { x: 1 }, { sig: "0".repeat(64) })).status, 401);
-  assert.equal((await post(env, { x: 1 }, { sig: "" })).status, 401);
-  assert.equal((await post(env, { x: 1 }, { key: await listenerKey("a-different-bot-token-entirely") })).status, 401);
-  const body = JSON.stringify({ x: 1 });
+  assert.equal((await post(env, BODY, { headers: false })).status, 401);
+  assert.equal((await post(env, BODY, { sig: "0".repeat(64) })).status, 401);
+  assert.equal((await post(env, BODY, { sig: "" })).status, 401);
+  assert.equal((await post(env, BODY, { key: await listenerKey("a-different-bot-token-entirely") })).status, 401);
+  const body = JSON.stringify(BODY);
   const ts = Math.floor(Date.now() / 1000);
-  assert.equal((await post(env, null, { raw: JSON.stringify({ x: 2 }), sig: await signListen(KEY, String(ts), body), ts })).status, 401);
+  assert.equal((await post(env, null, { raw: JSON.stringify({ purpose: "other" }), sig: await signListen(KEY, String(ts), body), ts })).status, 401);
   assert.equal(sends.length, 0);
   assert.equal(DB.raw.prepare("SELECT COUNT(*) AS c FROM kv_state WHERE key = ?").get(SELFTEST_RATE_KEY).c, 0, "a rejected call leaves no limiter row");
 });
@@ -97,11 +105,11 @@ test("replay window: 110 s old is accepted, 121 s old or ahead is refused", asyn
   const DB = await schemaDb();
   const env = mkEnv(DB);
   const now = Math.floor(Date.now() / 1000);
-  assert.equal((await post(env, { x: 1 }, { ts: now - 121 })).status, 401);
-  assert.equal((await post(env, { x: 1 }, { ts: now + 121 })).status, 401);
-  assert.equal((await post(env, { x: 1 }, { ts: now - 3600 })).status, 401);
+  assert.equal((await post(env, BODY, { ts: now - 121 })).status, 401);
+  assert.equal((await post(env, BODY, { ts: now + 121 })).status, 401);
+  assert.equal((await post(env, BODY, { ts: now - 3600 })).status, 401);
   assert.equal(sends.length, 0);
-  assert.equal((await quiet(() => post(env, { x: 1 }, { ts: now - 110 }))).status, 200);
+  assert.equal((await quiet(() => post(env, BODY, { ts: now - 110 }))).status, 200);
 });
 
 test("body: over 1 KB is 413, not JSON is 400 (after the signature)", async () => {
@@ -182,4 +190,113 @@ test("a limiter that cannot be written fails closed: 503 and no send", async () 
   const r = await post(mkEnv(broken));
   assert.equal(r.status, 503);
   assert.equal(sends.length, 0);
+});
+
+// ---- review fixes: cross-route replay, replay inside the window, reason vocabulary, the script ----------------------------------------------------
+const LISTENER_EVENT = { id: "600000000000000001", guild_id: "800000000000000001", channel_id: "900000000000000001", author_id: "700000000000000001", kind: "mention", content: "who tanks tonight" };
+
+test("a signed listener-shaped body is refused for the self-test, and the self-test body is not a listener event", async () => {
+  const DB = await schemaDb();
+  const env = mkEnv(DB);
+  const r = await post(env, LISTENER_EVENT); // validly signed with the shared key
+  assert.equal(r.status, 400);
+  assert.equal(sends.length, 0);
+  assert.equal(DB.raw.prepare("SELECT COUNT(*) AS c FROM kv_state").get().c, 0, "nothing stored");
+  assert.equal(parseListenEvent(BODY).ok, false, "the self-test body does not pass the listener parser");
+  for (const bad of [{}, { purpose: "claude-selftest", extra: 1 }, { purpose: "other" }, { purpose: ["claude-selftest"] }, [BODY], "claude-selftest", null, 5]) {
+    assert.equal(isSelftestBody(bad), false, JSON.stringify(bad));
+    assert.equal((await post(env, null, { raw: JSON.stringify(bad) })).status, 400, JSON.stringify(bad));
+  }
+  assert.equal(sends.length, 0);
+  assert.equal(isSelftestBody(BODY), true);
+});
+
+test("an exact repeat of an accepted signature inside the window is 409 with no send, in any letter case; hashes, not signatures, are stored", async () => {
+  const DB = await schemaDb();
+  const env = mkEnv(DB);
+  const ts = Math.floor(Date.now() / 1000) - 5;
+  const sig = await signListen(KEY, String(ts), JSON.stringify(BODY));
+  assert.equal((await quiet(() => post(env, BODY, { ts, sig }))).status, 200);
+  const n = sends.length;
+  assert.equal((await post(env, BODY, { ts, sig })).status, 409);
+  assert.equal((await post(env, BODY, { ts, sig: sig.toUpperCase() })).status, 409, "upper-case hex is the same signature");
+  assert.equal(sends.length, n);
+  const row = DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(SELFTEST_RATE_KEY).json;
+  assert.ok(!row.toLowerCase().includes(sig), "the signature itself is not stored");
+  assert.match(JSON.parse(row).seen[0].h, /^[0-9a-f]{64}$/);
+  assert.equal((await post(env)).status, 429, "a different, fresh signature is not a replay: the ordinary 429");
+});
+
+test("a limited (429) call is recorded too, so its repeat is 409; hashes older than 120 s are dropped", async () => {
+  const DB = await schemaDb();
+  const env = mkEnv(DB);
+  await quiet(() => post(env));
+  const ts = Math.floor(Date.now() / 1000) - 7;
+  const sig = await signListen(KEY, String(ts), JSON.stringify(BODY));
+  assert.equal((await post(env, BODY, { ts, sig })).status, 429);
+  assert.equal((await post(env, BODY, { ts, sig })).status, 409);
+  const doc = JSON.parse(DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(SELFTEST_RATE_KEY).json);
+  doc.seen = doc.seen.map((e) => ({ ...e, t: e.t - 121000 }));
+  doc.at = Date.now() - 61000;
+  DB.raw.prepare("UPDATE kv_state SET json = ? WHERE key = ?").run(JSON.stringify(doc), SELFTEST_RATE_KEY);
+  assert.equal((await quiet(() => post(env, BODY, { ts, sig }))).status, 200, "an expired hash no longer blocks");
+  assert.ok(JSON.parse(DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(SELFTEST_RATE_KEY).json).seen.length <= 2);
+});
+
+test("reason is a fixed vocabulary: hostile and unknown strings become claude:error, in the response and the log", async () => {
+  for (const bad of ["claude:error-Evil", "claude:http-5xx", "claude:http-12", "guard:leak-kind", "claude:timeout@evil-9s", "claude:timeout@compose-9999s", "OK", "ok ", "sk-" + "x".repeat(30), "claude:" + "a".repeat(200), "", null, undefined, {}, 5]) {
+    assert.equal(safeReason(bad), "claude:error", String(bad));
+  }
+  for (const good of ["ok", "claude:no-key", "claude:paused", "claude:cap", "claude:subcap", "claude:counter-error", "claude:no-time", "claude:error", "claude:http-529", "claude:timeout", "claude:timeout@compose-16s", "claude:timeout@retry-6s", "claude:header", "claude:subrequests", "claude:overloaded", "guard:secret", "guard:host", "guard:config", "claude:empty"]) {
+    assert.equal(safeReason(good), good);
+  }
+  const DB = await schemaDb();
+  const evil = "Evil" + FAKE_KEY.replace(/-/g, "");
+  const hostile = Object.assign(new Error("HTTP 4xx " + FAKE_KEY), { name: evil });
+  const body = JSON.stringify(BODY), ts = Math.floor(Date.now() / 1000);
+  const req = new Request("https://worker.test/api/selftest/claude", { method: "POST", headers: { "X-Listen-Timestamp": String(ts), "X-Listen-Signature": await signListen(KEY, String(ts), body) }, body });
+  const logs = [];
+  const l = console.log; console.log = (x) => logs.push(String(x));
+  let res;
+  try { res = await handleSelftestClaude(req, mkEnv(DB), { call: async () => { throw hostile; } }); } finally { console.log = l; }
+  const text = await res.text();
+  assert.deepEqual(JSON.parse(text).steps.map((s) => s.reason), ["claude:error", "claude:error"]);
+  for (const out of [text, logs.join("\n")]) { assert.ok(!out.includes(evil)); assert.ok(!out.includes(FAKE_KEY)); }
+  assert.match(logs.join("\n"), /"compose":"claude:error"/);
+});
+
+// The script: signs exactly the self-test body, refuses a non-https base URL (localhost and 127.0.0.1 may be http), never prints the token.
+const SCRIPT = fileURLToPath(new URL("../../tools/claude-selftest.mjs", import.meta.url));
+function tokenFile() { const dir = mkdtempSync(join(tmpdir(), "selftest-")); const f = join(dir, "t"); writeFileSync(f, BOT + "\n"); return { f, dir }; }
+test("tools/claude-selftest.mjs refuses a non-https base URL and prints no token", () => {
+  const { f, dir } = tokenFile();
+  try {
+    for (const url of ["http://api.example.test", "http://evil.test:8787", "ftp://api.example.test", "https://user:pw@api.example.test", "http://localhost.evil.test", "not a url", "file:///etc/passwd"]) {
+      const r = spawnSync(process.execPath, [SCRIPT, f, url], { encoding: "utf8", timeout: 20000 });
+      assert.equal(r.status, 2, url);
+      assert.match(r.stderr, /refusing/, url);
+      assert.ok(!(r.stdout + r.stderr).includes(BOT));
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("tools/claude-selftest.mjs sends exactly the self-test body, signed so the Worker accepts it, to a localhost http URL", async () => {
+  const { f, dir } = tokenFile();
+  let seen = null;
+  const server = http.createServer((req, res) => {
+    let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => { seen = { url: req.url, method: req.method, body: b, ts: req.headers["x-listen-timestamp"], sig: req.headers["x-listen-signature"] }; res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ ok: true, steps: [] })); });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  try {
+    const out = await new Promise((resolve) => { const c = spawn(process.execPath, [SCRIPT, f, `http://127.0.0.1:${server.address().port}/`]); let o = "", e = ""; c.stdout.on("data", (d) => (o += d)); c.stderr.on("data", (d) => (e += d)); c.on("close", (code) => resolve({ code, o, e })); });
+    assert.equal(out.code, 0);
+    assert.equal(seen.method, "POST"); assert.equal(seen.url, "/api/selftest/claude");
+    assert.equal(seen.body, JSON.stringify(BODY));
+    assert.equal(seen.sig, await signListen(KEY, seen.ts, seen.body));
+    assert.ok(!(out.o + out.e).includes(BOT));
+    const DB = await schemaDb();
+    const req = new Request("https://worker.test/api/selftest/claude", { method: "POST", headers: { "X-Listen-Timestamp": seen.ts, "X-Listen-Signature": seen.sig }, body: seen.body });
+    const res = await quiet(() => handleSelftestClaude(req, mkEnv(DB), { call: async () => ({ answer: "ok", model: "m", usage: { input_tokens: 5, output_tokens: 1 } }) }));
+    assert.equal(res.status, 200, "the script's request is accepted by the handler");
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
