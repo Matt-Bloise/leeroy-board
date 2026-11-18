@@ -409,7 +409,9 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
 // in callAnthropicClaude; secrets and long ids here). One send on the fast (Haiku-class) model; the only second send is the 4.5 id after a model-not-found answer, which is not billed.
 // Returns { answer, model } or { reason } with a short fixed code. call: callAnthropicClaude from ai-models.js (injected, as for tryResearchClaude).
 export const CAPPED_TIMEOUT_MS = 30000;
-export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, maxTokens, now = () => new Date(), timeoutMs = CAPPED_TIMEOUT_MS, subCounter = subCounterKey }) { // subCounter: the caller's own sub-cap counter key (default: the group-wiki refresher's), so another caller cannot starve it
+export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, maxTokens, now = () => new Date(), timeoutMs = CAPPED_TIMEOUT_MS, subCounter = subCounterKey, deep = false, subFraction = SUBCAP_FRACTION, modelFallback = true, stage = null }) { // subCounter: the caller's own sub-cap counter key (default: the group-wiki refresher's), so another caller cannot starve it
+  // deep: the compose (Sonnet-class) model instead of the fast one. subFraction: this caller's share of the monthly cap. modelFallback false: no second send on a model-not-found answer (the self-test must test the primary id itself).
+  // stage: "compose" makes a timeout say `claude:timeout@compose-Ns` like an ask does.
   if (typeof call !== "function") return { reason: "claude:no-call" };
   if (!anthropicAvailable(env)) return { reason: "claude:no-key" };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
@@ -419,7 +421,7 @@ export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, ma
   const subKey = subCounter(at);
   try {
     // The refresher's own sub-cap first (a tenth of the monthly cap), then the monthly cap itself; a reservation the second refuses is given back to the first.
-    if (!(await reserveTokens(env, estimate, Math.floor(cap * SUBCAP_FRACTION), at, subKey))) return { reason: "claude:subcap" };
+    if (!(await reserveTokens(env, estimate, Math.floor(cap * subFraction), at, subKey))) return { reason: "claude:subcap" };
     if (!(await reserveTokens(env, estimate, cap, at))) {
       await adjustTokens(env, -estimate, at, subKey);
       await alertOnce(env, cap, at);
@@ -430,22 +432,23 @@ export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, ma
     return { reason: "claude:counter-error" };
   }
   const settle = async (delta) => { try { await adjustTokens(env, delta, at); await adjustTokens(env, delta, at, subKey); } catch { pauseClaude(); } };
-  const { primary, fallback } = researchClaudeModels(env, false);
+  const { primary, fallback } = researchClaudeModels(env, deep);
   const deadlineAt = Date.now() + timeoutMs;
+  const sent = stage ? { stage, at: Date.now() } : null;
   const beforeSend = (body, secretKey) => guardSecretsInBody(body, env, secretKey ? [secretKey] : []);
-  const attempt = (modelOverride) => call({ env, systemPrompt, userPrompt, deep: false, skipCache: true, metadata: null, deadlineAt, maxTokens, modelOverride, wantUsage: true, beforeSend });
+  const attempt = (modelOverride) => call({ env, systemPrompt, userPrompt, deep, skipCache: true, metadata: null, deadlineAt, maxTokens, modelOverride, wantUsage: true, beforeSend });
   let res;
   try {
     try {
       res = await attempt(primary);
     } catch (e) {
-      if (e && e.modelMissing === true && fallback && fallback !== primary) res = await attempt(fallback);
+      if (modelFallback && e && e.modelMissing === true && fallback && fallback !== primary) res = await attempt(fallback);
       else throw e;
     }
   } catch (e) {
     if (notBilled(e)) await settle(-estimate);
     if (e && GUARD_CODES.includes(e.code)) return { reason: guardReason(e) };
-    return { reason: failReason(e) };
+    return { reason: failReason(e, sent) };
   }
   await settle(usageTokens(res.usage, estimate) - estimate);
   return { answer: String(res.answer ?? ""), model: res.model };
