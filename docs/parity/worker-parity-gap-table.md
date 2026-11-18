@@ -85,6 +85,9 @@ Facts that drive it:
 - Duration (GB-s) is billed in wall-clock time while an object runs or sits idle but cannot hibernate, always at the full 128 MB. [docs https://developers.cloudflare.com/durable-objects/platform/pricing/]
 - Free plan: only SQLite-backed DOs, 100,000 requests/day, 13,000 GB-s/day, 100,000 SQLite rows written/day, 5M read/day. Alarm invocations count as requests; each `setAlarm()` is one row written. Incoming WebSocket messages bill at 20:1 (100 messages = 5 requests); creating the socket is one request. [docs pricing URL above; whether the 20:1 rule applies to an outbound client socket is not stated: unv]
 - Derived: 128 MB = 0.125 GB x 86,400 s = 10,800 GB-s per day for one always-awake object, about 83% of the free 13,000. The existing `BoardRoom` DO (`wrangler.toml`, `worker/room.js:59`) shares the same allowance, as does any alarm run. [derived from docs]
+- Cost at our volume [derived from docs pricing and limits pages, opened 2026-11-18]: one always-awake object = 10,800 GB-s/day = about 324,000 GB-s per 30 days. Free allows 13,000 GB-s/day (83% used; any second always-on object or long restart overlap can exhaust it, and exceeding a free limit makes the operation fail until 00:00 UTC). Paid includes 400,000 GB-s/month, so the gateway object fits with no duration overage (overage would be $12.50 per million GB-s); the Paid cost is the plan's own minimum charge (the pricing page's examples add a $5/mo minimum) plus request overage, which is negligible here (incoming gateway messages bill 20:1 if the rule applies to an outbound socket [unv]; outgoing messages and pings are free). Whether the account is already on Paid: unv (the cron CPU note in 2b suggests it may be). A second guard on Paid: usage past the allowances bills, so set an alert.
+- Hibernation: the pricing page says duration is billed while an object is active or idle but unable to hibernate; it does not say an outbound client WebSocket blocks hibernation, but the API docs only support hibernation for accepted (inbound) sockets, so plan for an always-awake object [docs, inference].
+- Council (2026-11-18): Gemini agreed the DO gateway is sound on Paid and asked for persisted RESUME state (session_id, resume URL, seq), a heartbeat-ACK watchdog with a DO alarm, event dedupe in D1, an IDENTIFY circuit breaker, and a shadow proof that survives a forced redeploy. Gemini's claim that Workers Free blocks outbound WebSocket fetch is unverified (it rated itself 0.75; the DO limits page is silent). The Codex seat is being re-run with names stripped; dispositions are recorded in section 2f when it answers. Nothing is built on this design before then.
 - DO CPU is 30 s per request, WebSocket message or alarm by default; free-plan-specific values are not listed on the page. 100 DO classes on Free. [docs https://developers.cloudflare.com/durable-objects/platform/limits/]
 - Discord: heartbeat every `heartbeat_interval` (first one after a jittered wait); no ACK between heartbeats means a zombied connection, close with a code other than 1000/1001 and resume. Resume = connect to `resume_gateway_url`, send op 6 with `session_id` and `seq`. Closing with 1000 or 1001 invalidates the session. IDENTIFY is limited to 1000 per 24 h across shards (resume does not count); exceeding it ends all sessions and resets the bot token. 120 gateway commands per 60 s per connection. [docs https://docs.discord.com/developers/events/gateway]
 - Message Content intent: without it `content` is empty except for the app's own messages, DMs, messages that mention the app, and the target of a message context-menu command. So a mention carries text without the privileged intent; an untagged message does not. A reply that does not mention the bot (reply ping off) is not stated by that page: unv. [docs gateway URL above]
@@ -150,6 +153,25 @@ The local bot has no generic read-back (no match in `bot.js` or its modules). Th
 
 Flag `READBACK` = off / log / enforce.
 
+### 2f. Council dispositions (Gemini and Codex, 2026-11-18; raw answers in the council run folders, not the repo)
+
+Brief was public-safe with roles only. Each point has a disposition; nothing gateway-dependent is built until the owner accepts this table.
+
+| # | Point (seat) | Disposition |
+|---|---|---|
+| 1 | DO-held gateway needs Workers Paid (Gemini); Codex says Free fits on paper (10,800 of 13,000 GB-s/day) | Both agree on the arithmetic. Adopt: plan on Paid for headroom, treat Free as possible but fragile (83% used, a second always-on object or restart overlap breaks it). Plan change is on the owner/admin list as a money item. |
+| 2 | Gemini: Workers Free blocks outbound WebSocket fetch (self-rated 0.75) | Not accepted as fact: the DO limits page is silent on it. Add a 1-hour spike on the real account before any build (admin to run, or a throwaway worker). |
+| 3 | Codex ranks a proven always-on discord.js forwarder first for reliability, DO gateway second pending soak | Accepted as the rollback: keep the PC forwarder until the DO has a clean 7-day soak. The DO is the target because it removes the PC; the forwarder is not removed early. |
+| 4 | Persist session_id, resume URL, seq; advance the checkpoint only after durable intake; resume on reconnect, honor opcode 7 and 9 and close codes | Required for slice 1. Add to the slice acceptance tests. |
+| 5 | Heartbeat watchdog: jittered first heartbeat, answer server heartbeat requests, close with a non-1000 code on missing ACK, DO alarm as dead-man switch, cron as backstop | Required for slice 1. |
+| 6 | IDENTIFY budget (1,000 per 24 h): check Get Gateway Bot remaining before identifying, jittered backoff, shared between PC and Worker | Required for slice 1; one connection generation, stale callbacks ignored. |
+| 7 | Dedupe by stable event key across resume replay and REST catch-up (D1 insert-or-ignore) | Required; the existing listener already dedupes by message id [verify at build]. |
+| 8 | REST catch-up paginates from per-channel/thread watermarks, honors 429, alerts on unrecoverable gaps | Required (flag CATCHUP_REST); thread watermarks added to the design. |
+| 9 | Ping-off replies and Message Content: test whether reply text is available with the intent off | Open test, before the Developer Portal item is requested. Default assumption: intent needed. |
+| 10 | Shadow then canary: compare ids, routing, targets, ack/edit timing and blinded answer quality; force restarts and failed resumes; 7 days with zero unexplained misses/duplicates; then actual writes in one channel; fence PC and Worker sends; rehearse rollback | Adopted as the proof plan; the 'who answers a mention today' question is a first step (unverified in section 5). |
+| 11 | Both PC and Worker may hold gateway connections at once (Gemini) | Shadow can run alongside; the Worker never posts in shadow. Presence updates are not sent by the Worker. |
+| 12 | Interactions-only ranks lowest-risk but misses passive mentions and replies (both) | Kept as a fallback only; cannot meet 'friends notice no difference' if friends tag the bot. |
+
 ## 3. Josh / Matt only list
 
 Matt has a read-only role on Cloudflare, so everything that changes the account needs Josh. Developer Portal items need whoever owns the Discord application.
@@ -157,6 +179,7 @@ Matt has a read-only role on Cloudflare, so everything that changes the account 
 | Item | Needed for | Who |
 |---|---|---|
 | New Durable Object class binding `GatewayLink` and a migration tag `v2` with `new_sqlite_classes` in `wrangler.toml`; the file is code, but the deploy and any DO enablement on the account is Josh's | Gateway DO | code PR (C), deploy by J |
+| Workers plan change to Paid if the account is on Free (money item: the gateway Durable Object needs it; see 2a cost). Not to be changed without the owner's decision | Gateway DO duration headroom | J changes, M/owner decides |
 | Confirm Workers plan (Free or Paid) and current cron trigger usage on the account | Cron CPU limit (10 ms Free), trigger slots, DO duration headroom | J reads, M can ask |
 | Flag flips in `[vars]` (`GATEWAY`, `MOMENTS_ENABLED`, `CARDS_ENABLED`, `ANSWER_UX`, ...) or Flagship flags | every slice | J (deploy) or the owner per `docs/runbooks/flags.md` |
 | Secrets: `DISCORD_BOT_TOKEN` already present (used for listener key derivation, `docs/runbooks/listener.md:21`); no new secret planned. Do not add a second bot token | gateway | J (unchanged) |
