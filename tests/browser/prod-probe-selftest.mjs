@@ -23,6 +23,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 import { startFixtureServer } from "../helpers/probe-fixture-server.mjs";
 import { createBudget, guardContext } from "../helpers/probe-budget.mjs";
 import { DEFAULT_CLOCK } from "../helpers/clock-arg.mjs";
@@ -63,7 +64,7 @@ const ENGINES = argv.includes("--engines") ? argv[argv.indexOf("--engines") + 1]
 const L = ["--viewports", "laptop"];
 const CASES = [
   ["green", 0, null, []],
-  ["wrong-count", 1, /the board shows 6 members but \/api\/state partyDoc lists 7/, L, null, [["says what it counted in the DOM", /\[DOM: selector "\.tn-name": \d+ elements, \d+ with a box; names: [^\]]+\(wanted 7\)\]/]]],
+  ["wrong-count", 1, /the board shows 6 members but \/api\/state partyDoc lists 7/, L, null, [["says what it counted in the DOM", /\[DOM: selector "\.tn-name": \d+ elements, \d+ with a box; \d+ with text \(counts only, no member names\) \(wanted 7\)\]/]]],
   ["typed-five", 1, /copy states the wrong party size: .*five/i, L],
   ["junk", 1, /junk text, .*undefined/i, L],
   ["no-panel", 1, /scene #ledger did not open: there is no #panel-ledger in the page/, L],
@@ -85,7 +86,7 @@ const CASES = [
   ["redirect-api", 1, /the API answered with a redirect \(counted hop by hop; the probe fails on any\): GET \S+\/api\/bootstrap -> \S+\/api\/bootstrap/, L, null, [["is the default (browser) mode, not the older fetch mode", /^(?![\s\S]*PROBE_API_ROUTE=fetch)/]]],
   ["green", 0, null, L, "cross-origin", [["reached the API on its own origin", /Worker requests this run: \d+ of 200/]], null, { crossOrigin: true }],
   ["stale-first-load", 0, null, L, null, [["reloads once and says so", /WARN chromium laptop 1366x768: the board shows 5 members, the party has 6; reloading once/]]],
-  ["members-never", 1, /the board shows 5 members but \/api\/state partyDoc lists 6 \[DOM: selector "\.tn-name": 5 elements/, L, null, [["the DOM facts are counts only, no member names", /^(?![\s\S]*names: )/], ["says the scenes and copy were not judged", /INFO chromium laptop 1366x768: the scenes were not stepped through and no copy was judged/], ["no scene or copy failure follows the count failure", /^(?![\s\S]*FAIL [^\n]*(did not open|wrong party size))/]]],
+  ["members-never", 1, /the board shows 5 members but \/api\/state partyDoc lists 6 \[DOM: selector "\.tn-name": 5 elements/, L, null, [["says the scenes and copy were not judged", /INFO chromium laptop 1366x768: the scenes were not stepped through and no copy was judged/], ["no scene or copy failure follows the count failure", /^(?![\s\S]*FAIL [^\n]*(did not open|wrong party size))/]]],
   ["csp-firefox-js-error", 0, null, L, null, [["lists the wrapped Firefox advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n(?:\s+- [^\n]*\n)*\s+- \w+: \[JavaScript Error: "Content-Security-Policy: \(Report-Only policy\)/]]],
   ["csp-firefox-js-mention", 1, /console error: \[JavaScript Error: "Content-Security-Policy: The page's settings blocked/, L],
   ["visible-five", 1, /copy states the wrong party size: "Which of the five are you\?"/, L, null, [["says why this engine counts the string as visible", /DIAG chromium laptop[^\n]*"Which of the five are you\?" in p[^\n]*display block[^\n]*checkVisibility true[^\n]*ancestors flagged: none/]]],
@@ -113,7 +114,10 @@ async function runCase([mode, want, re, extra, label, musts, env, opts]) {
 }
 const results = [];
 for (let i = 0; i < CASES.length; i += 3) results.push(...(await Promise.all(CASES.slice(i, i + 3).map(runCase))));
+// Every roster token (full name, slug, each word of the name, each component of a compound slug, 3+ characters, any case) the fixture serves. The extra member is the one wrong-count adds.
+const ROSTER_TOKENS = [...new Set([...JSON.parse(fs.readFileSync(path.join(here, "..", "fixtures", "six-members", "party.json"), "utf8")).members.map((x) => x.name), "Zephyrine Quax"].flatMap((n) => [n, n.toLowerCase().replace(/[^a-z0-9]+/g, "-"), ...n.split(/[^A-Za-z0-9]+/), ...n.toLowerCase().split(/[^a-z0-9]+/)]).filter((t) => t.length >= 3))];
 for (const { mode, want, re, code, out, lines, m, srv, musts } of results) {
+  { const lo = out.toLowerCase(), leaked = ROSTER_TOKENS.filter((t) => lo.includes(t.toLowerCase())); ok(`[${mode}] no fixture roster name, slug or word appears anywhere in the output`, leaked.length === 0, `${leaked.length} roster token(s) leaked (not printed here)`); }
   ok(`[${mode}] probe exits ${want}`, code === want, `exit ${code}; ${lines.filter((l) => /^FAIL|Worker requests/.test(l)).slice(0, 4).join(" | ")}`);
   if (re) ok(`[${mode}] the failure names the problem`, re.test(out), lines.filter((l) => /^FAIL|Aborting/.test(l)).slice(0, 3).join(" | "));
   for (const [what, rx] of musts || []) ok(`[${mode}] ${what}`, rx.test(out), lines.filter((l) => /^INFO|^  - /.test(l)).slice(0, 5).join(" | "));

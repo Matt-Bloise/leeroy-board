@@ -144,7 +144,7 @@ jobs:
           set -u
           SHORT="${HEAD_SHA:0:7}"
           for i in $(seq 1 48); do
-            BODY=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments --jq '[.comments[] | select((.author.login == "github-actions" or .author.login == "github-actions[bot]") and (.body | contains("<!-- cloudflare-pr-preview -->")))] | last | .body // ""' || true)
+            BODY=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" | jq -r -s '[.[][] | select(.user.type == "Bot" and .user.login == "github-actions[bot]" and (.body | contains("<!-- cloudflare-pr-preview -->")))] | last | .body // ""' || true)
             # Only comments authored by github-actions[bot] count (a stranger cannot plant a preview URL). The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
             if echo "$BODY" | grep -q "$SHORT" && ! echo "$BODY" | grep -q "Torn Down"; then
               PAGES=$(echo "$BODY" | grep -oE "https://pr-${PR_NUMBER}\.leeroy-board\.pages\.dev" | head -n 1 || true)

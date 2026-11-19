@@ -143,7 +143,7 @@ jobs:
           [ -n "$PREVIEW_ACCOUNT_ID" ] || MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
           if [ -n "$MISSING" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Preview tests skipped::Preview, api, browser and layout were skipped because these repository secrets are missing:$MISSING. The preview admin token never falls back to a production secret. The comment says SKIPPED and is not the merge gate. See docs/runbooks/ci-secrets.md."
+            echo "::notice title=Preview tests skipped::Preview, api, browser and layout were skipped because these repository secrets are missing:$MISSING. The preview admin token never falls back to a production secret. The comment says SKIPPED and is not the merge gate. Do not delete CLOUDFLARE_PREVIEW_API_TOKEN while any PR carries ci-full or a preview still exists: without it full previews cannot start and teardown skips, which leaves the preview Worker, D1 database and Pages deployment running. See docs/runbooks/ci-secrets.md."
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
@@ -167,8 +167,8 @@ jobs:
           set -u
           SHORT="${HEAD_SHA:0:7}"
           for i in $(seq 1 48); do
-            BODY=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments --jq '[.comments[] | select(.body | contains("<!-- cloudflare-pr-preview -->"))] | last | .body // ""' || true)
-            # The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
+            BODY=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" | jq -r -s '[.[][] | select(.user.type == "Bot" and .user.login == "github-actions[bot]" and (.body | contains("<!-- cloudflare-pr-preview -->")))] | last | .body // ""' || true)
+            # Only the Actions bot (user.type Bot, login github-actions[bot]) counts. The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
             if echo "$BODY" | grep -q "$SHORT" && ! echo "$BODY" | grep -q "Torn Down"; then
               PAGES=$(echo "$BODY" | grep -oE "https://pr-${PR_NUMBER}\.leeroy-board\.pages\.dev" | head -n 1 || true)
               WORKER=$(echo "$BODY" | grep -oE "https://leeroy-brain-pr-${PR_NUMBER}\.[a-z0-9-]+\.workers\.dev" | head -n 1 || true)

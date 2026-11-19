@@ -12,7 +12,6 @@ Why: a workflow file in a pull request runs with the secrets the repository give
 | `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` | **repository level, deliberately** (see below) | `deploy-cloudflare.yml` only (no PR workflow references them) |
 | `CLOUDFLARE_AIG_TOKEN`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `CLOUDFLARE_ACCOUNT_ID` | repository secret (an identifier, not a credential; may also be copied into `production`; if an environment copy exists it wins for the deploy) | deploy and preview (an identifier, shared by both) |
-| ~~`CLOUDFLARE_PREVIEW_API_TOKEN`~~ | **not used.** Delete it if it still exists (the value that was pasted is invalid) | nothing |
 | `BOARD_PREVIEW_ADMIN_TOKEN` | repository secret | `pr-preview-cloudflare.yml`, `preview-tests.yml`; the base for the per-preview salts and admin token |
 
 ## Previews use their own Cloudflare token
@@ -30,6 +29,27 @@ What this does **not** protect:
 - Before this change, any workflow run from a branch of this repository could read the production Cloudflare token. That path is closed for the token: PR workflows read only the preview-scoped token. A preview token that is itself over-scoped would still be readable by a branch run, so keep its scope to the three permissions above.
 - Review is still a control: the queue script holds PRs that touch `.github/` or `tools/` for an advisor, and `tests/unit/workflow-secrets.test.mjs` fails if a PR-triggered workflow uses the preview token outside the sanctioned jobs or names the production token at all. Neither is enforced by GitHub itself.
 - A separate Cloudflare account for previews would close the remaining gap (a preview token can still act on the preview resources of the shared account).
+
+## Limits of this design (owner decisions; read before relying on the split)
+
+Names only, no values. Listed from the workflow files and from `gh secret list` (repository and environment `production`) on 2026-11-19.
+
+1. **Any user with write access can read repository-level secrets.** Anyone who can push a branch to this repository can edit a workflow file on that branch and make it print or send every repository-level secret. Only a job that declares `environment: production` is gated (master only). Today only `deploy-cloudflare.yml` and `roster-upsert.yml` declare it; `pages-prune.yml` does not, so it reads its Cloudflare token at repository level with no gate. Production secrets must therefore live as **environment secrets of `production`**, and the repository-level copies must be deleted by the account owner (owner / Josh action), keeping only what previews need. Repository-level secrets today, with the action:
+
+   | Secret | Also in environment `production` today | Action |
+   | :--- | :--- | :--- |
+   | `BOARD_ADMIN_TOKEN` | yes | move to environment `production`: delete the repository copy |
+   | `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_SECRET`, `DISCORD_PUBLIC_KEY`, `GEMINI_API_KEY` | yes | move to environment `production`: delete the repository copies |
+   | `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` | no | move to environment `production`: add there, then delete the repository copies |
+   | `CLOUDFLARE_API_TOKEN` | no | move to environment `production` and give `pages-prune.yml` the same environment (or an owner decision to accept it); no preview job needs it |
+   | `CLOUDFLARE_ACCOUNT_ID` | yes | keep at repository level (an identifier; previews need it) |
+   | `CLOUDFLARE_PREVIEW_API_TOKEN`, `BOARD_PREVIEW_ADMIN_TOKEN` | no | keep at repository level (previews need them); they are preview-scoped by design, see item 2 |
+
+   Not the same as protection by review: `tests/unit/workflow-secrets.test.mjs` and the queue review catch a workflow edit in a PR, but GitHub itself does not stop a writer.
+
+2. **The preview token must be scoped by the account owner, and its scope is only partly possible.** Create it with the three permissions in the table above and nothing else (no Zone, no DNS, no account settings). Be aware: Cloudflare permission groups for Workers, D1 and Pages are account-wide, not per resource. A preview token that can deploy Workers or edit D1 can therefore also reach the production Worker, the production D1 database and the production Pages project in the same account. Mitigations that help: no other permissions, an expiry date, rotation, and a short list of people with write access. The real fix is a separate Cloudflare account (or zone) for previews, so the token has nothing production to reach. That is an owner decision and is not made here.
+
+3. **Deleting the preview token disables full previews and makes teardown skip.** Without `CLOUDFLARE_PREVIEW_API_TOKEN` the preview guard turns every `ci-full` run into SKIPPED, and the teardown job cannot delete anything, so existing preview Workers, D1 databases and Pages deployments stay up and cost D1 slots (the account has a small limit). Before removing or rotating it: remove the `ci-full` label from open PRs and let teardown run, or delete the preview resources by hand. The guard and teardown messages say this as well.
 
 **Accepted residual risk.** As configured by the owner, the environment `production` holds `BOARD_ADMIN_TOKEN`, `GEMINI_API_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_SECRET` and `DISCORD_PUBLIC_KEY` (it also held an invalid `CLOUDFLARE_API_TOKEN`, to be deleted so the valid repository-level one applies). `USER_SALT` and `KEY_SALT` (ours, not third-party credentials) and `AI_GATEWAY_TOKEN` (Uncle Jimmy's) stay at repository level on purpose: a job with `environment: production` still reads repository secrets the environment lacks, and the deploy keeps the existing Worker value when a secret is empty. Consequence: a workflow run from any branch could read those three by editing its own workflow file. No PR workflow in this repository references them (the preview derives its salts from `BOARD_PREVIEW_ADMIN_TOKEN`), and the guard test enforces that, but this is a protection by review, not by GitHub. S1 stays partly open for these three until they move into the environment.
 

@@ -75,7 +75,8 @@ jobs:
         run: |
           set -eu -o pipefail
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
-          cat "$RUNNER_TEMP/paths.txt"
+          # File names are attacker-controlled: prefix every line so none can start a workflow command (::...) in the log.
+          sed 's/^/| /' "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
       - name: Say that tests run without a preview
@@ -119,7 +120,7 @@ jobs:
           [ -n "$PREVIEW_ACCOUNT_ID" ] || MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
           if [ -n "$MISSING" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Preview skipped::No preview was created because these repository secrets are missing:$MISSING. The preview admin token never falls back to a production secret. The Preview tests comment will say SKIPPED and is not the merge gate. See docs/runbooks/ci-secrets.md."
+            echo "::notice title=Preview skipped::No preview was created because these repository secrets are missing:$MISSING. The preview admin token never falls back to a production secret. The Preview tests comment will say SKIPPED and is not the merge gate. Do not delete CLOUDFLARE_PREVIEW_API_TOKEN while any PR carries ci-full or a preview still exists: without it full previews cannot start and teardown skips, which leaves the preview Worker, D1 database and Pages deployment running. See docs/runbooks/ci-secrets.md."
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
@@ -175,7 +176,7 @@ jobs:
 
           if [ "$TOKEN_STATUS" != "active" ]; then
             echo "::error::Cloudflare API Token validation failed. Status: $TOKEN_STATUS"
-            echo "Cloudflare error codes: $(node -e 'try { const j = JSON.parse(process.argv[1]); console.log((j.errors || []).map(e => e.code).join(",") || "none"); } catch(e) { console.log("unparseable"); }' "$VERIFY_RES")"
+            echo "Cloudflare error codes: $(printf '%s' "$VERIFY_RES" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required:"
             echo "1. Verify CLOUDFLARE_PREVIEW_API_TOKEN is a valid API Token (not a Global API Key)."
@@ -416,13 +417,18 @@ jobs:
           # (the Worker serves those through its privacy projection) and fails this step when one is present. docs/runbooks/member-data-worker-only.md
           node tools/pages-bundle.mjs .cloudflare-dist
 
+          # The Worker URL is stamped into JavaScript: accept only https://<name>[.<subdomain>].workers.dev, refuse anything else.
+          if ! printf '%s' "$WORKER_URL" | grep -qE '^https://[a-z0-9-]+(\.[a-z0-9-]+)?\.workers\.dev$'; then
+            echo "::error::The Worker URL does not have the shape https://<name>[.<subdomain>].workers.dev; refusing to stamp it into the site bundle."
+            exit 1
+          fi
           # Stamp the exact PR Worker URL into .cloudflare-dist/js/brain.js so both the branch alias URL
           # and the per-commit hash URL talk directly to this PR's isolated Worker + D1.
           node -e '
             const fs = require("fs");
             const p = ".cloudflare-dist/js/brain.js";
             const s = fs.readFileSync(p, "utf8");
-            fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, `const WORKER = "${process.argv[1]}";`), "utf8");
+            const url = process.argv[1]; fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, () => `const WORKER = "${url}";`), "utf8");
           ' "$WORKER_URL"
 
           cd infrastructure
@@ -516,7 +522,7 @@ jobs:
           if [ -z "$TOKEN" ] || [ -z "$ACC" ]; then
             # No preview token (or account id): no preview could have been created by this workflow, and the production token is never used here. Skip, do not fail.
             ANSWER=no
-            echo "::notice title=Teardown skipped::CLOUDFLARE_PREVIEW_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so there is no preview to tear down. See docs/runbooks/ci-secrets.md."
+            echo "::notice title=Teardown skipped::CLOUDFLARE_PREVIEW_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so there is no preview to tear down; any preview that already exists is NOT torn down and must be removed by hand (Cloudflare dashboard). See docs/runbooks/ci-secrets.md."
           else
             RES=$(curl -sS --max-time 30 "https://api.cloudflare.com/client/v4/accounts/$ACC/d1/database?name=$D1_DATABASE_NAME&per_page=100" -H "Authorization: Bearer $TOKEN" || true)
             ANSWER=$(node -e '

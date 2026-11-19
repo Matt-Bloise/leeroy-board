@@ -104,7 +104,7 @@ jobs:
 
           if [ "$TOKEN_STATUS" != "active" ]; then
             echo "::error::Cloudflare API Token validation failed. Status: $TOKEN_STATUS"
-            echo "Cloudflare error codes: $(node -e 'try { const j = JSON.parse(process.argv[1]); console.log((j.errors || []).map(e => e.code).join(",") || "none"); } catch(e) { console.log("unparseable"); }' "VERIFY_RES")"
+            echo "Cloudflare error codes: $(printf '%s' "$VERIFY_RES" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required:"
             echo "1. Verify CLOUDFLARE_API_TOKEN is a valid API Token (not a Global API Key)."
@@ -165,7 +165,7 @@ jobs:
 
           if [ "$D1_SUCCESS" != "true" ]; then
             echo "::error::Token lacks D1 permissions for account '$TARGET_ACCOUNT_ID'."
-            echo "Cloudflare error codes: $(node -e 'try { const j = JSON.parse(process.argv[1]); console.log((j.errors || []).map(e => e.code).join(",") || "none"); } catch(e) { console.log("unparseable"); }' "D1_CHECK")"
+            echo "Cloudflare error codes: $(printf '%s' "$D1_CHECK" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required to Fix (Authentication error 10000 on D1):"
             echo "In Cloudflare Dashboard -> My Profile (top-right avatar) -> API Tokens:"
@@ -199,7 +199,7 @@ jobs:
 
           if [ "$ZONE_SUCCESS" != "true" ]; then
             echo "::error::Token lacks Zone Read permissions for leeroy.party."
-            echo "Cloudflare error codes: $(node -e 'try { const j = JSON.parse(process.argv[1]); console.log((j.errors || []).map(e => e.code).join(",") || "none"); } catch(e) { console.log("unparseable"); }' "ZONE_CHECK")"
+            echo "Cloudflare error codes: $(printf '%s' "$ZONE_CHECK" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required to Fix:"
             echo "In Cloudflare Dashboard -> My Profile -> API Tokens:"
@@ -401,12 +401,17 @@ jobs:
           # (the Worker serves those through its privacy projection) and fails this step when one is present. docs/runbooks/member-data-worker-only.md
           node tools/pages-bundle.mjs .cloudflare-dist
 
+          # The Worker URL is stamped into JavaScript: accept only https://api.leeroy.party or https://<name>[.<subdomain>].workers.dev, refuse anything else.
+          if ! printf '%s' "$WORKER_URL" | grep -qE '^(https://api\.leeroy\.party|https://[a-z0-9-]+(\.[a-z0-9-]+)?\.workers\.dev)$'; then
+            echo "::error::The Worker URL does not have the shape https://<name>[.<subdomain>].workers.dev (or the production API origin); refusing to stamp it into the site bundle."
+            exit 1
+          fi
           # Stamp the resolved production Worker URL into .cloudflare-dist/js/brain.js
           node -e '
             const fs = require("fs");
             const p = ".cloudflare-dist/js/brain.js";
             const s = fs.readFileSync(p, "utf8");
-            fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, `const WORKER = "${process.argv[1]}";`), "utf8");
+            const url = process.argv[1]; fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, () => `const WORKER = "${url}";`), "utf8");
           ' "$WORKER_URL"
 
           cd infrastructure

@@ -7,6 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { parse } from "yaml";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -100,10 +101,74 @@ test("L1: the fork-policy step takes base.ref and head.repo.full_name from env",
   assert.match(step.run, /\$HEAD_REPO/);
 });
 
-// ---- L2 ----------------------------------------------------------------------------------------------------------------------------
-test("L2: security.yml accepts the preview URL only from a github-actions comment", () => {
-  const step = stepsOf(wf("security.yml")).find((s) => /Find the preview URL/.test(s.name || ""));
-  assert.match(step.run, /select\(\(\.author\.login == "github-actions" or \.author\.login == "github-actions\[bot\]"\) and \(\.body \| contains\("<!-- cloudflare-pr-preview -->"\)\)\)/);
+// ---- L2 ---------------------------------------------------------------------------------------------------------------------------
+test("L2: the preview URL comment is accepted only from user.type Bot with login github-actions[bot], read through the issues comments API", () => {
+  for (const [f, name] of [["security.yml", "Find the preview URL"], ["preview-tests.yml", "Find the preview URL"]]) {
+    const step = stepsOf(wf(f)).find((s) => s.name && s.name.includes(name));
+    assert.ok(step, f);
+    assert.ok(step.run.includes('gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments"'), f);
+    assert.ok(step.run.includes('select(.user.type == "Bot" and .user.login == "github-actions[bot]" and (.body | contains("<!-- cloudflare-pr-preview -->")))'), f);
+    assert.equal(step.run.includes(".author.login"), false, f + ": no looser author match");
+  }
+});
+
+// ---- Cloudflare error codes (review finding 4) ----------------------------------------------------------------------------------------
+test("the error-code extraction prints the numeric code and nothing else, and every workflow call feeds the real variable", () => {
+  const body = JSON.stringify({ success: false, errors: [{ code: 10000, message: "Authentication error for account Fictional Holdings Ltd" }, { code: 9109, message: "Zone mirelle-voss.example" }], messages: [], result: null });
+  const r = spawnSync(process.execPath, [ROOT + "tools/cf-error-codes.mjs"], { input: body, encoding: "utf8" });
+  assert.equal(r.stdout.trim(), "10000,9109");
+  assert.equal(/Fictional|Authentication|mirelle/i.test(r.stdout + r.stderr), false, "no message text");
+  assert.equal(spawnSync(process.execPath, [ROOT + "tools/cf-error-codes.mjs"], { input: "<html>nope</html>", encoding: "utf8" }).stdout.trim(), "unparseable");
+  assert.equal(spawnSync(process.execPath, [ROOT + "tools/cf-error-codes.mjs"], { input: '{"success":true,"errors":[]}', encoding: "utf8" }).stdout.trim(), "none");
+  assert.equal(spawnSync(process.execPath, [ROOT + "tools/cf-error-codes.mjs"], { input: '{"errors":[{"code":"x; rm","message":"m"}]}', encoding: "utf8" }).stdout.trim(), "none", "a non-numeric code is dropped");
+  let calls = 0;
+  for (const f of ["deploy-cloudflare.yml", "pr-preview-cloudflare.yml"]) for (const st of stepsOf(wf(f))) {
+    if (typeof st.run !== "string") continue;
+    assert.equal(st.run.includes("console.log((j.errors"), false, f + ": no inline extraction");
+    for (const line of st.run.split("\n")) {
+      if (!line.includes("cf-error-codes.mjs")) continue;
+      calls++;
+      const m = line.match(/printf '%s' "\$([A-Z0-9_]+)" \| node \.\.\/tools\/cf-error-codes\.mjs/);
+      assert.ok(m, f + ": the variable's contents are piped in, not its name: " + line.trim().slice(0, 60));
+      assert.ok(["VERIFY_RES", "D1_CHECK", "ZONE_CHECK"].includes(m[1]), f + ": a real response variable");
+    }
+  }
+  assert.equal(calls, 4, "verify, D1, zone (deploy) and verify (preview)");
+});
+
+// ---- L3/L-extra: untrusted output and the stamped Worker URL (review finding 6) ---------------------------------------------------------
+test("file names are never printed raw, and the Worker URL is validated before it is stamped into JavaScript", () => {
+  const prev = stepsOf(wf("pr-preview-cloudflare.yml"));
+  assert.equal(prev.some((st) => typeof st.run === "string" && st.run.split("\n").some((l) => l.trim().startsWith('cat "$RUNNER_TEMP/paths.txt"'))), false, "no raw cat of the changed file names");
+  assert.ok(prev.some((st) => typeof st.run === "string" && st.run.includes("sed 's/^/| /' \"$RUNNER_TEMP/paths.txt\"")), "the names are prefixed so none can start a workflow command");
+  for (const [f, name] of [["pr-preview-cloudflare.yml", "Stage Static Site"], ["deploy-cloudflare.yml", "Stage Static Site"]]) {
+    const st = stepsOf(wf(f)).find((x) => x.name && x.name.startsWith(name));
+    assert.ok(st, f);
+    const gate = st.run.indexOf("refusing to stamp"), stamp = st.run.indexOf("const WORKER");
+    assert.ok(gate > 0 && gate < stamp, f + ": validated before it is stamped");
+    assert.ok(st.run.includes("() => `const WORKER = \"${url}\";`"), f + ": a replacer function, so $-patterns in the URL are literal");
+  }
+  const shape = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)?\.workers\.dev$/;
+  assert.equal(shape.test("https://leeroy-brain-pr-7.fictional.workers.dev"), true);
+  for (const bad of ['https://x.workers.dev/";alert(1);//', "http://x.workers.dev", "https://x.workers.dev.evil.example", "https://x.workers.dev\n::error::x", "https://x.workers.dev$&"]) assert.equal(shape.test(bad), false, bad);
+  // the shape used by the workflows is this one (grep -E), so prove the workflow text carries it
+  assert.ok(stepsOf(wf("pr-preview-cloudflare.yml")).some((st) => typeof st.run === "string" && st.run.includes("'^https://[a-z0-9-]+(\\.[a-z0-9-]+)?\\.workers\\.dev$'")));
+});
+
+test("the guard and teardown messages warn that deleting the preview token disables previews and teardown", () => {
+  for (const f of PREVIEW_FILES) assert.match(wf(f).text, /Do not delete CLOUDFLARE_PREVIEW_API_TOKEN while any PR carries ci-full/);
+  assert.match(wf("pr-preview-cloudflare.yml").text, /any preview that already exists is NOT torn down/);
+});
+
+test("the secrets runbook states the three design limits and lists the repository-level secrets", () => {
+  const t = read("docs/runbooks/ci-secrets.md");
+  assert.match(t, /Any user with write access can read repository-level secrets/);
+  assert.match(t, /environment secrets of `production`/);
+  assert.match(t, /Cloudflare permission groups for Workers, D1 and Pages are account-wide/);
+  assert.ok(t.includes("separate Cloudflare account (or zone) for previews"));
+  assert.match(t, /Deleting the preview token disables full previews and makes teardown skip/);
+  for (const n of ["BOARD_ADMIN_TOKEN", "USER_SALT", "KEY_SALT", "AI_GATEWAY_TOKEN", "DISCORD_BOT_TOKEN", "GEMINI_API_KEY"]) assert.ok(t.includes(n), n);
+  assert.equal(t.includes("**not used.**"), false, "the stale 'not used' row is gone");
 });
 
 // ---- M4 ----------------------------------------------------------------------------------------------------------------------------
@@ -115,6 +180,15 @@ test("M4: the production probe prints counts, never the chip texts or slugs, and
   assert.match(src, /counts only, no member names/);
   assert.match(src, /const fail = \(where, what\) => \{ const w = scrub\(what\)/);
   assert.match(src, /DIAG \$\{tag\}: \$\{scrub\(line\)\}/);
+});
+
+test("M4: the probe redacts every roster token (name, slug, words, slug components) from all output, and the selftest asserts it", () => {
+  const src = read("tests/browser/prod-probe.mjs");
+  assert.ok(src.includes('...n.split(/[^A-Za-z0-9]+/), ...sl.split("-")'));
+  assert.ok(src.includes('for (const m of ["log", "error", "warn"])'));
+  assert.ok(src.includes("fs.appendFileSync = "));
+  const st = read("tests/browser/prod-probe-selftest.mjs");
+  assert.match(st, /no fixture roster name, slug or word appears anywhere in the output/);
 });
 
 test("M4: live-smoke prints a count of unreadable chip labels, not their names", () => {
