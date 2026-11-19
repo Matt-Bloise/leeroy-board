@@ -10,7 +10,7 @@ Names only. Never put a value in the repository, an issue, a PR, a log or a chat
 
 | Name | Used at | Purpose |
 | :--- | :--- | :--- |
-| `CLOUDFLARE_API_TOKEN` | `deploy-cloudflare.yml`; `roster-upsert.yml`; `pages-prune.yml` (production only; previews use `CLOUDFLARE_PREVIEW_API_TOKEN`, docs/runbooks/ci-secrets.md) | Wrangler and API calls for Worker, D1, Pages, domains. Scopes the workflow checks: D1 Edit, Pages Edit, Zone Read for the production zone (`deploy-cloudflare.yml:120-123,152-157`) |
+| `CLOUDFLARE_API_TOKEN` | `deploy-cloudflare.yml:17`; `pr-preview-cloudflare.yml:44,338` | Wrangler and API calls for Worker, D1, Pages, domains. Scopes the workflow checks: D1 Edit, Pages Edit, Zone Read for the production zone (`deploy-cloudflare.yml:120-123,152-157`) |
 | `CLOUDFLARE_ACCOUNT_ID` | `deploy-cloudflare.yml:18`; `pr-preview-cloudflare.yml:45,339` | Account selector |
 | `BOARD_ADMIN_TOKEN` | `preview-tests.yml:97`; also below | Lets the API tests call admin routes on a preview |
 | `github.token` (automatic) | `preview-tests.yml:22`; `pr-preview-cloudflare.yml:15-18` | PR comments; not a stored secret |

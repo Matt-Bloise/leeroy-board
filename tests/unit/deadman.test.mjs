@@ -90,7 +90,7 @@ test("signature gates: missing headers, wrong, stale, future and tampered all 40
   assert.equal((await post(env, "/api/heartbeat", HB, { headers: false })).status, 401);
   assert.equal((await post(env, "/api/heartbeat", HB, { sig: "0".repeat(64) })).status, 401);
   assert.equal((await post(env, "/api/heartbeat", HB, { ts: now - 121 })).status, 401);
-  assert.equal((await post(env, "/api/heartbeat", HB, { ts: now + 121 })).status, 401);
+  assert.equal((await post(env, "/api/heartbeat", HB, { ts: now + 125 })).status, 401); // +125, not +121: `now` was read before the Worker reads its clock, and a second boundary in between made +121 exactly +120 (inside the window) and flaked this under load
   const ts = now, good = await signListen(KEY, String(ts), JSON.stringify(HB));
   assert.equal((await post(env, "/api/heartbeat", HB, { ts, sig: good, raw: JSON.stringify({ ...HB, source: "pc-session" }) })).status, 401);
   assert.equal((await post(env, "/api/heartbeat", HB, { ts: ts + 1, sig: good })).status, 401);
