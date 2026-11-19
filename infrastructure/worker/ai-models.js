@@ -1404,6 +1404,7 @@ export async function answerWithAi({
     // Daily budget: past the soft cap (or a per-user / per-tenant cap), answer in voice without calling AI. Every provider is checked,
     // so choosing a different model does not skip the caps.
     let rawAnswer, model, provider;
+    let claudeUsage = null; // measured Claude usage of the answer that was used (shadow recorder only)
     let fallbackNote = "";
     let guestUntokenised = false; // a guest whose prompt could not be tokenised: library facts only, labelled +degraded
     let degraded = false; // ASK_RESEARCH member: Claude could not answer, so the row is marked +degraded (never silent)
@@ -1465,7 +1466,7 @@ export async function answerWithAi({
         const viaClaude = hardEnd - Date.now() < 2500
           ? { reason: "claude:no-time" }
           : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, real: namesReal ? { system: systemPrompt, user: userPrompt, friend: [question, previousQuestion, by, ...(Array.isArray(priorTurns) ? priorTurns.flatMap((t) => [t.q, t.a]) : [])] } : null, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }), ...(shadow && sink.subSpend ? { subSpend: sink.subSpend } : {}) });
-        if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
+        if (viaClaude.answer) { ({ answer: rawAnswer, model, provider } = viaClaude); claudeUsage = viaClaude.usage || null; }
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
       // A member's friend text never reaches Workers AI (or any other provider) under ASK_RESEARCH: no Claude answer means the honest degraded line below.
@@ -1606,7 +1607,7 @@ export async function answerWithAi({
     // The model column exactly as an ask_turns row carries it. A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
     const modelLabel = degraded ? `${provider}:${model}+research${researchNote}`.slice(0, 120 - DEGRADED_SUFFIX.length) + DEGRADED_SUFFIX : `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120);
     if (shadow) { // record-only: the same text and the same model label an ask would have stored, and nothing else happens
-      await sink.record({ status: degraded ? "degraded" : "answered", answer, cites, model: modelLabel, reason: (/\[([^\]]{1,60})\]/.exec(researchNote) || [])[1] || null, latencyMs, groupMemory: groupOn && Boolean(inputs.groupMember), research: Boolean(research) });
+      await sink.record({ status: degraded ? "degraded" : "answered", answer, cites, model: modelLabel, reason: (/\[([^\]]{1,60})\]/.exec(researchNote) || [])[1] || null, latencyMs, groupMemory: groupOn && Boolean(inputs.groupMember), research: Boolean(research), usage: degraded ? null : claudeUsage });
       return;
     }
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.

@@ -172,7 +172,7 @@ export async function runReplay(opts, deps = {}) {
         model: safeModel(out.model), latency_ms: Number.isFinite(out.latency_ms) ? Math.round(out.latency_ms) : null,
         reason: safeReason(out.reason), within_budget: withinBudget(out.latency_ms), degraded: degraded(raw),
         answer_length: answer ? Array.from(answer).length : 0, answer_sha256: answer ? sha256(answer) : null,
-        http_status: res.status, scored, sent_at: sentAt, local_omitted: localOmitted || undefined, scores: null,
+        input_tokens: tokInt(out.input_tokens), output_tokens: tokInt(out.output_tokens), http_status: res.status, scored, sent_at: sentAt, local_omitted: localOmitted || undefined, scores: null,
       };
       if (scored) row.scores = rec.expected ? scoreTruthItem(rec, raw, answer) : { degraded: row.degraded };
       if (keepAnswers && answer !== null) row.answer = answer;
@@ -185,6 +185,14 @@ export async function runReplay(opts, deps = {}) {
   });
 }
 
+// Measured Anthropic tokens per compose (the Worker reports integers or null). Totals and mean per item over the items that reported both numbers.
+const tokInt = (v) => (Number.isInteger(v) && v >= 0 && v <= 1e7 ? v : null);
+export function tokenStats(rows) {
+  const known = rows.filter((r) => !r.type && tokInt(r.input_tokens) !== null && tokInt(r.output_tokens) !== null);
+  const input_total = known.reduce((a, r) => a + r.input_tokens, 0);
+  const output_total = known.reduce((a, r) => a + r.output_tokens, 0);
+  return { items_with_usage: known.length, input_total, output_total, input_mean: known.length ? input_total / known.length : null, output_mean: known.length ? output_total / known.length : null };
+}
 const pct = (v) => (v === null || v === undefined ? "  n/a" : (v * 100).toFixed(1).padStart(5) + "%");
 const ms = (v) => (v === null || v === undefined ? "   n/a" : String(Math.round(v)).padStart(6));
 export function formatSummary(rows) {
@@ -195,6 +203,8 @@ export function formatSummary(rows) {
   lines.push(`${"kind".padEnd(16)} ${"n".padStart(4)} ${"scored".padStart(6)} ${"truth".padStart(6)} ${"exact".padStart(6)} ${"unsup".padStart(6)} ${"degr".padStart(6)} ${"budget".padStart(6)} ${"p50ms".padStart(6)} ${"p95ms".padStart(6)}`);
   for (const [k, g] of Object.entries(s.by_kind).sort()) lines.push(row(k, g));
   lines.push(row("ALL", s));
+  const t = tokenStats(results);
+  lines.push(t.items_with_usage ? `tokens (measured, ${t.items_with_usage} of ${results.length} items): input ${t.input_total} total, ${Math.round(t.input_mean)} mean; output ${t.output_total} total, ${Math.round(t.output_mean)} mean` : "tokens: no measured usage in these results");
   if (results.some((r) => r.scores && typeof r.scores.exact === "boolean")) {
     const v = evaluateBar(s);
     lines.push(v.pass ? "pass bar: PASS" : "pass bar: FAIL (a first run against a Worker with no game_facts table is expected to fail: it is the baseline)");
