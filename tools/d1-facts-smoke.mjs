@@ -227,7 +227,7 @@ export async function runSmoke(db) {
     const rowsA = measureRows("A");
     const beginWrites = openLoad(db, m1);
     const wA = upsertAll(db, m1, rowsA);
-    const plain = rowsA.filter((r) => !r.subject_base), suffixed = rowsA.filter((r) => r.subject_base);
+    const suffixed = rowsA.filter((r) => r.subject_base);
     // per fact: a separate small load of plain-named rows, so the suffix cost is measured apart
     const probeId = "smoke-load-m0";
     openLoad(db, probeId);
@@ -248,7 +248,7 @@ export async function runSmoke(db) {
     const retired = rowsOf(command(db, "SELECT COUNT(*) AS c FROM game_facts WHERE load_id = 'smoke-load-m1' AND superseded = 1;"), 0)[0].c;
     const measured = {
       perFact: wPlain / plainProbe.length,
-      perSuffixedExtra: Math.max(0, (wA - plain.length * (wPlain / plainProbe.length)) / suffixed.length),
+      perSuffixedExtra: Math.max(0, (wA - rowsA.length * (wPlain / plainProbe.length)) / suffixed.length), // what a rank-suffixed fact costs ABOVE a plain one
       perCall: kvUpdateW + countsW,
       finishFixed: finA.written,
       perRetired: retired ? Math.max(0, (finB.written - finA.written) / retired) : 0,
