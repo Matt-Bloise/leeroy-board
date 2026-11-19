@@ -13,7 +13,7 @@ import { schemaDb } from "../helpers/sqlite-d1.mjs";
 import { lookupGameFacts } from "../../infrastructure/worker/game-facts-lookup.js";
 import { UPSERT, upsertBinds, finishStatements } from "../../infrastructure/worker/game-facts.js";
 import {
-  refuseUnlessPreviewDb, PRODUCTION_DB, inlineBinds, parseWranglerJson, rowsOf, sumMeta, firstLine, checkLookups, checkMeasurements, project, measureRows, countKinds, MEASURE_FACTS, MEASURE_SUFFIXED, MEASURE_KINDS,
+  refuseUnlessPreviewDb, PRODUCTION_DB, inlineBinds, parseWranglerJson, rowsOf, sumMeta, firstLine, checkLookups, checkMeasurements, project, measureRows, countKinds, MEASURE_FACTS, MEASURE_SUFFIXED, MEASURE_KINDS, rankRows, RANK_FACTS, RANK_LOAD, REAL_CLIENT_FACTS, REAL_CLIENT_SUFFIXED, REAL_CLIENT_CALLS, REAL_BEFORE_CLIENT_FACTS, REAL_RANK_ROWS,
   CLEANUP_SQL, INSERT_SQL, HOSTILE, remoteDb, FREE_ROWS_WRITTEN_PER_DAY,
 } from "../../tools/d1-facts-smoke.mjs";
 import { WRITES_PER_FACT, WRITES_PER_SUFFIXED_FACT, WRITES_PER_CALL, WRITES_PER_RETIRED_FACT } from "../../tools/facts-load.mjs";
@@ -123,24 +123,31 @@ test("part 2: the measured load statements are valid, the finish retires every o
 });
 
 test("project(): the arithmetic against the Free limit, from measured numbers", () => {
-  const m = { perFact: 2, perSuffixedExtra: 1, perCall: 3, finishFixed: 4, perRetired: 1, retired: 150 };
+  const m = { perFact: 2, perSuffixedExtra: 1, perCall: 3, finishFixed: 4, perRetired: 1, retired: 150, perRankRow: 2 };
   const p = project(m);
-  assert.equal(p.client, Math.ceil(18752 * 2 + 754 * 1 + 96 * 3 + 4));
+  assert.equal(p.client, Math.ceil(REAL_CLIENT_FACTS * 2 + REAL_CLIENT_SUFFIXED * 1 + REAL_CLIENT_CALLS * 3 + 4));
+  assert.equal(p.clientBefore, Math.ceil(18752 * 2 + 754 * 1 + 96 * 3 + 4));
+  assert.equal(p.beforeTotal, p.clientBefore + p.curated);
+  assert.equal(p.rankRowsWritten, REAL_RANK_ROWS * 2);
+  assert.equal(p.daysAtLimit, 1); assert.equal(p.runsAtDefaultBudget, 1);
+  assert.ok(REAL_CLIENT_FACTS > REAL_BEFORE_CLIENT_FACTS);
   assert.equal(p.curated, Math.ceil(142 * 2 + 0 + 3 * 3 + 4));
   assert.equal(p.firstLoadTotal, p.client + p.curated);
-  assert.equal(p.rebuild, p.client + 18752);
+  assert.equal(p.rebuild, p.client + REAL_CLIENT_FACTS);
   assert.equal(Math.round(p.pctFirst * 100), Math.round(((p.client + p.curated) / FREE_ROWS_WRITTEN_PER_DAY) * 10000));
   assert.equal(FREE_ROWS_WRITTEN_PER_DAY, 100000);
 });
 
 test("checkMeasurements fails on a constant that is too low, a wrong retire count, a failed export, a dump without the rows, a failed drill", () => {
-  const good = { perFact: WRITES_PER_FACT, perSuffixedExtra: WRITES_PER_SUFFIXED_FACT, perCall: WRITES_PER_CALL, perRetired: WRITES_PER_RETIRED_FACT, retired: 300 };
-  const exp = { retired: 300, exportOk: true, dumpHasRows: true, drillOk: true };
+  const good = { perFact: WRITES_PER_FACT, perSuffixedExtra: WRITES_PER_SUFFIXED_FACT, perCall: WRITES_PER_CALL, perRetired: WRITES_PER_RETIRED_FACT, retired: 300, perRankRow: WRITES_PER_FACT };
+  const exp = { retired: 300, exportOk: true, dumpHasRows: true, drillOk: true, rankLookupOk: true };
   assert.equal(checkMeasurements(good, exp).ok, true);
   assert.equal(checkMeasurements({ ...good, perFact: WRITES_PER_FACT + 0.5 }, exp).ok, false);
   assert.equal(checkMeasurements({ ...good, perCall: WRITES_PER_CALL + 1 }, exp).ok, false);
   assert.equal(checkMeasurements({ ...good, retired: 299 }, exp).ok, false);
-  for (const bad of [{ exportOk: false, exportError: "cannot export databases with virtual tables" }, { dumpHasRows: false }, { drillOk: false }]) assert.equal(checkMeasurements(good, { ...exp, ...bad }).ok, false, JSON.stringify(bad));
+  assert.equal(checkMeasurements({ ...good, perRankRow: WRITES_PER_FACT + 1 }, exp).ok, false);
+  assert.equal(checkMeasurements({ ...good, perRankRow: undefined }, exp).ok, false);
+  for (const bad of [{ exportOk: false, exportError: "cannot export databases with virtual tables" }, { dumpHasRows: false }, { drillOk: false }, { rankLookupOk: false }]) assert.equal(checkMeasurements(good, { ...exp, ...bad }).ok, false, JSON.stringify(bad));
 });
 
 test("the workflow runs the smoke after the seed step and before the Worker deploy, on the PR database, with no way to pass over a failure", () => {
@@ -153,4 +160,22 @@ test("the workflow runs the smoke after the seed step and before the Worker depl
   assert.ok(!/continue-on-error|\|\| true|set \+e/.test(step), "the step can fail");
   assert.match(step, /working-directory: infrastructure/);
   assert.match(wf, /D1_DATABASE_NAME: leeroy-board-db-pr-\$\{\{ github\.event\.pull_request\.number \}\}/);
+});
+
+// The rank rows the smoke loads on the preview D1, on SQLite: valid, unique, loaded and finished with the loader's statements, and the Worker's lookup resolves rank 4 and the whole ladder.
+test("part 2b: the synthetic rank rows load and finish, and the lookup picks the rank-4 row and returns every rank in order", async () => {
+  const db = schemaDb();
+  const rk = rankRows();
+  assert.equal(rk.length, RANK_FACTS);
+  assert.equal(new Set(rk.map((r) => r.id)).size, rk.length);
+  assert.ok(rk.every((r) => /^rank=[1-5];class=Test Mage$/.test(r.note) && r.subject_base === ""), "no suffix, so a row costs the plain 2 writes");
+  db.raw.exec(`INSERT INTO game_fact_loads (id, build, manifest_sha256, files_json, kind, status, counts_json, started_at) VALUES ('${RANK_LOAD}', '9.9.9.1', '${"a".repeat(64)}', '{}', 'client', 'open', '{}', 'x');`);
+  for (const r of rk) db.raw.exec(inlineBinds(UPSERT, upsertBinds(r, RANK_LOAD, "2026-01-01T00:00:00.000Z")));
+  const declared = { spell_level: rk.length };
+  for (const st of finishStatements(RANK_LOAD, declared, { kinds: declared, total: rk.length, added: 0, changed: 0, unchanged: 0, removed: 0 }, "2026-01-02T00:00:00.000Z")) db.raw.exec(inlineBinds(st.sql, st.binds));
+  const env = { DB: db };
+  const one = await lookupGameFacts(env, "What level is Test Rankbolt Amber Amber 0 rank 4?", { limit: 10 });
+  assert.equal(one.rows.length, 1); assert.equal(one.rows[0].rank, 4); assert.equal(one.rows[0].value, "16"); assert.equal(one.rows[0].hint, "Test Mage");
+  const all = await lookupGameFacts(env, "when do I get Test Rankbolt Amber Amber 0", { limit: 10 });
+  assert.equal(all.rows.map((r) => r.rank).join(), "1,2,3,4,5");
 });

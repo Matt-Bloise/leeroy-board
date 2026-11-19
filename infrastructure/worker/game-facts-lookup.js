@@ -50,7 +50,7 @@ export function candidateKeys(windows) {
 
 // Visible: the row's load is done, it is not superseded, and no NEWER done load holds the same id (the build preference is applied here, in the query, before any LIMIT; finish supersedes older rows too, this is the second guard).
 const VISIBLE = "l.status = 'done' AND g.superseded = 0 AND g.verdict IN ('holds', 'wrong') AND NOT EXISTS (SELECT 1 FROM game_facts g2 JOIN game_fact_loads l2 ON l2.id = g2.load_id WHERE g2.id = g.id AND g2.load_id <> g.load_id AND l2.status = 'done' AND (l2.finished_at > l.finished_at OR (l2.finished_at = l.finished_at AND l2.started_at > l.started_at)))";
-const COLS = "g.id AS id, g.kind AS kind, g.subject AS subject, g.subject_norm AS subject_norm, g.subject_base AS subject_base, g.claim AS claim, g.value AS value, g.unit AS unit, g.source_table AS source_table, g.row_id AS row_id, g.build AS build, g.verdict AS verdict";
+const COLS = "g.id AS id, g.kind AS kind, g.subject AS subject, g.subject_norm AS subject_norm, g.subject_base AS subject_base, g.claim AS claim, g.value AS value, g.unit AS unit, g.source_table AS source_table, g.row_id AS row_id, g.build AS build, g.note AS note, g.verdict AS verdict";
 const FROM = "FROM game_facts g JOIN game_fact_loads l ON l.id = g.load_id";
 const marks = (n) => Array.from({ length: n }, () => "?").join(", ");
 
@@ -63,7 +63,27 @@ export function buildCuratedSql(fetch) {
   return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind = 'curated' AND ${VISIBLE} LIMIT ?`, binds: [fetch] };
 }
 
-const shape = (r) => ({ id: r.id, kind: r.kind, subject: r.subject, claim: r.claim, value: r.value, unit: r.unit, source_table: r.source_table, row_id: r.row_id, build: r.build });
+// A spell row of the loader carries "rank=4;class=Mage" in its note (tools/facts-load.mjs deriveRankRows). rank is an integer or absent, hint (the class) a short word string or absent; the other fields are unchanged.
+export function parseNote(note) {
+  const out = {};
+  for (const part of String(note || "").split(";")) {
+    const m = /^(rank|class)=(.{1,40})$/.exec(part);
+    if (!m) continue;
+    if (m[1] === "rank" && /^[0-9]{1,3}$/.test(m[2])) out.rank = Number(m[2]);
+    else if (m[1] === "class" && /^[\p{L} '-]{2,30}$/u.test(m[2])) out.hint = m[2];
+  }
+  return out;
+}
+const shape = (r) => ({ id: r.id, kind: r.kind, subject: r.subject, claim: r.claim, value: r.value, unit: r.unit, source_table: r.source_table, row_id: r.row_id, build: r.build, ...parseNote(r.note) });
+const rankOfRow = (r) => parseNote(r.note).rank;
+const KIND_RANK = new Map(NAME_KINDS.map((k, i) => [k, i]));
+// The rank the question asks for next to a chosen name window: "fireball rank 4", "fireball rank iv", or "rank 4 fireball". null when none (then every rank comes back).
+export function askedRank(tokens, win) {
+  const read = (a, b) => { if (a !== "rank") return null; if (/^[0-9]{1,3}$/.test(b || "")) return Number(b); const i = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"].indexOf(b); return i >= 0 ? i + 1 : null; };
+  const after = read(tokens[win.start + win.len], tokens[win.start + win.len + 1]);
+  if (after !== null) return after;
+  return win.start >= 2 ? read(tokens[win.start - 2], tokens[win.start - 1]) : null;
+}
 
 // A window that is the base of a row's name ("arcane spirit" for "arcane spirit iii") counts only when no rank follows it in the question: "Arcane Spirit II" must not return the rank III row on its own.
 const rankFollows = (next) => ROMAN.has(next) || /^[0-9]{1,3}$/.test(next) || next === "rank";
@@ -89,7 +109,7 @@ export function chooseNames(windows, rows) {
     if (!mine.length) continue;
     for (let i = w.start; i < w.start + w.len; i++) taken.add(i);
     for (const x of mine) used.add(x.r.id + "|" + x.r.kind);
-    groups.push({ len: w.len, rows: mine.map((x) => x.r) });
+    groups.push({ len: w.len, start: w.start, rows: mine.map((x) => x.r) });
   }
   return groups;
 }
@@ -112,7 +132,7 @@ async function runAll(env, q) {
 export async function lookupGameFacts(env, question, { limit = 5 } = {}) {
   const empty = { rows: [], doNotSay: [], ambiguous: false, via: "none" };
   const n = Number.isInteger(limit) ? Math.min(20, Math.max(1, limit)) : 5;
-  const { windows } = questionWindows(question);
+  const { tokens, windows } = questionWindows(question);
   const { exact, byBase } = candidateKeys(windows);
   try {
     const fetched = new Map();
@@ -121,9 +141,18 @@ export async function lookupGameFacts(env, question, { limit = 5 } = {}) {
     if (byBase.length) add(await runAll(env, buildNameSql(byBase, "subject_base", 400)));
     const named = chooseNames(windows, [...fetched.values()]);
     const holds = [], wrong = [];
-    let ambiguous = false;
+    let ambiguous = false, rankMissing = false;
     for (const g of named) {
-      const gh = g.rows.filter((r) => r.verdict === "holds"), gw = g.rows.filter((r) => r.verdict === "wrong");
+      // A rank in the question ("Fireball rank 4") picks the rows of that rank when the name has ranked rows; rows without a rank line stay (they are other spells of the same name). A rank no row has returns nothing for that name
+      // and sets rankMissing: stating another rank's number would be wrong. With no rank in the question every rank comes back, lowest rank first, so "when do I get Fireball" sees the whole ladder.
+      const want = askedRank(tokens, { start: g.start, len: g.len });
+      let mine = g.rows;
+      if (want !== null && mine.some((r) => rankOfRow(r) !== undefined)) {
+        mine = mine.filter((r) => rankOfRow(r) === undefined || rankOfRow(r) === want);
+        if (!mine.some((r) => rankOfRow(r) !== undefined)) { rankMissing = true; mine = []; }
+      }
+      mine = [...mine].sort((a, b) => (rankOfRow(a) ?? 1e9) - (rankOfRow(b) ?? 1e9) || KIND_RANK.get(a.kind) - KIND_RANK.get(b.kind) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const gh = mine.filter((r) => r.verdict === "holds"), gw = mine.filter((r) => r.verdict === "wrong");
       const perKind = new Map();
       for (const r of gh) perKind.set(r.kind, (perKind.get(r.kind) || 0) + 1);
       if ([...perKind.values()].some((c) => c > 1)) ambiguous = true;
@@ -133,7 +162,7 @@ export async function lookupGameFacts(env, question, { limit = 5 } = {}) {
     const cur = curatedMatches(question, await runAll(env, buildCuratedSql(300)));
     for (const r of cur) { if (r.verdict === "holds" && holds.length < n) holds.push(r); else if (r.verdict === "wrong") wrong.push(r); }
     const rank = (r) => r.id;
-    return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, via: "names" };
+    return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, ...(rankMissing ? { rankMissing: true } : {}), via: "names" };
   } catch {
     return empty;
   }
