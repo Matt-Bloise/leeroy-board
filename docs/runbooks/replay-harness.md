@@ -64,11 +64,11 @@ Trait kinds (only the eight class trees: 1112 Mage, 1100 Paladin, 1114 Priest, 1
 |---|---|---|
 | `trait_max_ranks` (unit `ranks`) | node `maxRanks` | eligible node |
 | `trait_points_required` (unit `points`) | `conds[0].spentAmountRequired`: points that must be spent in the tree before the talent can be learned | exactly one cond, `condType` 0, currency id > 0, requirement an integer > 0 (no cond, several conds or a currency-0 cond: skipped) |
-| `trait_prereq` (unit `name`) | the prerequisite talent's name | exactly one distinct node in the tree has an edge (`edgesTo`, left to right) to the node; that source node is eligible; neither name contains the other |
+| `trait_prereq` (unit `name`) | the prerequisite talent's name, from the node's `requires` list (TraitEdge type 2: the left node is the prerequisite of the right node; types 0 and 3 have no direction and raw `edgesTo` is never used) | `requires` holds exactly one distinct entry (zero or several: skipped); that source node is in the tree and eligible; neither name contains the other. LIKELY, not sure: 21 of 23 edges comparable with the legacy table agree, the two that differ are in the redesigned Hunter and Warlock trees. INFORMATIONAL |
 
 Records carry `class_name`, rows `traittree` (tree id) and `traitnode` (node id, plus the prerequisite's node id for `trait_prereq`) and `allowed_numbers` from the ids, ranks and requirement of those nodes. `trait_prereq` expects a name, not a number: `expected = {value: "<name>", unit: "name"}`.
 
-Sample size: on build 1.60.1.70959 the three trait kinds have 397, 293 and 61 candidates, each at or above the 30 scored items the bar needs, so they sit under the same per-kind bar as every other kind (`required_kinds` is unchanged: they are not required, but a run that includes them must meet the bar on them). If a future build leaves a kind under 30 candidates, treat that kind as informational and say so in the run report.
+Sample size and the bar: on build 1.60.1.70959 `trait_max_ranks` and `trait_points_required` have 397 and 293 candidates, above the 30 scored items the bar needs, so they sit under the same per-kind bar as every other kind (`required_kinds` is unchanged: they are not required, but a run that includes them must meet the bar on them). `trait_prereq` has 52 candidates but is INFORMATIONAL (`INFORMATIONAL_KINDS` in `pass-bar.mjs`): the run summary reports it as its own kind marked `*` with the label "likely, not counted toward the bar", and it is never part of the pass/fail decision, the sample-size rule or the required-kinds rule. If a future build leaves another kind under 30 candidates, treat that kind as informational too and say so in the run report.
 
 ## Running
 

@@ -19,8 +19,8 @@ import { fileURLToPath } from "node:url";
 import { sha256, loadVerifiedTable, assertOutsideRepo, REPO_ROOT, parseCsv } from "../../tools/replay/common.mjs";
 import { generate, KINDS, TRAIT_KINDS, buildTraitCandidates } from "../../tools/replay/truth-gen.mjs";
 import { exact_match, unsupported_numbers, contradiction, degraded, summarize, extractNumbers } from "../../tools/replay/score.mjs";
-import { PASS_BAR, WITHIN_BUDGET_MS, PAIR_RULE, evaluateBar, evaluatePairRule } from "../../tools/replay/pass-bar.mjs";
-import { runReplay, waitMs, checkBase, buildBody, KNOWN_KINDS } from "../../tools/replay/run.mjs";
+import { PASS_BAR, WITHIN_BUDGET_MS, PAIR_RULE, INFORMATIONAL_KINDS, INFORMATIONAL_LABEL, evaluateBar, evaluatePairRule } from "../../tools/replay/pass-bar.mjs";
+import { runReplay, waitMs, checkBase, buildBody, KNOWN_KINDS, formatSummary } from "../../tools/replay/run.mjs";
 import { buildPackets, mergeGrades } from "../../tools/replay/grade-pack.mjs";
 import { verifyListen, shadowKey } from "../../infrastructure/worker/listener-config.js";
 
@@ -255,25 +255,27 @@ test("pass bar: evaluateBar needs every rate, the sample size and the required k
 });
 
 // ---- traits: fictional trees in a temp dir ----
-const TN = (nodeId, name, maxRanks, { edgesTo = [], conds = [], entryId = nodeId + 5000 } = {}) => ({ nodeId: String(nodeId), entryId: String(entryId), spellId: String(900000 + nodeId), name, maxRanks: String(maxRanks), x: "1", y: "2", type: "0", text: "", edgesTo: edgesTo.map(String), conds });
+const TN = (nodeId, name, maxRanks, { edgesTo = [], conds = [], requires = [], entryId = nodeId + 5000 } = {}) => ({ nodeId: String(nodeId), entryId: String(entryId), spellId: String(900000 + nodeId), name, maxRanks: String(maxRanks), x: "1", y: "2", type: "0", text: "", edgesTo: edgesTo.map(String), conds, requires: requires.map((r) => ({ nodeId: String(r), name: "n" + r, edgeRowId: "1" })), requiredBy: [], linkedWith: [] });
 const COND = (spent, currency = "3820", condType = "0") => ({ condType, spentAmountRequired: String(spent), currency, tab: "1" });
 function traitsObject() {
   const mage = [
     TN(1, "Frobnitz Bolt", 3, { edgesTo: [2, 5, 9] }),
-    TN(2, "Quuxlance", 2, { conds: [COND(5)] }),                       // single source (1): prereq; one cond: points 5
+    TN(2, "Quuxlance", 2, { conds: [COND(5)], requires: [1] }),         // one requires entry (1): prereq; one cond: points 5
     TN(3, "Twinsong", 2, { conds: [COND(5)] }), TN(4, "Twinsong", 1),  // duplicate name: both excluded everywhere
-    TN(5, "Mergepoint", 1, { conds: [COND(10)] }),                     // two incoming (1 and 6): no prereq
+    TN(5, "Mergepoint", 1, { conds: [COND(10)], requires: [1, 6] }),    // two requires entries: no prereq
     TN(6, "Sidestep", 4, { edgesTo: [5] }),
     TN(7, "Doublecond", 2, { conds: [COND(5), COND(8, "0")] }),        // two conds: no points, ranks ok
     TN(8, "Zerocurr", 2, { conds: [COND(5, "0")] }),                   // currency 0 cond: no points
-    TN(9, "Greater Frobnitz Bolt", 1, { conds: [COND(15)] }),          // name contains the source name: no prereq
+    TN(9, "Greater Frobnitz Bolt", 1, { conds: [COND(15)], requires: [1] }),          // name contains the source name: no prereq
     TN(10, "Choice Alpha", 1, { entryId: 7001 }), TN(10, "Choice Beta", 1, { entryId: 7002 }), // one nodeId, two entries
     TN(11, "Zero Rank", 0), TN(12, "?", 2), TN(13, "Cased Name", 2), TN(14, "cased name", 2),
     TN(15, "Orphan Strike", 2, { conds: [COND(0)] }),                  // requirement 0: no points
-    TN(16, "Sourcedup", 2, { edgesTo: [17] }), TN(17, "Sinkone", 2, { conds: [COND(20)] }), // clean pair
-    TN(18, "Twinsong", 2, { edgesTo: [19] }), TN(19, "Sinktwo", 2),    // source name is a duplicate: no prereq
+    TN(16, "Sourcedup", 2, { edgesTo: [17] }), TN(17, "Sinkone", 2, { conds: [COND(20)], requires: [16] }), // clean pair
+    TN(18, "Twinsong", 2, { edgesTo: [19] }), TN(19, "Sinktwo", 2, { requires: [18] }), // source name is a duplicate: no prereq
+    TN(21, "Decoyleft", 2, { edgesTo: [22] }), TN(22, "Decoyright", 2),   // an edge but no requires entry: never inferred from edgesTo
+    TN(23, "Ghostchild", 2, { requires: [999] }),                      // requires a node that is not in the tree: skipped
   ];
-  const paladin = [TN(1, "Quuxlance", 5, { edgesTo: [2] }), TN(2, "Holyfrob", 1, { conds: [COND(30)] })];
+  const paladin = [TN(1, "Quuxlance", 5, { edgesTo: [2] }), TN(2, "Holyfrob", 1, { conds: [COND(30)], requires: [1] })];
   return { build: "9.9.9.TRAITFAKE", source: "fictional", trees: { 1112: { treeId: "1112", system: "10", nodeCount: mage.length, nodes: mage }, 1100: { treeId: "1100", system: "10", nodeCount: paladin.length, nodes: paladin }, 7777: { treeId: "7777", system: "10", nodeCount: 1, nodes: [TN(1, "Notaclass Hit", 3)] } } };
 }
 function writeTraits(dir, obj = traitsObject(), name = "traits.json") { const p = join(dir, name); writeFileSync(p, JSON.stringify(obj)); return p; }
@@ -297,7 +299,7 @@ test("traits: points need exactly one cond with a real currency and a positive i
   assert.ok(out.trait_points_required.every((r) => r.expected.unit === "points"));
   for (const bad of ["Doublecond", "Zerocurr", "Orphan Strike", "Twinsong"]) assert.ok(!(`Mage:${bad}` in got), bad);
 });
-test("traits: prerequisite = the one distinct node with an edge to it; ambiguity is skipped, not guessed", () => {
+test("traits: prerequisite = the single entry of the node's requires list; zero, several, unknown or ineligible sources are skipped, edgesTo is never used", () => {
   const { out } = buildTraitCandidates(traitsObject());
   const got = Object.fromEntries(out.trait_prereq.map((r) => [`${r.class_name}:${r.entity_name}`, r.expected]));
   assert.deepEqual(got, {
@@ -305,14 +307,18 @@ test("traits: prerequisite = the one distinct node with an edge to it; ambiguity
     "Mage:Sinkone": { value: "Sourcedup", unit: "name" },
     "Paladin:Holyfrob": { value: "Quuxlance", unit: "name" },
   });
-  assert.ok(!("Mage:Mergepoint" in got), "two different incoming nodes");
+  assert.ok(!("Mage:Mergepoint" in got), "two requires entries");
   assert.ok(!("Mage:Greater Frobnitz Bolt" in got), "source name contained in the asked name");
   assert.ok(!("Mage:Sinktwo" in got), "the only source has a duplicate name");
+  assert.ok(!("Mage:Decoyright" in got), "an edgesTo edge without a requires entry is not a prerequisite");
+  assert.ok(!("Mage:Ghostchild" in got), "requires names a node that is not in the tree");
   const rec = out.trait_prereq.find((r) => r.id === "trait_prereq-1112-2");
   assert.deepEqual(rec.rows, [{ table: "traittree", id: "1112" }, { table: "traitnode", id: "2" }, { table: "traitnode", id: "1" }]);
   assert.ok(rec.allowed_numbers.includes(1112) && rec.allowed_numbers.includes(5002) && rec.allowed_numbers.includes(5001) && rec.allowed_numbers.includes(900001));
-  // a repeated edge from the same source node (two entries on the source) is still one prerequisite
-  const dupEdge = traitsObject(); dupEdge.trees[1112].nodes.push(TN(20, "Sourcedup2", 2, { edgesTo: [21, 21] }), TN(21, "Sinkthree", 1));
+  // the same source listed twice is still one prerequisite; a bare id is accepted as well as an object
+  const dupEdge = traitsObject(); dupEdge.trees[1112].nodes.push(TN(30, "Sourcedup2", 2), TN(31, "Sinkthree", 1, { requires: [30, 30] }), TN(32, "Sinkfour", 1));
+  dupEdge.trees[1112].nodes.find((n) => n.nodeId === "32").requires = ["30"];
+  assert.ok(buildTraitCandidates(dupEdge).out.trait_prereq.some((r) => r.entity_name === "Sinkfour"));
   assert.ok(buildTraitCandidates(dupEdge).out.trait_prereq.some((r) => r.entity_name === "Sinkthree"));
 });
 test("traits: generate records build and sha256 of the file, names the class in the question, is deterministic; without a traits file nothing changes", () => {
@@ -428,9 +434,24 @@ test("traits bar: trait kinds are known to run.mjs, are not required, and are he
   const good = { exact_scored: 30, exact_rate: 0.9, unsupported_rate: 0.02, degraded_rate: 0.05, within_budget_rate: 0.95 };
   const base = { spell_level: good, item_level_req: good };
   assert.equal(evaluateBar({ by_kind: { ...base, trait_prereq: good } }).pass, true);
+  assert.deepEqual([...INFORMATIONAL_KINDS], ["trait_prereq"]);
+  assert.equal(INFORMATIONAL_LABEL, "likely, not counted toward the bar");
+  const awful = { exact_scored: 2, exact_rate: 0, unsupported_rate: 1, degraded_rate: 1, within_budget_rate: 0 };
+  assert.equal(evaluateBar({ by_kind: { ...base, trait_prereq: awful } }).pass, true, "an informational kind never fails the bar");
+  assert.equal(evaluateBar({ by_kind: { trait_prereq: good } }).pass, false, "an informational kind never satisfies the required kinds");
   assert.equal(evaluateBar({ by_kind: base }).pass, true, "a run without trait items still passes on the required kinds");
-  const r = evaluateBar({ by_kind: { ...base, trait_prereq: { ...good, exact_scored: 29 }, trait_max_ranks: { ...good, exact_rate: 0.5 } } });
-  assert.equal(r.pass, false); assert.ok(r.failures.some((f) => f.startsWith("trait_prereq: only 29")) && r.failures.some((f) => f.startsWith("trait_max_ranks: exact_rate")));
+  const r = evaluateBar({ by_kind: { ...base, trait_max_ranks: { ...good, exact_scored: 29 }, trait_points_required: { ...good, exact_rate: 0.5 } } });
+  assert.equal(r.pass, false); assert.ok(r.failures.some((f) => f.startsWith("trait_max_ranks: only 29")) && r.failures.some((f) => f.startsWith("trait_points_required: exact_rate")));
+});
+test("traits summary: trait_prereq is its own row marked likely and not counted; the verdict ignores it", () => {
+  const row = (kind, exact) => ({ kind, scored: true, status: "answered", reason: "ok", model: "m", latency_ms: 1000, scores: { exact, unsupported_count: 0 } });
+  const rows = [];
+  for (const k of ["spell_level", "item_level_req"]) for (let i = 0; i < 30; i++) rows.push(row(k, true));
+  for (let i = 0; i < 5; i++) rows.push(row("trait_prereq", false));
+  const text = formatSummary(rows);
+  assert.match(text, /trait_prereq \*/);
+  assert.match(text, /\* trait_prereq: likely, not counted toward the bar/);
+  assert.match(text, /pass bar: PASS/);
 });
 
 // ---- run: stub of the shadow route ----

@@ -19,7 +19,7 @@ import { MAX_QUESTION_CHARS } from "../../infrastructure/worker/limits.js";
 import { appendOut, assertOutsideRepo, readJsonl, sha256, parseArgs, die, withLock, DEFAULT_OUT_DIR } from "./common.mjs";
 import { KINDS, TRAIT_KINDS } from "./truth-gen.mjs";
 import { scoreTruthItem, summarize, withinBudget, degraded } from "./score.mjs";
-import { evaluateBar, PASS_BAR } from "./pass-bar.mjs";
+import { evaluateBar, PASS_BAR, INFORMATIONAL_KINDS, INFORMATIONAL_LABEL } from "./pass-bar.mjs";
 
 export const SHADOW_PER_HOUR = 6;
 export const SHADOW_PER_DAY = 20;
@@ -193,12 +193,14 @@ export function formatSummary(rows) {
   const lines = [];
   const row = (label, g) => `${label.padEnd(16)} ${String(g.n).padStart(4)} ${String(g.scored).padStart(6)} ${String(g.exact_scored).padStart(6)} ${pct(g.exact_rate)} ${pct(g.unsupported_rate)} ${pct(g.degraded_rate)} ${pct(g.within_budget_rate)} ${ms(g.latency_p50_ms)} ${ms(g.latency_p95_ms)}`;
   lines.push(`${"kind".padEnd(16)} ${"n".padStart(4)} ${"scored".padStart(6)} ${"truth".padStart(6)} ${"exact".padStart(6)} ${"unsup".padStart(6)} ${"degr".padStart(6)} ${"budget".padStart(6)} ${"p50ms".padStart(6)} ${"p95ms".padStart(6)}`);
-  for (const [k, g] of Object.entries(s.by_kind).sort()) lines.push(row(k, g));
+  for (const [k, g] of Object.entries(s.by_kind).sort()) lines.push(row(INFORMATIONAL_KINDS.includes(k) ? `${k} *` : k, g));
   lines.push(row("ALL", s));
   if (results.some((r) => r.scores && typeof r.scores.exact === "boolean")) {
     const v = evaluateBar(s);
     lines.push(v.pass ? "pass bar: PASS" : "pass bar: FAIL (a first run against a Worker with no game_facts table is expected to fail: it is the baseline)");
     for (const f of v.failures) lines.push(`  - ${f}`);
+    const info = INFORMATIONAL_KINDS.filter((k) => s.by_kind[k]);
+    if (info.length) lines.push(`* ${info.join(", ")}: ${INFORMATIONAL_LABEL} (reported, never in the pass/fail decision or the required kinds)`);
     lines.push(`bar: exact >= ${PASS_BAR.exact_rate_min}, unsupported <= ${PASS_BAR.unsupported_rate_max}, degraded <= ${PASS_BAR.degraded_rate_max}, budget >= ${PASS_BAR.within_budget_rate_min}, >= ${PASS_BAR.min_scored_per_kind} scored per kind`);
   }
   return lines.join("\n");

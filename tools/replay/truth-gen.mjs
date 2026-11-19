@@ -21,7 +21,9 @@
 // (case-insensitive) in that tree, well-formed, and not the "?" fallback; anything else is skipped, never guessed.
 //   trait_max_ranks        maxRanks (integer > 0) of an eligible node.
 //   trait_points_required  the node has exactly one cond, condType 0, currency id > 0, spentAmountRequired an integer > 0 (nodes with no cond, several conds or a currency-0 cond are skipped).
-//   trait_prereq           exactly one distinct node in the tree has an edge to the node (edgesTo: left -> right, left is the prerequisite), that source node is itself eligible, and neither name contains the other.
+//   trait_prereq           the node's own `requires` list (derived from TraitEdge type 2: left is the prerequisite of right; types 0 and 3 have no direction and are never used, raw edgesTo is never used) has exactly one
+//                          distinct entry, that source node is in the tree and itself eligible, and neither name contains the other. Zero or several entries: skipped. LIKELY, not sure (21 of 23 legacy-comparable edges
+//                          agree; the two that differ are in redesigned trees): informational in pass-bar.mjs.
 //                          expected.value is the prerequisite's NAME (unit "name"); score.mjs matches the name after removing the asked talent's own name from the answer.
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
@@ -204,8 +206,6 @@ export function buildTraitCandidates(traits) {
     }
     const eligible = (n) => n && idCount.get(String(n.nodeId)) === 1 && NAME_OK(n.name) && nameCount.get(key(n.name)) === 1 && Number.isInteger(Number(n.maxRanks)) && Number(n.maxRanks) > 0;
     const byId = new Map(nodes.filter((n) => idCount.get(String(n.nodeId)) === 1).map((n) => [String(n.nodeId), n]));
-    const incoming = new Map(); // right node id -> Set of distinct left node ids
-    for (const n of byId.values()) for (const r of Array.isArray(n.edgesTo) ? n.edgesTo : []) { if (!incoming.has(String(r))) incoming.set(String(r), new Set()); incoming.get(String(r)).add(String(n.nodeId)); }
     const nodeNums = (n) => [treeId, Number(n.nodeId), Number(n.entryId), Number(n.spellId), Number(n.maxRanks)];
     const mk = (kind, n, value, extraRows, nums) => ({
       id: `${kind}-${treeId}-${n.nodeId}`, kind, question: null, expected: { value, unit: UNIT[kind] },
@@ -220,9 +220,10 @@ export function buildTraitCandidates(traits) {
         const need = Number(cs[0].spentAmountRequired);
         out.trait_points_required.push(mk("trait_points_required", n, need, [], [...nodeNums(n), need, Number(cs[0].currency)]));
       }
-      const inc = incoming.get(String(n.nodeId));
-      if (inc && inc.size === 1) {
-        const src = byId.get([...inc][0]);
+      // The node's own `requires` list (TraitEdge type 2, left is the prerequisite). Raw edgesTo is never used. Exactly one distinct entry; zero or several: skipped.
+      const req = [...new Set((Array.isArray(n.requires) ? n.requires : []).map((r) => String(r && typeof r === "object" ? r.nodeId : r)))];
+      if (req.length === 1) {
+        const src = byId.get(req[0]);
         if (!src || src === n || !eligible(src)) continue;
         const a = key(n.name), b = key(src.name);
         if (a.includes(b) || b.includes(a)) continue;
@@ -263,7 +264,7 @@ export function generate({ dir, seed = 1, perKind = 40, manifestSha256 = null, t
     header.traits = traitInfo;
     header.columns.trait_max_ranks = "traits.json node.maxRanks (unique name in the class tree)";
     header.columns.trait_points_required = "traits.json node.conds[0].spentAmountRequired (exactly one cond)";
-    header.columns.trait_prereq = "traits.json: the single node whose edgesTo holds the asked node (left is the prerequisite)";
+    header.columns.trait_prereq = "traits.json node.requires: exactly one entry (TraitEdge type 2, left is the prerequisite); likely, informational";
   }
   const lines = [];
   for (const kind of kinds) {
