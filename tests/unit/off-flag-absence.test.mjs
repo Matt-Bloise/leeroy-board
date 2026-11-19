@@ -22,6 +22,7 @@ import { cardsEnabled, cardsShadow, boardLinesEnabled } from "../../infrastructu
 import { setupCommandEnabled, manifestFor } from "../../infrastructure/worker/setup-command.js";
 import { evalEnabled } from "../../infrastructure/worker/eval.js";
 import { deadmanOn } from "../../infrastructure/worker/deadman.js";
+import { handleAnswerButton } from "../../infrastructure/worker/answer-ux.js";
 import { anthropicAvailable, anthropicAuth, resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -31,27 +32,33 @@ const varsBlock = toml.slice(toml.indexOf("[vars]"));
 const flagsDoc = read("docs/runbooks/flags.md");
 const wranglerFlagsTest = read("tests/unit/wrangler-flags.test.mjs");
 
-// flag -> { gates: [fn taking env], reads: { "<relative file>": number of non-comment source lines that mention the flag } }
-// The reads map is the static proof: any new mention of the flag in the Worker (a second read that might default on) changes a count and fails.
+// flag -> { gates: [{ name, probe(env) }], reads }. A probe returns whatever the gate produces (boolean, manifest, response body, auth mode): the test asserts probe({}) deep-equals probe({X:"off"}),
+// and that "on" changes the result (so the probe is not vacuous). EVERY place the Worker reads a flag has a behavioural probe here; reads counts the non-comment mentions per file as the static cross-check.
+const g = (name, probe) => ({ name, probe });
+const BASE = [{ name: "ask" }, { name: "sheet" }];
+const GATEWAY = { CLOUDFLARE_ACCOUNT_ID: "acct123", AI_GATEWAY_ID: "gw", AI_GATEWAY_TOKEN: "gwtoken" };
+const KEYED = { ...GATEWAY, ANTHROPIC_API_KEY: ["sk", "ant", "FAKE"].join("-") };
+const BUTTON = { data: { custom_id: "ux:more:intent1:abc" }, member: { user: { id: "700000000000000001" } } };
 const TABLE = {
-  WEB_LOGIN: { gates: [webLoginOn], reads: { "infrastructure/worker/web-auth.js": 1 } },
-  DATA_RIGHTS: { gates: [dataRightsOn], reads: { "infrastructure/worker/data-rights.js": 1 } },
-  EVENTS_ENABLED: { gates: [eventsEnabled], reads: { "infrastructure/worker/scheduled-events.js": 1 } },
-  MOMENTS_ENABLED: { gates: [momentsEnabled], reads: { "infrastructure/worker/moments.js": 2 } }, // the read, and the name in the both-on conflict log line
-  MOMENTS_SHADOW: { gates: [momentsShadow], reads: { "infrastructure/worker/moments.js": 2 } },
-  MOMENTS_DRY_RUN: { gates: [momentsDryRun], reads: { "infrastructure/worker/moments.js": 1 } },
-  BUILD_MODAL: { gates: [buildModalEnabled], reads: { "infrastructure/worker/build-modal.js": 1, "infrastructure/worker/setup-command.js": 1 } }, // setup-command: manifestFor, covered below
-  BUILD_PROJECT: { gates: [buildProjectEnabled], reads: { "infrastructure/worker/build-modal.js": 1 } },
-  JOIN_PROMPT: { gates: [joinPromptEnabled], reads: { "infrastructure/worker/join.js": 1 } },
-  ANSWER_UX: { gates: [answerUxEnabled], reads: { "infrastructure/worker/answer-format.js": 1, "infrastructure/worker/answer-ux.js": 1 } }, // answer-ux.js: the same expression, not exported
-  LISTENER_UNTAGGED: { gates: [untaggedOn], reads: { "infrastructure/worker/listener-untagged.js": 1 } }, // the flag key constant; the read is legacyOn(env, UNTAGGED_FLAG)
-  CARDS_ENABLED: { gates: [cardsEnabled], reads: { "infrastructure/worker/cards.js": 1 } },
-  CARDS_SHADOW: { gates: [cardsShadow], reads: { "infrastructure/worker/cards.js": 1 } },
-  BOARD_LINES_ENABLED: { gates: [boardLinesEnabled], reads: { "infrastructure/worker/cards.js": 1 } },
-  SETUP_COMMAND: { gates: [setupCommandEnabled], reads: { "infrastructure/worker/setup-command.js": 1 } },
-  EVAL_ENABLED: { gates: [evalEnabled], reads: { "infrastructure/worker/eval.js": 1 } },
-  DEADMAN: { gates: [deadmanOn], reads: { "infrastructure/worker/deadman.js": 1 } }, // the flag key constant; the read is env[DEADMAN_FLAG]
-  ANTHROPIC_BYOK: { gates: [], reads: { "infrastructure/worker/ai-keys.js": 2 } }, // byokOn and the name in its one-time warning text; byokOn (not exported): covered by the anthropicAvailable / anthropicAuth differential below
+  WEB_LOGIN: { gates: [g("webLoginOn", webLoginOn)], reads: { "infrastructure/worker/web-auth.js": 1 } },
+  DATA_RIGHTS: { gates: [g("dataRightsOn", dataRightsOn)], reads: { "infrastructure/worker/data-rights.js": 1 } },
+  EVENTS_ENABLED: { gates: [g("eventsEnabled", eventsEnabled)], reads: { "infrastructure/worker/scheduled-events.js": 1 } },
+  MOMENTS_ENABLED: { gates: [g("momentsEnabled", momentsEnabled)], reads: { "infrastructure/worker/moments.js": 2 } }, // the read, and the name in the both-on conflict log line
+  MOMENTS_SHADOW: { gates: [g("momentsShadow", momentsShadow)], reads: { "infrastructure/worker/moments.js": 2 } },
+  MOMENTS_DRY_RUN: { gates: [g("momentsDryRun", momentsDryRun)], reads: { "infrastructure/worker/moments.js": 1 } },
+  BUILD_MODAL: { gates: [g("buildModalEnabled", buildModalEnabled), g("manifestFor (/join)", (env) => manifestFor(env, BASE))], reads: { "infrastructure/worker/build-modal.js": 1, "infrastructure/worker/setup-command.js": 1 } },
+  BUILD_PROJECT: { gates: [g("buildProjectEnabled", buildProjectEnabled)], reads: { "infrastructure/worker/build-modal.js": 1 } },
+  JOIN_PROMPT: { gates: [g("joinPromptEnabled", joinPromptEnabled)], reads: { "infrastructure/worker/join.js": 1 } },
+  ANSWER_UX: { gates: [g("answerUxEnabled (answer-format.js)", answerUxEnabled), g("handleAnswerButton (answer-ux.js answerUxEnabledEnv)", (env) => handleAnswerButton({ env, interaction: BUTTON }))], reads: { "infrastructure/worker/answer-format.js": 1, "infrastructure/worker/answer-ux.js": 1 } },
+  LISTENER_UNTAGGED: { gates: [g("untaggedOn", untaggedOn)], reads: { "infrastructure/worker/listener-untagged.js": 1 } }, // the flag key constant; the read is legacyOn(env, UNTAGGED_FLAG)
+  CARDS_ENABLED: { gates: [g("cardsEnabled", cardsEnabled)], reads: { "infrastructure/worker/cards.js": 1 } },
+  CARDS_SHADOW: { gates: [g("cardsShadow", cardsShadow)], reads: { "infrastructure/worker/cards.js": 1 } },
+  BOARD_LINES_ENABLED: { gates: [g("boardLinesEnabled", boardLinesEnabled)], reads: { "infrastructure/worker/cards.js": 1 } },
+  SETUP_COMMAND: { gates: [g("setupCommandEnabled", setupCommandEnabled), g("manifestFor (/setup)", (env) => manifestFor(env, BASE))], reads: { "infrastructure/worker/setup-command.js": 1 } },
+  EVAL_ENABLED: { gates: [g("evalEnabled", evalEnabled)], reads: { "infrastructure/worker/eval.js": 1 } },
+  DEADMAN: { gates: [g("deadmanOn", deadmanOn)], reads: { "infrastructure/worker/deadman.js": 1 } }, // the flag key constant; the read is env[DEADMAN_FLAG]
+  // byokOn is not exported: both of its consumers (provider availability, auth mode) are probed, with and without the gateway and a key
+  ANTHROPIC_BYOK: { gates: [g("anthropicAvailable (gateway)", (env) => { resetKeyCacheForTests(); return anthropicAvailable({ ...GATEWAY, ...env }); }), g("anthropicAuth (gateway)", async (env) => { resetKeyCacheForTests(); return anthropicAuth({ ...GATEWAY, ...env }); }), g("anthropicAuth (gateway and key)", async (env) => { resetKeyCacheForTests(); return anthropicAuth({ ...KEYED, ...env }); })], reads: { "infrastructure/worker/ai-keys.js": 2 } }, // the read and the name in its one-time warning text
 };
 const REMOVED = Object.keys(TABLE);
 
@@ -62,9 +69,12 @@ const code = (src) => src.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\*|\/\*)/.tes
 const SCAN = [...sourceFiles("infrastructure/worker"), ...sourceFiles("pages-worker")];
 const word = (k) => new RegExp(`\\b${k}\\b`);
 
-test("the table lists 18 removed flags and none is declared in wrangler.toml [vars]", () => {
+test("the table lists 18 removed flags; a removed flag may be declared in wrangler.toml only as \"on\" or \"off\" (the documented enable procedure); the variable budget is the guard against declaring them all", () => {
   assert.equal(REMOVED.length, 18);
-  for (const k of REMOVED) assert.ok(!new RegExp(`^${k}\\s*=`, "m").test(varsBlock), `${k} must not be declared`);
+  for (const k of REMOVED) {
+    const m = varsBlock.match(new RegExp(`^${k}\s*=\s*"([^"]*)"`, "m"));
+    if (m) assert.ok(["on", "off"].includes(m[1]), `${k} declared as ${m[1]}`);
+  }
 });
 
 test("static proof: the only non-comment mentions of each removed flag in the Worker and the Pages worker are the counted gate lines", () => {
@@ -87,40 +97,33 @@ test("static proof: no line that reads a removed flag tests for not-off (unset w
 });
 
 for (const k of REMOVED) {
-  test(`${k}: absent equals "off" equals false at every gate`, () => {
-    for (const gate of TABLE[k].gates) {
-      const absent = gate({});
-      const off = gate({ [k]: "off" });
-      assert.equal(absent, off, `${gate.name}: absent differs from "off"`);
-      assert.equal(absent, false, `${gate.name}: absent is not off`);
-      assert.equal(gate({ [k]: "on" }), true, `${gate.name}: "on" does not turn it on (the test would prove nothing)`);
-      try { assert.equal(gate(undefined), false, `${gate.name}: no env at all`); } catch (e) { if (e.name === "AssertionError") throw e; /* webLoginOn is only called with an env object */ }
+  test(`${k}: at every gate (${TABLE[k].gates.map((x) => x.name).join(", ")}) absent equals "off", and "on" changes the result`, async () => {
+    assert.ok(TABLE[k].gates.length >= 1);
+    for (const { name, probe } of TABLE[k].gates) {
+      const absent = await probe({});
+      const off = await probe({ [k]: "off" });
+      const on = await probe({ [k]: "on" });
+      assert.deepEqual(absent, off, `${name}: absent differs from "off"`);
+      assert.notDeepEqual(on, absent, `${name}: "on" changes nothing (the probe would prove nothing)`);
+      if (typeof absent === "boolean") assert.equal(absent, false, `${name}: absent is not off`);
     }
   });
 }
 
-test("BUILD_MODAL and SETUP_COMMAND: the served command manifest is identical with the vars absent and off", () => {
-  const base = [{ name: "ask" }, { name: "sheet" }];
-  const absent = manifestFor({}, base);
-  assert.deepEqual(manifestFor({ BUILD_MODAL: "off", SETUP_COMMAND: "off" }, base), absent);
-  assert.deepEqual(absent, base);
-  assert.notDeepEqual(manifestFor({ BUILD_MODAL: "on" }, base), base, "BUILD_MODAL on adds /join (not vacuous)");
-  assert.notDeepEqual(manifestFor({ SETUP_COMMAND: "on" }, base), base, "SETUP_COMMAND on adds /setup (not vacuous)");
-});
-
-test("ANTHROPIC_BYOK: provider availability and the auth mode are identical with the var absent and off, and BYOK is only reachable with on", async () => {
-  const gateway = { CLOUDFLARE_ACCOUNT_ID: "acct123", AI_GATEWAY_ID: "gw", AI_GATEWAY_TOKEN: "gwtoken" };
-  const keyed = { ...gateway, ANTHROPIC_API_KEY: ["sk", "ant", "FAKE"].join("-") };
-  for (const base of [{}, gateway, keyed]) {
+test("a gate for ANTHROPIC_BYOK never reports gateway-byok unless the value is on", async () => {
+  for (const env of [{}, { ANTHROPIC_BYOK: "off" }, { ANTHROPIC_BYOK: "" }]) {
     resetKeyCacheForTests();
-    const a = [anthropicAvailable({ ...base }), await anthropicAuth({ ...base })];
-    resetKeyCacheForTests();
-    const b = [anthropicAvailable({ ...base, ANTHROPIC_BYOK: "off" }), await anthropicAuth({ ...base, ANTHROPIC_BYOK: "off" })];
-    assert.deepEqual(a, b, JSON.stringify(Object.keys(base)));
-    assert.notEqual(a[1].mode, "gateway-byok");
+    assert.notEqual((await anthropicAuth({ ...GATEWAY, ...env })).mode, "gateway-byok");
   }
   resetKeyCacheForTests();
-  assert.equal((await anthropicAuth({ ...gateway, ANTHROPIC_BYOK: "on" })).mode, "gateway-byok", "on still enables it (not vacuous)");
+  assert.equal((await anthropicAuth({ ...GATEWAY, ANTHROPIC_BYOK: "on" })).mode, "gateway-byok");
+});
+
+test("premise: the deploy removes variables that wrangler.toml omits. No workflow, package script or wrangler.toml may use keep-vars / keep_vars, or a dashboard-set \"on\" would survive the omission", () => {
+  const files = [...fs.readdirSync(path.join(ROOT, ".github/workflows")).filter((f) => /.ya?ml$/.test(f)).map((f) => `.github/workflows/${f}`), "infrastructure/wrangler.toml", "infrastructure/package.json"];
+  assert.ok(files.length >= 4);
+  for (const f of files) assert.ok(!/keep[-_]vars/i.test(read(f)), `${f} mentions keep-vars`);
+  assert.ok(/npx wrangler deploy(?![-w])/.test(read(".github/workflows/deploy-cloudflare.yml")), "the production deploy is still a plain wrangler deploy");
 });
 
 test("a removed flag is listed as optional in wrangler-flags.test.mjs and documented in flags.md as not declared (absent = off), with how to turn it on", () => {

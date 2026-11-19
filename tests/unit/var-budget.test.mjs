@@ -40,7 +40,7 @@ test("the three SHADOW_ASK_* tuning vars and the two DEADMAN_* tuning vars are n
   assert.ok(names.includes("SHADOW_ASK") && !names.includes("DEADMAN"), "DEADMAN is an optional flag now (absent = off), see off-flag-absence.test.mjs");
 });
 
-// Headroom bought back by not declaring the 18 flags the code already reads as off when absent (docs/runbooks/flags.md, off-flag-absence.test.mjs): 52 text variables + 9 secrets = 61 became 34 + 9 = 43.
+// Headroom bought back by not declaring the 18 flags the code already reads as off when absent (docs/runbooks/flags.md, off-flag-absence.test.mjs): on master 51 text variables + 9 secrets = 60 became 33 + 9 = 42.
 // The budget above stays 62; this pins that at least ten of the slots below it stay free so the next flags do not need another round of folding.
 test("at least 10 slots stay free under the budget (total <= 52)", () => {
   assert.ok(total() <= BUDGET - 10, `${total()} variables: more than ${BUDGET - 10}; fold flags or leave default-off ones undeclared (see off-flag-absence.test.mjs)`);
