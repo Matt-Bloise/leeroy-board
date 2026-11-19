@@ -41,31 +41,8 @@ Stale text found: `infrastructure/README.md:62` says `GET /data/:name` has no al
 | Secret values | No | The repo does not and must not store them. Keep the originals in the owner's password manager. Whether Cloudflare can show a Worker secret back is unverified; assume not. |
 | Anything older than the Time Travel window with no export | No | Not recoverable |
 
-**Virtual tables and `wrangler d1 export`.** Migration 0016 adds the FTS5 virtual table `game_facts_fts`. The Cloudflare changelog of 2026-11-12 says export now works for databases with virtual tables when `--compatibility sqlite3_cli_only` is passed, and that such a dump cannot be imported back into D1; the import/export page, as read on 2026-11-19, still says export is not supported for virtual tables and recommends dropping them first. Which is true for this database is unverified. For a dump you intend to restore into D1, drop the index first, then recreate it afterwards. Run these through `wrangler d1 execute leeroy-board-db --remote --command ...` (one statement per call) or a file:
+**`game_facts` and `wrangler d1 export`.** The game-facts store (migration 0016, `docs/runbooks/game-facts.md`) is two plain tables and two indexes: no virtual table and no trigger, so a plain `wrangler d1 export` works. A first version used an FTS5 virtual table, and on a real D1 that made the export fail ("cannot export databases with virtual tables"); the PR preview run now exports its own D1 after loading synthetic facts, fails if the export fails, and checks that the dump holds the `game_facts` rows. `GET /api/admin/export` leaves `game_facts` and `game_fact_loads` out (derived from files on the owner's PC, reloadable with `tools/facts-load.mjs`; `game_facts` is `WITHOUT ROWID`, which that route's rowid paging cannot walk); Time Travel and a plain `wrangler d1 export` carry them.
 
-```sql
--- before the export: drop the triggers AND the index (dropping only the table would make every game_facts write fail)
-DROP TRIGGER IF EXISTS game_facts_ai;
-DROP TRIGGER IF EXISTS game_facts_ad;
-DROP TRIGGER IF EXISTS game_facts_au;
-DROP TABLE IF EXISTS game_facts_fts;
--- ... run the export ...
--- after the export: recreate, then rebuild the index from game_facts
-CREATE VIRTUAL TABLE IF NOT EXISTS game_facts_fts USING fts5(subject, claim, content = 'game_facts', content_rowid = 'rowid', tokenize = 'porter unicode61');
-CREATE TRIGGER IF NOT EXISTS game_facts_ai AFTER INSERT ON game_facts BEGIN
-  INSERT INTO game_facts_fts(rowid, subject, claim) VALUES (new.rowid, new.subject, new.claim);
-END;
-CREATE TRIGGER IF NOT EXISTS game_facts_ad AFTER DELETE ON game_facts BEGIN
-  INSERT INTO game_facts_fts(game_facts_fts, rowid, subject, claim) VALUES ('delete', old.rowid, old.subject, old.claim);
-END;
-CREATE TRIGGER IF NOT EXISTS game_facts_au AFTER UPDATE OF subject, claim ON game_facts BEGIN
-  INSERT INTO game_facts_fts(game_facts_fts, rowid, subject, claim) VALUES ('delete', old.rowid, old.subject, old.claim);
-  INSERT INTO game_facts_fts(rowid, subject, claim) VALUES (new.rowid, new.subject, new.claim);
-END;
-INSERT INTO game_facts_fts(game_facts_fts) VALUES ('rebuild');
-```
-
-The recreate statements are exactly the FTS part of `infrastructure/migrations/0016_game_facts.sql`; re-running that whole file is equivalent (it is idempotent). Loader writes made while the index is dropped are indexed by the final `rebuild`. `GET /api/admin/export` and Time Travel are not affected (the index is derived and skipped). See `docs/runbooks/game-facts.md`.
 Recommended gap fill (still not scheduled): a weekly export to private storage outside the repository, stored encrypted. `GET /api/admin/export` plus `tools/pull-export.mjs` (below) leaves out member key hashes and session tokens; a raw `wrangler d1 export` contains them.
 
 ## Restore drill (scratch database)

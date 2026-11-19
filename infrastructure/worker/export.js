@@ -12,7 +12,7 @@
 // reads per table and no row scans. The caller loops until next is null (tools/pull-export.mjs does).
 // What is NEVER exported (the single source for this list; tests/unit/export.test.mjs checks it against schema.sql):
 //   tables  sessions, sessions_v2 (session token hashes), provider_tokens (encrypted OAuth tokens), account_keys (key hashes),
-//           guest_rate_limits (hashed visitor addresses, short lived), plus anything SQLite, Cloudflare or the migration bookkeeping owns
+//           guest_rate_limits (hashed visitor addresses, short lived), game_facts and game_fact_loads (derived from files on the owner's PC and reloadable from there; plain `wrangler d1 export` and Time Travel carry them), plus anything SQLite, Cloudflare or the migration bookkeeping owns
 //   columns members.key_hash (the member's salted key hash: keys are re-issued after a restore)
 //   rows    kv_state keys starting with `secret` (the Worker never serves them) and `feed_cache:` (a derived cache)
 // Everything else is exported, including pseudonymous hashes that a restore needs as keys (user_state.user_key, answer_feedback.user_hash,
@@ -26,6 +26,8 @@ export const EXCLUDED_TABLES = Object.freeze({
   sessions_v2: "web session token hashes",
   provider_tokens: "encrypted OAuth access and refresh tokens",
   account_keys: "account key hashes",
+  game_facts: "derived from the Forever client tables and a curated file on the owner's PC and reloadable from there (WITHOUT ROWID, so it has no rowid to page by); a plain wrangler d1 export and Time Travel carry it",
+  game_fact_loads: "the load log of game_facts: meaningless without those rows, reloaded with them",
   guest_rate_limits: "hashed visitor addresses, short-lived counters",
 });
 export const EXCLUDED_COLUMNS = Object.freeze({
@@ -36,7 +38,7 @@ export const ROW_FILTERS = Object.freeze({
   kv_state: "key NOT LIKE 'secret%' AND key NOT LIKE 'feed_cache:%'",
 });
 export const PAGE = Object.freeze({ default: 200, max: 1000 });
-const SYSTEM_TABLE = /^(sqlite_|_cf_|d1_|game_facts_fts)/; // game_facts_fts and its shadow tables (_data, _idx, _docsize, _config) are the derived FTS5 index of game_facts: rebuilt by the triggers, never exported
+const SYSTEM_TABLE = /^(sqlite_|_cf_|d1_)/;
 const IDENT = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });

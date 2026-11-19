@@ -1,73 +1,106 @@
 // Game-facts lookup: lookupGameFacts(env, question, { limit }). docs/runbooks/game-facts.md. NOT wired into any answer path in this PR; a later PR runs it before the Claude hop.
-// What it returns (and ONLY this): rows { id, claim, value, source_table, row_id, build } that HOLD, and separately doNotSay rows (verdict 'wrong') that match the question, in the same shape.
-// A row counts only while its load is 'done' and it is not superseded; a row of an open or failed load is invisible. unverifiable rows are not returned.
-// The question is never put into SQL: tokens are cut out of it (letters and digits only), reserved words and stop words dropped, each token double-quoted for FTS5 and bound as a parameter. An FTS5 operator, quote, column filter,
-// NEAR, prefix star or caret in the question therefore can only ever become a plain quoted word. If the FTS5 query cannot run (no FTS5, no index) a LIKE query over the same tokens answers instead.
-export const LOOKUP_MAX_TOKENS = 12;
-export const LOOKUP_MAX_CHARS = 600; // the question is cut to this many characters before tokenising
-const FTS_RESERVED = new Set(["and", "or", "not", "near"]);
+// No full-text index: the question is folded with the SAME normaliser the loader used (game-facts-name.js), cut into word windows (longest first), and the windows are looked up as names through the (kind, subject_norm) index and, for
+// "Arcane Spirit" finding "Arcane Spirit III", the partial (kind, subject_base) index. Curated facts (kind 'curated', a sentence each, a few hundred rows) are matched on their words instead.
+// Returns { rows, doNotSay, ambiguous, via }. A row is { id, kind, subject, claim, value, unit, source_table, row_id, build }. ALL rows that share a matched name come back, with their ids: when one name has several rows of the same kind
+// (a spell with three rows, ranks of one talent) ambiguous is true and nothing is picked silently. Wrong rows (verdict 'wrong') come back separately as doNotSay. Unverifiable rows are not returned.
+// A row is visible only while its load is 'done', it is not superseded, and no NEWER done load holds the same id (so the newest build wins, in the query, before any limit).
+// The question never reaches SQL as text: every value is a bound parameter built from letters and digits only. A database error answers empty; it never throws.
+import { normName, tokensOfNorm, ROMAN } from "./game-facts-name.js";
+import { FACT_KINDS } from "./game-facts.js";
+
+export const LOOKUP_MAX_QUESTION_CHARS = 600;
+export const LOOKUP_MAX_TOKENS = 24;
+export const LOOKUP_MAX_WINDOW = 6;
+export const LOOKUP_MAX_KEYS = 90; // D1 allows 100 bound values per statement
+const NAME_KINDS = FACT_KINDS.filter((k) => k !== "curated");
+const KIND_LIST = NAME_KINDS.map((k) => `'${k}'`).join(", "); // constants, never input
 const STOP = new Set(["a", "an", "the", "of", "to", "in", "on", "at", "is", "are", "was", "were", "be", "it", "its", "do", "does", "did", "i", "me", "my", "you", "your", "we", "can", "could", "would", "should",
-  "what", "whats", "which", "who", "whom", "when", "where", "why", "how", "for", "from", "with", "and", "or", "not", "near", "tell", "about", "please", "get", "have", "has", "had", "that", "this", "there", "then", "than", "if", "so", "as", "by"]);
-// Words that describe the KIND of fact asked for. They narrow a lookup when a name token is present, and are used alone only when nothing else is left.
+  "what", "whats", "which", "who", "whom", "when", "where", "why", "how", "for", "from", "with", "and", "or", "not", "tell", "about", "please", "get", "have", "has", "had", "that", "this", "there", "then", "than", "if", "so", "as", "by"]);
+// Words that name the KIND of fact asked for; they are never a curated search word on their own.
 const GENERIC = new Set(["level", "levels", "cooldown", "cooldowns", "cast", "casts", "casting", "time", "mana", "cost", "costs", "required", "requires", "require", "requirement", "rank", "ranks", "point", "points", "spell", "spells",
   "talent", "talents", "item", "items", "much", "many", "long", "seconds", "second", "sec", "minimum", "min", "need", "needs", "learn", "available", "equip", "take", "takes", "use", "max", "maximum", "prerequisite", "prerequisites", "trait"]);
 
-// -> { specific: [...], generic: [...] }, lower-case, deduplicated, at most LOOKUP_MAX_TOKENS in all.
-export function extractTokens(question) {
-  const text = String(question == null ? "" : question).slice(0, LOOKUP_MAX_CHARS).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  const seen = new Set();
-  const specific = [];
-  const generic = [];
-  for (const t of text.match(/[\p{L}\p{N}]+/gu) || []) {
-    if (t.length < 2 || t.length > 40 || FTS_RESERVED.has(t) || STOP.has(t) || seen.has(t)) continue;
-    seen.add(t);
-    if (specific.length + generic.length >= LOOKUP_MAX_TOKENS) break;
-    (GENERIC.has(t) ? generic : specific).push(t);
+// -> { tokens, windows: [{ key, start, len, next }] }. Windows of 1 to LOOKUP_MAX_WINDOW words; a one-word window that is a stop word is never a name.
+export function questionWindows(question) {
+  const norm = normName(String(question == null ? "" : question).slice(0, LOOKUP_MAX_QUESTION_CHARS));
+  const tokens = tokensOfNorm(norm).filter((t) => t.length <= 40).slice(0, LOOKUP_MAX_TOKENS);
+  const windows = [];
+  for (let start = 0; start < tokens.length; start++) {
+    for (let len = 1; len <= LOOKUP_MAX_WINDOW && start + len <= tokens.length; len++) {
+      if (len === 1 && STOP.has(tokens[start])) continue;
+      const key = tokens.slice(start, start + len).join(" ");
+      windows.push({ key, start, len, next: tokens[start + len] || "" });
+    }
   }
-  return { specific, generic };
+  return { tokens, windows };
 }
 
-const quoteToken = (t) => `"${t}"`; // tokens hold only letters and digits, so there is nothing inside to escape
-// FTS5 MATCH text. mode 'narrow': (specific OR ...) AND (generic OR ...); 'wide': the specific tokens alone, or the generic ones alone when no specific token exists. null when there is nothing to match.
-export function buildMatch({ specific, generic }, mode) {
-  const or = (list) => `(${list.map(quoteToken).join(" OR ")})`;
-  if (!specific.length && !generic.length) return null;
-  if (mode === "narrow") return specific.length && generic.length ? `${or(specific)} AND ${or(generic)}` : null;
-  return or(specific.length ? specific : generic);
+// The candidate keys of both lookups, longest windows first, capped. exact: a name equal to a window ("frostbolt rank 4" asks for "frostbolt" through its own window "frostbolt").
+// byBase: a name whose own base equals a window ("arcane spirit" finds "arcane spirit iii"), unless a rank follows the window in the question: asking for rank II must not return rank III by itself.
+export function candidateKeys(windows) {
+  const order = [...windows].sort((a, b) => b.len - a.len || a.start - b.start);
+  const exact = [], byBase = [];
+  const seenE = new Set(), seenB = new Set();
+  for (const w of order) {
+    if (exact.length < LOOKUP_MAX_KEYS && !seenE.has(w.key)) { seenE.add(w.key); exact.push(w.key); }
+    if (byBase.length < LOOKUP_MAX_KEYS && !seenB.has(w.key)) { seenB.add(w.key); byBase.push(w.key); }
+  }
+  return { exact, byBase };
 }
 
-// Visible: the row's load is done, it is not superseded, and no NEWER done load holds the same id (the build preference is applied here, in the query, before any LIMIT: finish supersedes older rows too, this is the second guard).
+// Visible: the row's load is done, it is not superseded, and no NEWER done load holds the same id (the build preference is applied here, in the query, before any LIMIT; finish supersedes older rows too, this is the second guard).
 const VISIBLE = "l.status = 'done' AND g.superseded = 0 AND g.verdict IN ('holds', 'wrong') AND NOT EXISTS (SELECT 1 FROM game_facts g2 JOIN game_fact_loads l2 ON l2.id = g2.load_id WHERE g2.id = g.id AND g2.load_id <> g.load_id AND l2.status = 'done' AND (l2.finished_at > l.finished_at OR (l2.finished_at = l.finished_at AND l2.started_at > l.started_at)))";
-const COLS = "g.id AS id, g.claim AS claim, g.value AS value, g.source_table AS source_table, g.row_id AS row_id, g.build AS build, g.verdict AS verdict, g.kind AS kind, g.subject_norm AS subject_norm, l.finished_at AS finished_at";
-const JOIN = "JOIN game_fact_loads l ON l.id = g.load_id";
+const COLS = "g.id AS id, g.kind AS kind, g.subject AS subject, g.subject_norm AS subject_norm, g.subject_base AS subject_base, g.claim AS claim, g.value AS value, g.unit AS unit, g.source_table AS source_table, g.row_id AS row_id, g.build AS build, g.verdict AS verdict";
+const FROM = "FROM game_facts g JOIN game_fact_loads l ON l.id = g.load_id";
+const marks = (n) => Array.from({ length: n }, () => "?").join(", ");
 
-// -> { sql, binds } for the FTS5 query.
-export function buildFtsSql(match, fetch) {
-  return { sql: `SELECT ${COLS} FROM game_facts_fts f JOIN game_facts g ON g.rowid = f.rowid ${JOIN} WHERE game_facts_fts MATCH ? AND ${VISIBLE} ORDER BY bm25(game_facts_fts, 4.0, 1.0), l.finished_at DESC, g.id LIMIT ?`, binds: [match, fetch] };
+export function buildNameSql(keys, column, fetch) {
+  if (!["subject_norm", "subject_base"].includes(column)) throw new Error("bad column");
+  const base = column === "subject_base" ? " AND g.subject_base <> ''" : ""; // the partial index is usable only when the query says so
+  return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind IN (${KIND_LIST}) AND g.${column} IN (${marks(keys.length)})${base} AND ${VISIBLE} LIMIT ?`, binds: [...keys, fetch] };
 }
-// -> { sql, binds } for the fallback: every specific token (or, with none, every generic one) must appear in the subject or the claim; generic tokens narrow when `narrow` is set.
-export function buildLikeSql(tokens, narrow, fetch) {
-  const list = tokens.specific.length ? tokens.specific : tokens.generic;
-  const esc = (t) => `%${t}%`; // tokens are letters and digits: no LIKE wildcard can be inside one
-  const clause = (ts) => `(${ts.map(() => "(g.subject_norm LIKE ? OR lower(g.claim) LIKE ?)").join(" OR ")})`;
-  const binds = [];
-  let where = clause(list);
-  for (const t of list) binds.push(esc(t), esc(t));
-  if (narrow && tokens.specific.length && tokens.generic.length) {
-    where += ` AND ${clause(tokens.generic)}`;
-    for (const t of tokens.generic) binds.push(esc(t), esc(t));
+export function buildCuratedSql(fetch) {
+  return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind = 'curated' AND ${VISIBLE} LIMIT ?`, binds: [fetch] };
+}
+
+const shape = (r) => ({ id: r.id, kind: r.kind, subject: r.subject, claim: r.claim, value: r.value, unit: r.unit, source_table: r.source_table, row_id: r.row_id, build: r.build });
+
+// A window that is the base of a row's name ("arcane spirit" for "arcane spirit iii") counts only when no rank follows it in the question: "Arcane Spirit II" must not return the rank III row on its own.
+const rankFollows = (next) => ROMAN.has(next) || /^[0-9]{1,3}$/.test(next) || next === "rank";
+
+// Pure over the fetched rows. Chooses non-overlapping names, longest first; every row of a chosen name comes back. -> { groups: [{ len, rows }], ... }
+export function chooseNames(windows, rows) {
+  const winByKey = new Map();
+  for (const w of windows) { if (!winByKey.has(w.key)) winByKey.set(w.key, []); winByKey.get(w.key).push(w); }
+  // every window each row could belong to
+  const items = rows.map((r) => {
+    const ws = [...(winByKey.get(r.subject_norm) || []), ...(r.subject_base ? (winByKey.get(r.subject_base) || []).filter((w) => !rankFollows(w.next)) : [])];
+    return { r, ws };
+  }).filter((x) => x.ws.length);
+  const cand = [...new Map(items.flatMap((x) => x.ws).map((w) => [`${w.start}:${w.len}`, w])).values()].sort((a, b) => b.len - a.len || a.start - b.start);
+  const taken = new Set();
+  const groups = [];
+  const used = new Set();
+  for (const w of cand) {
+    let clash = false;
+    for (let i = w.start; i < w.start + w.len; i++) if (taken.has(i)) clash = true;
+    if (clash) continue;
+    const mine = items.filter((x) => !used.has(x.r.id + "|" + x.r.kind) && x.ws.some((y) => y.start === w.start && y.len === w.len));
+    if (!mine.length) continue;
+    for (let i = w.start; i < w.start + w.len; i++) taken.add(i);
+    for (const x of mine) used.add(x.r.id + "|" + x.r.kind);
+    groups.push({ len: w.len, rows: mine.map((x) => x.r) });
   }
-  return { sql: `SELECT ${COLS} FROM game_facts g ${JOIN} WHERE ${where} AND ${VISIBLE} ORDER BY l.finished_at DESC, g.id LIMIT ?`, binds: [...binds, fetch] };
+  return groups;
 }
 
-const shape = (r) => ({ id: r.id, claim: r.claim, value: r.value, source_table: r.source_table, row_id: r.row_id, build: r.build });
-
-// Pure over the rows (they arrive in rank order): splits holds from wrong and applies the limit.
-export function pickRows(rows, limit) {
-  return {
-    rows: rows.filter((r) => r.verdict === "holds").slice(0, limit).map(shape),
-    doNotSay: rows.filter((r) => r.verdict === "wrong").slice(0, limit).map(shape),
-  };
+// Curated rows are sentences: a row matches by the question's specific words (no stop or generic word) found among the claim's words. Needs two matching words when the question has two or more, else one.
+export function curatedMatches(question, rows) {
+  const qt = [...new Set(tokensOfNorm(normName(String(question == null ? "" : question).slice(0, LOOKUP_MAX_QUESTION_CHARS))).filter((t) => t.length >= 3 && t.length <= 40 && !STOP.has(t) && !GENERIC.has(t)))].slice(0, 12);
+  if (!qt.length) return [];
+  const need = qt.length >= 2 ? 2 : 1;
+  return rows.map((r) => { const words = new Set(tokensOfNorm(normName(`${r.subject} ${r.claim}`))); return { r, score: qt.filter((t) => words.has(t)).length }; })
+    .filter((x) => x.score >= need).sort((a, b) => b.score - a.score || (a.r.id < b.r.id ? -1 : 1)).map((x) => x.r);
 }
 
 async function runAll(env, q) {
@@ -75,26 +108,33 @@ async function runAll(env, q) {
   return results || [];
 }
 
-// -> { rows: [...], doNotSay: [...], via: "fts" | "like" | "none" }. Never throws: a database error answers empty.
+// -> { rows, doNotSay, ambiguous, via: "names" | "none" }. limit: the most rows returned by whole names (the first name is never cut: an ambiguous name returns every row).
 export async function lookupGameFacts(env, question, { limit = 5 } = {}) {
-  const empty = { rows: [], doNotSay: [], via: "none" };
+  const empty = { rows: [], doNotSay: [], ambiguous: false, via: "none" };
   const n = Number.isInteger(limit) ? Math.min(20, Math.max(1, limit)) : 5;
-  const tokens = extractTokens(question);
-  if (!tokens.specific.length && !tokens.generic.length) return empty;
-  const fetch = n * 6; // headroom for the newest-build pick and for the wrong rows that share the match
-  const narrowMatch = buildMatch(tokens, "narrow");
-  const wideMatch = buildMatch(tokens, "wide");
+  const { windows } = questionWindows(question);
+  const { exact, byBase } = candidateKeys(windows);
   try {
-    let found = narrowMatch ? await runAll(env, buildFtsSql(narrowMatch, fetch)) : [];
-    if (!found.some((r) => r.verdict === "holds")) found = await runAll(env, buildFtsSql(wideMatch, fetch));
-    return { ...pickRows(found, n), via: "fts" };
-  } catch {
-    try {
-      let found = await runAll(env, buildLikeSql(tokens, true, fetch));
-      if (!found.some((r) => r.verdict === "holds")) found = await runAll(env, buildLikeSql(tokens, false, fetch));
-      return { ...pickRows(found, n), via: "like" };
-    } catch {
-      return empty;
+    const fetched = new Map();
+    const add = (list) => { for (const r of list) fetched.set(`${r.id}|${r.load_id || ""}|${r.build}`, r); };
+    if (exact.length) add(await runAll(env, buildNameSql(exact, "subject_norm", 400)));
+    if (byBase.length) add(await runAll(env, buildNameSql(byBase, "subject_base", 400)));
+    const named = chooseNames(windows, [...fetched.values()]);
+    const holds = [], wrong = [];
+    let ambiguous = false;
+    for (const g of named) {
+      const gh = g.rows.filter((r) => r.verdict === "holds"), gw = g.rows.filter((r) => r.verdict === "wrong");
+      const perKind = new Map();
+      for (const r of gh) perKind.set(r.kind, (perKind.get(r.kind) || 0) + 1);
+      if ([...perKind.values()].some((c) => c > 1)) ambiguous = true;
+      if (holds.length === 0 || holds.length + gh.length <= n) holds.push(...gh);
+      wrong.push(...gw);
     }
+    const cur = curatedMatches(question, await runAll(env, buildCuratedSql(300)));
+    for (const r of cur) { if (r.verdict === "holds" && holds.length < n) holds.push(r); else if (r.verdict === "wrong") wrong.push(r); }
+    const rank = (r) => r.id;
+    return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, via: "names" };
+  } catch {
+    return empty;
   }
 }

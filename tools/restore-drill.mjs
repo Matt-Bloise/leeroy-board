@@ -61,7 +61,7 @@ export function fixtureSql() {
 // (wrangler's --json prints a SQL NULL as the string "null"; a plain SELECT would not tell them apart).
 const sha = (rows, cols) => createHash("sha256").update(rows.map((r) => JSON.stringify(cols.map((c) => String(r[c])))).join("\n")).digest("hex");
 const selectSql = (t, cols) => `SELECT ${cols.map((c) => `quote("${c}") AS "${c}"`).join(", ")} FROM "${t}"${ROW_FILTERS[t] ? ` WHERE ${ROW_FILTERS[t]}` : ""} ORDER BY rowid;`;
-const SYSTEM = /^(sqlite_|_cf_|d1_|game_facts_fts)/; // the FTS5 index of game_facts and its shadow tables: derived, rebuilt by triggers when game_facts is restored
+const SYSTEM = /^(sqlite_|_cf_|d1_)/;
 const tablesSql = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY rowid;";
 
 // ---- backends. Each: { name, setup(sql), exportText(), query(sqls) -> [rows[]], wipe(), restoreFrom(text) -> {ok, problems?}, dispose() }

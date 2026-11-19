@@ -12,6 +12,7 @@ import { isPrPreviewEnv } from "./ai-models.js";
 import { factsLoadKeyFor, verifyListen } from "./listener-config.js";
 import { updateKvJson } from "./kv-cas.js";
 import { readBounded } from "./listener.js";
+import { normName, baseName } from "./game-facts-name.js";
 
 export const FACTS_FLAG = "GAME_FACTS_LOAD";
 export const FACTS_PURPOSE = "facts-load";
@@ -47,11 +48,6 @@ const isStr = (v, max, min = 0) => typeof v === "string" && Array.from(v).length
 const isCount = (v, max) => Number.isSafeInteger(v) && v >= 0 && v <= max;
 const num = (v) => (Number.isFinite(v) ? v : 0);
 
-// Lowercase, punctuation folded to single spaces, diacritics stripped.
-export function normSubject(s) {
-  return String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-}
-
 // One fact row, strictly. -> { row } or { error: "<class>" }. No other key, no non-string text field, no control character, every vocabulary fixed.
 // loadKind 'client' | 'curated': the row's kind must agree with it. undefined: that one check is left to the caller (the batch is validated before the load is read).
 export function validateRow(r, loadKind) {
@@ -72,7 +68,9 @@ export function validateRow(r, loadKind) {
   if (!FACT_VERDICTS.includes(r.verdict)) return { error: "row_verdict" };
   if (!FACT_SOURCE_CLASSES.includes(r.source_class)) return { error: "row_source_class" };
   if (!isStr(r.note, MAX.note)) return { error: "row_note" };
-  return { row: { id: r.id, kind: r.kind, subject: r.subject, subject_norm: normSubject(r.subject), claim: r.claim, value: r.value, unit: r.unit, source_table: r.source_table, row_id: r.row_id, build: r.build, verdict: r.verdict, source_class: r.source_class, note: r.note } };
+  const norm = normName(r.subject);
+  if (!norm) return { error: "row_subject" }; // a name that folds to nothing can never be looked up
+  return { row: { id: r.id, kind: r.kind, subject: r.subject, subject_norm: norm, subject_base: baseName(norm), claim: r.claim, value: r.value, unit: r.unit, source_table: r.source_table, row_id: r.row_id, build: r.build, verdict: r.verdict, source_class: r.source_class, note: r.note } };
 }
 
 // The ONLY bodies the route accepts. -> { op, ... } or { error: "<class>" }. Unknown keys are refused: a signed body of another purpose (listener event, self-test, heartbeat) can never reach a write.
@@ -123,10 +121,12 @@ export function parseFactsBody(v) {
 
 // A row is written ONLY while its load is still open (the EXISTS guard is in the statement itself, so a late batch for a load that finish has closed writes nothing), and only under its own (id, load_id): another load's
 // row of the same id is never touched, so an open, failed or interrupted load cannot hide a published fact. (SQLite needs the WHERE on an INSERT ... SELECT that carries ON CONFLICT.)
-const UPSERT = "INSERT INTO game_facts (id, kind, subject, subject_norm, claim, value, unit, source_table, row_id, build, load_id, verdict, source_class, note, superseded, updated_at) "
-  + "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ? WHERE EXISTS (SELECT 1 FROM game_fact_loads WHERE id = ? AND status = 'open') "
-  + "ON CONFLICT(id, load_id) DO UPDATE SET kind = excluded.kind, subject = excluded.subject, subject_norm = excluded.subject_norm, claim = excluded.claim, value = excluded.value, unit = excluded.unit, source_table = excluded.source_table, "
+export const UPSERT = "INSERT INTO game_facts (id, kind, subject, subject_norm, subject_base, claim, value, unit, source_table, row_id, build, load_id, verdict, source_class, note, superseded, updated_at) "
+  + "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ? WHERE EXISTS (SELECT 1 FROM game_fact_loads WHERE id = ? AND status = 'open') "
+  + "ON CONFLICT(id, load_id) DO UPDATE SET kind = excluded.kind, subject = excluded.subject, subject_norm = excluded.subject_norm, subject_base = excluded.subject_base, claim = excluded.claim, value = excluded.value, unit = excluded.unit, source_table = excluded.source_table, "
   + "row_id = excluded.row_id, build = excluded.build, verdict = excluded.verdict, source_class = excluded.source_class, note = excluded.note, updated_at = excluded.updated_at";
+// The values of UPSERT, in order (the last is the load id again, for the EXISTS guard). Exported so tools/d1-facts-smoke.mjs measures the SAME statement the loader sends.
+export const upsertBinds = (r, loadId, nowIso) => [r.id, r.kind, r.subject, r.subject_norm, r.subject_base, r.claim, r.value, r.unit, r.source_table, r.row_id, r.build, loadId, r.verdict, r.source_class, r.note, nowIso, loadId];
 const parseCounts = (t) => { try { const o = JSON.parse(t); return o && typeof o === "object" ? o : {}; } catch { return {}; } };
 export const dottedGreater = (a, b) => { // build numbers: "1.60.1.70959" > "1.9"
   const x = String(a || "").split(".").map(Number), y = String(b || "").split(".").map(Number);
@@ -237,13 +237,12 @@ async function opRows(env, loadId, rawRows, nowIso) {
   }
   counts.added = num(counts.added) + added;
   counts.changed = num(counts.changed) + changed;
-  const stmts = rows.map((r) => env.DB.prepare(UPSERT).bind(r.id, r.kind, r.subject, r.subject_norm, r.claim, r.value, r.unit, r.source_table, r.row_id, r.build, loadId, r.verdict, r.source_class, r.note, nowIso, loadId));
+  const stmts = rows.map((r) => env.DB.prepare(UPSERT).bind(...upsertBinds(r, loadId, nowIso)));
   stmts.push(env.DB.prepare("UPDATE game_fact_loads SET counts_json = ? WHERE id = ? AND status = 'open'").bind(JSON.stringify(counts), loadId));
   await env.DB.batch(stmts); // one transaction: the whole batch or none of it
   const after = await readLoad(env, loadId);
   if (!after || after.status !== "open") return fail(409, "load_closed"); // finish or a timeout closed it first: the guarded statements above wrote nothing (or finish had already counted them)
-  const own = await env.DB.prepare("SELECT COUNT(*) AS c FROM game_facts WHERE load_id = ?").bind(loadId).first();
-  return json({ ok: true, load_id: loadId, accepted: rows.length, total: num(own && own.c) });
+  return json({ ok: true, load_id: loadId, accepted: rows.length });
 }
 
 async function opFinish(env, loadId, nowIso) {
@@ -267,15 +266,22 @@ async function opFinish(env, loadId, nowIso) {
   const final = { kinds: declared, total, added: num(counts.added), changed: num(counts.changed), unchanged: Math.max(0, total - num(counts.added) - num(counts.changed)), removed, prev_load_id: prev ? prev.id : null, prev_build: prev ? prev.build : null };
   // One transaction. The status change is guarded (still open, every declared kind still exactly as counted); everything that retires older rows is conditioned on THIS call's transition having happened (status done with this call's finished_at),
   // so a delayed or duplicate finish whose own update matched nothing supersedes nothing.
-  const guards = kinds.map(() => "(SELECT COUNT(*) FROM game_facts WHERE load_id = ? AND kind = ?) = ?").join(" AND ");
-  const guardBinds = kinds.flatMap((k) => [loadId, k, declared[k]]);
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE game_fact_loads SET status = 'done', finished_at = ?, counts_json = ? WHERE id = ? AND status = 'open' AND ${guards}`).bind(nowIso, JSON.stringify(final), loadId, ...guardBinds),
-    env.DB.prepare(`UPDATE game_facts SET superseded = 1, updated_at = ? WHERE kind IN (${marks}) AND load_id <> ? AND superseded = 0 AND EXISTS (SELECT 1 FROM game_fact_loads WHERE id = ? AND status = 'done' AND finished_at = ?)`).bind(nowIso, ...kinds, loadId, loadId, nowIso),
-  ]);
+  await env.DB.batch(finishStatements(loadId, declared, final, nowIso).map((st) => env.DB.prepare(st.sql).bind(...st.binds)));
   const after = await readLoad(env, loadId);
   if (!after || after.status !== "done") return fail(409, after && after.status === "open" ? "incomplete" : "load_closed");
   const stored = parseCounts(after.counts_json);
   console.log(JSON.stringify({ evt: "facts_load", op: "finish", kind: load.kind, ok: true, total, removed }));
   return doneResponse(loadId, stored);
+}
+
+// The two statements of finish, one D1 batch: the guarded status change (still open, every declared kind still exactly as counted) and, conditioned on THIS call's transition having happened (status done with this call's finished_at),
+// the retirement of the older rows of the declared kinds. A delayed or duplicate finish whose own update matched nothing supersedes nothing. Exported so tools/d1-facts-smoke.mjs measures the SAME statements.
+export function finishStatements(loadId, declared, final, nowIso) {
+  const kinds = Object.keys(declared);
+  const marks = kinds.map(() => "?").join(",");
+  const guards = kinds.map(() => "(SELECT COUNT(*) FROM game_facts WHERE load_id = ? AND kind = ?) = ?").join(" AND ");
+  return [
+    { sql: `UPDATE game_fact_loads SET status = 'done', finished_at = ?, counts_json = ? WHERE id = ? AND status = 'open' AND ${guards}`, binds: [nowIso, JSON.stringify(final), loadId, ...kinds.flatMap((k) => [loadId, k, declared[k]])] },
+    { sql: `UPDATE game_facts SET superseded = 1, updated_at = ? WHERE kind IN (${marks}) AND load_id <> ? AND superseded = 0 AND EXISTS (SELECT 1 FROM game_fact_loads WHERE id = ? AND status = 'done' AND finished_at = ?)`, binds: [nowIso, ...kinds, loadId, loadId, nowIso] },
+  ];
 }

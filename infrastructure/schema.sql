@@ -549,7 +549,7 @@ CREATE TABLE IF NOT EXISTS incidents (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_incidents_open ON incidents(source) WHERE closed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_incidents_opened ON incidents(opened_at DESC);
 
--- game_facts: grounded game facts (flag GAME_FACTS_LOAD; migration 0016). Game data only, no friend data. The FTS5 table is a derived index kept in sync by triggers (rebuild: INSERT INTO game_facts_fts(game_facts_fts) VALUES('rebuild')).
+-- game_facts: grounded game facts (flag GAME_FACTS_LOAD; migration 0016). Game data only, no friend data. Plain tables and two indexes: no virtual table, no trigger (see the migration for the write cost of each index).
 CREATE TABLE IF NOT EXISTS game_fact_loads (
   id TEXT PRIMARY KEY,
   build TEXT,
@@ -561,39 +561,26 @@ CREATE TABLE IF NOT EXISTS game_fact_loads (
   started_at TEXT NOT NULL,
   finished_at TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_game_fact_loads_kind ON game_fact_loads(kind, status, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS game_facts (
   id TEXT NOT NULL,
+  load_id TEXT NOT NULL,
   kind TEXT NOT NULL,
   subject TEXT NOT NULL DEFAULT '',
   subject_norm TEXT NOT NULL DEFAULT '',
+  subject_base TEXT NOT NULL DEFAULT '',
   claim TEXT NOT NULL,
   value TEXT NOT NULL DEFAULT '',
   unit TEXT NOT NULL DEFAULT '',
   source_table TEXT NOT NULL DEFAULT '',
   row_id TEXT NOT NULL DEFAULT '',
   build TEXT,
-  load_id TEXT NOT NULL,
   verdict TEXT NOT NULL DEFAULT 'holds' CHECK (verdict IN ('holds', 'wrong', 'unverifiable')),
   source_class TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
   superseded INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT,
   PRIMARY KEY (id, load_id)
-);
+) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS idx_game_facts_kind_subject ON game_facts(kind, subject_norm);
-CREATE INDEX IF NOT EXISTS idx_game_facts_build ON game_facts(build);
-CREATE INDEX IF NOT EXISTS idx_game_facts_load ON game_facts(load_id);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS game_facts_fts USING fts5(subject, claim, content = 'game_facts', content_rowid = 'rowid', tokenize = 'porter unicode61');
-CREATE TRIGGER IF NOT EXISTS game_facts_ai AFTER INSERT ON game_facts BEGIN
-  INSERT INTO game_facts_fts(rowid, subject, claim) VALUES (new.rowid, new.subject, new.claim);
-END;
-CREATE TRIGGER IF NOT EXISTS game_facts_ad AFTER DELETE ON game_facts BEGIN
-  INSERT INTO game_facts_fts(game_facts_fts, rowid, subject, claim) VALUES ('delete', old.rowid, old.subject, old.claim);
-END;
-CREATE TRIGGER IF NOT EXISTS game_facts_au AFTER UPDATE OF subject, claim ON game_facts BEGIN
-  INSERT INTO game_facts_fts(game_facts_fts, rowid, subject, claim) VALUES ('delete', old.rowid, old.subject, old.claim);
-  INSERT INTO game_facts_fts(rowid, subject, claim) VALUES (new.rowid, new.subject, new.claim);
-END;
+CREATE INDEX IF NOT EXISTS idx_game_facts_kind_base ON game_facts(kind, subject_base) WHERE subject_base <> '';

@@ -14,13 +14,25 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { factsLoadKey, signListen } from "../infrastructure/worker/listener-config.js";
-import { validateRow, FACT_SOURCE_CLASSES, FACT_VERDICTS, FACTS_MAX_ROWS, FACTS_PURPOSE, MAX } from "../infrastructure/worker/game-facts.js";
+import { validateRow, FACT_SOURCE_CLASSES, FACT_VERDICTS, FACT_KINDS, FACTS_MAX_ROWS, FACTS_PURPOSE, MAX } from "../infrastructure/worker/game-facts.js";
+import { normName, baseName } from "../infrastructure/worker/game-facts-name.js";
 import { buildCandidates, buildTraitCandidates, TRAIT_KINDS } from "./replay/truth-gen.mjs";
 import { sha256, assertOutsideRepo, readJsonl } from "./replay/common.mjs";
 
 export const DEFAULT_BASE = "https://api.leeroy.party";
 export const DEFAULT_ALLOWED_HOSTS = Object.freeze(["api.leeroy.party", "localhost", "127.0.0.1", "[::1]"]);
 export const MAX_BODY_BYTES = 200 * 1024; // the Worker refuses 256 KB; stay well under
+// D1 Free allows 100,000 ROWS WRITTEN a day (an index entry counts as a row). The tool counts its own writes from the accepted counts with these constants, measured on the preview D1 by
+// tools/d1-facts-smoke.mjs (the step summary of the PR preview run prints the measured values; tests/unit/game-facts.test.mjs pins that the smoke and this tool use the same numbers).
+export const WRITES_PER_FACT = 2; // the table row (WITHOUT ROWID: the primary key is the table) + idx_game_facts_kind_subject; a rank-suffixed name pays one more for the partial base index (counted by the rate below)
+export const WRITES_PER_SUFFIXED_FACT = 1;
+export const WRITES_PER_CALL = 3; // the rate-limit state row (kv_state) and the load row's counters, per signed call
+export const WRITES_PER_RETIRED_FACT = 1; // finish: superseded = 1 on a retired row (not in an index)
+export const DEFAULT_ROW_BUDGET = 60000; // rows written per run; the Free daily limit is 100,000
+// Load order: curated first (its own load), then within the client load traits, spells, and item_level_req LAST (13,000+ of the 18,000+ facts, the part that can be chunked over days).
+export const KIND_ORDER = Object.freeze(["curated", "trait_max_ranks", "trait_points_required", "trait_prereq", "spell_level", "spell_cooldown", "spell_cast_time", "spell_mana_cost", "item_level_req"]);
+const baseNameOf = (subject) => baseName(normName(subject));
+export const writeCost = (nFacts, nSuffixed = 0, nCalls = 1) => Math.ceil(nFacts * WRITES_PER_FACT + nSuffixed * WRITES_PER_SUFFIXED_FACT + nCalls * WRITES_PER_CALL);
 const CLEAN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 const clean = (s) => String(s == null ? "" : s).replace(CLEAN, " ").replace(/\s+/g, " ").trim();
 const cut = (s, max) => Array.from(s).slice(0, max).join("");
@@ -129,7 +141,8 @@ const count = (rows) => rows.reduce((m, r) => (m[r.kind] = (m[r.kind] || 0) + 1,
 const fileMeta = (p) => { const b = readFileSync(p); return { sha256: sha256(b), bytes: b.length, rows: b.toString("utf8").split("\n").filter((l) => l.trim()).length }; };
 
 // Everything the run will do, with no network. -> { build, manifest_sha256, loads: [{kind, files, rows, batches}], skipped, counts }. Throws (no row text in the message) when a table fails its manifest check.
-export function buildPlan({ tables, traits = null, facts = null, clientFacts = null, scope = "both" }) {
+export function buildPlan({ tables, traits = null, facts = null, clientFacts = null, scope = "both", kinds = null }) {
+  if (kinds && (!Array.isArray(kinds) || !kinds.length || kinds.some((k) => !FACT_KINDS.includes(k)))) throw new Error("--kinds names fact kinds: " + FACT_KINDS.join(", "));
   const manifestBytes = readFileSync(path.join(tables, "MANIFEST.json"));
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   if (typeof manifest.build !== "string" || !/^[0-9.]{3,32}$/.test(manifest.build)) throw new Error("MANIFEST.json has no usable build");
@@ -151,7 +164,9 @@ export function buildPlan({ tables, traits = null, facts = null, clientFacts = n
       rows = rows.concat(d.rows);
       files["traits.json"] = { sha256: sha256(tb), bytes: tb.length, rows: d.rows.length };
     }
-    loads.push({ kind: "client", build: manifest.build, files, rows: dedupe(reject("client", rows), skipped.client) });
+    rows = dedupe(reject("client", rows), skipped.client).filter((r) => !kinds || kinds.includes(r.kind));
+    rows = rows.map((r, i) => [r, i]).sort((a, b) => KIND_ORDER.indexOf(a[0].kind) - KIND_ORDER.indexOf(b[0].kind) || a[1] - b[1]).map((x) => x[0]); // item_level_req last
+    if (rows.length) loads.push({ kind: "client", build: manifest.build, files, rows });
   }
   let notes = null;
   if (scope !== "client") {
@@ -162,12 +177,16 @@ export function buildPlan({ tables, traits = null, facts = null, clientFacts = n
     const c = deriveCuratedRows(facts ? readJsonl(facts) : [], clientFacts ? readJsonl(clientFacts) : [], manifest.build);
     for (const [k, n] of Object.entries(c.skipped)) skipped.curated[k] = (skipped.curated[k] || 0) + n;
     notes = c.notes;
-    loads.push({ kind: "curated", build: manifest.build, files, rows: dedupe(reject("curated", c.rows), skipped.curated) });
+    const crows = dedupe(reject("curated", c.rows), skipped.curated).filter((r) => !kinds || kinds.includes(r.kind));
+    if (crows.length) loads.unshift({ kind: "curated", build: manifest.build, files, rows: crows }); // curated first
   }
   for (const l of loads) {
     l.batches = batch(l.rows);
     l.counts = count(l.rows);
+    l.suffixed = l.rows.filter((r) => baseNameOf(r.subject)).length;
+    l.names = nameStats(l.rows);
   }
+  if (!loads.length) throw new Error("nothing to load for those kinds and scope");
   return { build: manifest.build, manifest_sha256: manifestHash, loads, skipped, notes };
 }
 function dedupe(rows, skipped) {
@@ -185,6 +204,17 @@ export function batch(rows) {
   }
   if (cur.length) out.push(cur);
   return out;
+}
+// Per kind: how many distinct names (normalised) have exactly one row, and how many are shared by several rows (ambiguous for a lookup). Counts only.
+export function nameStats(rows) {
+  const byKind = {};
+  for (const r of rows) {
+    if (r.kind === "curated") continue;
+    const m = byKind[r.kind] || (byKind[r.kind] = new Map());
+    const k = normName(r.subject);
+    m.set(k, (m.get(k) || 0) + 1);
+  }
+  return Object.fromEntries(Object.entries(byKind).map(([k, m]) => [k, { names: m.size, unique: [...m.values()].filter((c) => c === 1).length, ambiguous: [...m.values()].filter((c) => c > 1).length }]));
 }
 const planSha = (load, manifestHash) => sha256(JSON.stringify([manifestHash, load.kind, load.build, load.files, load.rows]));
 export const callsFor = (load) => 2 + load.batches.length;
@@ -211,7 +241,7 @@ export async function run(argv, deps = {}) {
   const now = deps.now || (() => Date.now());
   const sleep = deps.sleep || sleepReal;
   const fetchImpl = deps.fetchImpl || globalThis.fetch;
-  const o = { apply: false, base: DEFAULT_BASE, maxCalls: 100, scope: "both" };
+  const o = { apply: false, base: DEFAULT_BASE, maxCalls: 100, scope: "both", maxRowsPerRun: DEFAULT_ROW_BUDGET };
   let tokenFile = null;
   const val = (i, a) => { if (i + 1 >= argv.length) throw new Error(`missing value for ${a}`); return argv[i + 1]; };
   try {
@@ -219,30 +249,35 @@ export async function run(argv, deps = {}) {
       const a = argv[i];
       if (a === "--apply") o.apply = true;
       else if (a === "--dry-run") o.apply = false;
-      else if (["--tables", "--traits", "--facts", "--client-facts", "--base", "--allow-host", "--state", "--max-calls", "--scope"].includes(a)) { o[a.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = val(i, a); i++; }
+      else if (["--tables", "--traits", "--facts", "--client-facts", "--base", "--allow-host", "--state", "--max-calls", "--scope", "--kinds", "--max-rows-per-run"].includes(a)) { o[a.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = val(i, a); i++; }
       else if (a.startsWith("--")) throw new Error(`unknown option ${a}`);
       else if (tokenFile === null) tokenFile = a;
       else throw new Error("only one token file");
     }
     if (!o.tables) throw new Error("usage: node tools/facts-load.mjs [<token-file>] --tables <dir> [--traits f] [--facts f] [--client-facts f] [--apply] [--base url] [--allow-host h] [--state f] [--max-calls n] [--scope client|curated|both]");
     if (!["client", "curated", "both"].includes(o.scope)) throw new Error("--scope is client, curated or both");
+    o.kindList = o.kinds ? String(o.kinds).split(",").map((k) => k.trim()).filter(Boolean) : null;
+    o.maxRowsPerRun = Number(o.maxRowsPerRun);
+    if (!Number.isInteger(o.maxRowsPerRun) || o.maxRowsPerRun < 100 || o.maxRowsPerRun > 90000) throw new Error("--max-rows-per-run is a whole number of D1 rows written from 100 to 90000 (the Free plan allows 100000 a day)");
     o.maxCalls = Number(o.maxCalls);
     if (!Number.isInteger(o.maxCalls) || o.maxCalls < 1 || o.maxCalls > 118) throw new Error("--max-calls is a whole number from 1 to 118");
   } catch (e) { err(e.message); return 2; }
 
   let plan;
-  try { plan = buildPlan({ tables: o.tables, traits: o.traits, facts: o.facts, clientFacts: o.clientFacts, scope: o.scope }); } catch (e) { err(`refusing: ${e.message}`); return 2; }
+  try { plan = buildPlan({ tables: o.tables, traits: o.traits, facts: o.facts, clientFacts: o.clientFacts, scope: o.scope, kinds: o.kindList }); } catch (e) { err(`refusing: ${e.message}`); return 2; }
   log(`build ${plan.build}`);
   log(`manifest_sha256 ${plan.manifest_sha256}`);
   for (const l of plan.loads) {
     log(`load ${l.kind}: ${l.rows.length} rows in ${l.batches.length} batches, ${callsFor(l)} calls (begin, ${l.batches.length} rows, finish)`);
-    for (const [k, n] of Object.entries(l.counts).sort()) log(`  ${k.padEnd(22)} ${String(n).padStart(6)}`);
+    for (const [k, n] of KIND_ORDER.filter((x) => l.counts[x]).map((x) => [x, l.counts[x]])) { const ns = l.names[k]; log(`  ${k.padEnd(22)} ${String(n).padStart(6)}${ns ? `   names ${ns.names}: unique ${ns.unique}, ambiguous ${ns.ambiguous}` : ""}`); }
+    log(`  estimated D1 rows written: ${writeCost(l.rows.length, l.suffixed, callsFor(l))} (${WRITES_PER_FACT} per fact, +${WRITES_PER_SUFFIXED_FACT} for ${l.suffixed} rank-suffixed names, ${WRITES_PER_CALL} per call)`);
     const sk = plan.skipped[l.kind];
     if (Object.keys(sk).length) log(`  skipped: ${Object.entries(sk).sort().map(([k, n]) => `${k} ${n}`).join(", ")}`);
   }
   if (plan.notes && (plan.notes.build_fallback || plan.notes.class_fallback)) log(`curated: build taken from the load for ${plan.notes.build_fallback} rows, source_class set to none for ${plan.notes.class_fallback} rows`);
   const totalCalls = plan.loads.reduce((s, l) => s + callsFor(l), 0);
-  log(`total calls ${totalCalls}`);
+  const totalWrites = plan.loads.reduce((sum, l) => sum + writeCost(l.rows.length, l.suffixed, callsFor(l)), 0);
+  log(`total calls ${totalCalls}, estimated rows written ${totalWrites}; budget per run ${o.maxRowsPerRun} (D1 Free: 100000 a day), so ${Math.ceil(totalWrites / o.maxRowsPerRun)} run(s)`);
   if (!o.apply) { log("dry run: nothing was sent (add --apply and a token file to load)"); return 0; }
 
   // ---- apply
@@ -255,7 +290,7 @@ export async function run(argv, deps = {}) {
   token = "";
   if (!signKey) { err("the token file does not hold a usable token"); return 2; }
 
-  let lastTs = 0, calls = 0;
+  let lastTs = 0, calls = 0, spent = 0; // spent: D1 rows written by this run, counted from the accepted batches with the measured constants
   const send = async (body) => {
     let ts;
     for (;;) { ts = Math.floor(now() / 1000); if (ts > lastTs) break; await sleep(150); } // the Worker needs a strictly newer signed second each time
@@ -275,25 +310,30 @@ export async function run(argv, deps = {}) {
   let state = { scopes: {} };
   try { const j = existsSync(sp) ? JSON.parse(readFileSync(sp, "utf8")) : null; if (j && j.scopes && typeof j.scopes === "object") state = j; } catch { state = { scopes: {} }; }
   const save = () => { mkdirSync(path.dirname(sp), { recursive: true }); writeFileSync(sp, JSON.stringify(state)); };
-  const stop = (why, r) => { log(`stopped (${why}${r ? `: HTTP ${r.status}, reason ${okReason(r.json)}` : ""}); run the same command again to resume`); return 1; };
+  const stop = (why, r) => { log(`stopped (${why}${r ? `: HTTP ${r.status}, reason ${okReason(r.json)}` : ""}); run the same command again to resume (the budget is per run: after 00:00 UTC for the daily D1 limit)`); return 1; };
   for (const l of plan.loads) {
     const sha = planSha(l, plan.manifest_sha256);
-    let st = state.scopes[l.kind];
-    if (st && st.plan_sha !== sha) st = null; // a different plan: start over (the Worker marks the old open load failed after 30 minutes)
+    const scopeKey = `${l.kind}:${sha.slice(0, 12)}`; // one state per plan: a run with other --kinds has its own
+    let st = state.scopes[scopeKey];
     if (st && st.done) { log(`${l.kind}: already finished in an earlier run`); continue; }
     if (!st) {
       if (calls >= o.maxCalls) return stop("call budget used up");
+      if (spent + writeCost(0, 0, 2) > o.maxRowsPerRun) return stop("daily rows-written budget reached");
       const r = await send({ op: "begin", build: l.build, manifest_sha256: plan.manifest_sha256, files: l.files, kind: l.kind, kinds: l.counts });
       if (r.status !== 200 || !r.json || r.json.ok !== true || typeof r.json.load_id !== "string") return stop(`begin ${l.kind} failed`, r);
       st = { plan_sha: sha, load_id: r.json.load_id, next: 0, done: false };
-      state.scopes[l.kind] = st;
+      state.scopes[scopeKey] = st;
       save();
       log(`begin ${l.kind}: load opened`);
     } else log(`resume ${l.kind}: ${st.next} of ${l.batches.length} batches already sent`);
     while (st.next < l.batches.length) {
       if (calls >= o.maxCalls) return stop("call budget used up");
+      const batchRows = l.batches[st.next];
+      const cost = writeCost(batchRows.length, batchRows.filter((x) => baseNameOf(x.subject)).length, 1);
+      if (spent + cost > o.maxRowsPerRun) return stop(`daily rows-written budget reached (${spent} of ${o.maxRowsPerRun} counted)`);
       const r = await send({ op: "rows", load_id: st.load_id, rows: l.batches[st.next] });
       if (r.status !== 200 || !r.json || r.json.ok !== true) return stop(`rows batch ${st.next + 1} failed`, r);
+      spent += cost;
       st.next++;
       save();
     }
@@ -302,12 +342,13 @@ export async function run(argv, deps = {}) {
     const f = await send({ op: "finish", load_id: st.load_id }); // idempotent on the Worker: a lost response is retried by running the command again
     if (f.status !== 200 || !f.json || f.json.ok !== true) return stop(`finish ${l.kind} failed`, f);
     const c = f.json.counts || {};
+    spent += writeCost(0, 0, 1) + (Number(c.removed) || 0) * WRITES_PER_RETIRED_FACT;
     log(`finish ${l.kind}: total ${c.total}, added ${c.added}, changed ${c.changed}, unchanged ${c.unchanged}, removed ${c.removed}`);
     st.done = true;
     save();
   }
-  if (plan.loads.every((l) => state.scopes[l.kind] && state.scopes[l.kind].done)) { try { unlinkSync(sp); } catch { /* already gone */ } }
-  log(`done: ${calls} calls`);
+  if (plan.loads.every((l) => { const e = state.scopes[`${l.kind}:${planSha(l, plan.manifest_sha256).slice(0, 12)}`]; return e && e.done; })) { try { unlinkSync(sp); } catch { /* already gone */ } }
+  log(`done: ${calls} calls, about ${spent} D1 rows written`);
   return 0;
 }
 
