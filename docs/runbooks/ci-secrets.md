@@ -2,6 +2,10 @@
 
 Why: a workflow file in a pull request runs with the secrets the repository gives it. Production secrets (the Cloudflare deploy token, `BOARD_ADMIN_TOKEN`, salts, AI keys) therefore live only in a GitHub **environment** named `production` that only `master` can use. Pull request workflows use a preview-only admin token and derived salts. The Cloudflare token is the one exception: by decision of the account owner, previews use the production `CLOUDFLARE_API_TOKEN` (see "Previews share the production Cloudflare token"). If a preview secret is missing the preview jobs skip with a notice; the admin token never falls back to a production secret.
 
+## Logs are world-readable (public repository)
+
+The repository is public, so every workflow log, step summary and artifact is readable by any GitHub account. A workflow, script or test must NEVER print: an email address; the Cloudflare account name or id (mask any resolved value with `::add-mask::` BEFORE the first echo, and prefer printing nothing); a person's name or handle (use role labels such as 'the account owner'); Discord ids, member keys, ask text, answers or any friend-written text; secrets or the content of API responses (print Cloudflare error CODES only: `tools/cf-error-codes.mjs`). Static text in a workflow file is also printed into the log, so the same rule applies to error messages written in the YAML. `tests/unit/public-hardening.test.mjs` pins part of this; roster edits that print the roster are refused by `roster-upsert.yml` in a public repository. If something private was printed anyway: save the log to the private ops notes, delete it with `gh api -X DELETE repos/<owner>/<repo>/actions/runs/<id>/logs`, then fix the generator.
+
 ## Secret map
 
 | Secret | Where it lives | Used by |
