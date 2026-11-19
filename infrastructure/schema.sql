@@ -535,3 +535,16 @@ CREATE TABLE IF NOT EXISTS shadow_answers (
 );
 CREATE INDEX IF NOT EXISTS idx_shadow_answers_created ON shadow_answers(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_shadow_answers_asker ON shadow_answers(asker_slug);
+
+-- incidents: the dead-man check (flag DEADMAN; migration 0015). One row per silence of an expected PC-side source; no person, no text. At most one open incident per source.
+CREATE TABLE IF NOT EXISTS incidents (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  opened_at TEXT NOT NULL,
+  last_seen_at TEXT,
+  closed_at TEXT,
+  detail TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_incidents_open ON incidents(source) WHERE closed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_incidents_opened ON incidents(opened_at DESC);
