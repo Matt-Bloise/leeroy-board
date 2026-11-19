@@ -209,7 +209,7 @@ Cutover rule: no PC component is switched off until its slice has a clean shadow
 
 ## 5. What is NOT verified
 
-- Whether the Worker account is on Free or Paid, and whether other Workers use cron slots.
+- RESOLVED 2026-11-19: the account is on Workers FREE. The production deploy of run 44569484868 failed at wrangler deploy: "This deployment includes 65 variables, which exceeds the Workers Free limit of 64 variables per Worker (secrets + text)". Consequences: the gateway Durable Object needs the Paid plan (section 2a cost), the cron step runs under the 10 ms Free CPU limit, and the variable budget in tests/unit/var-budget.test.mjs applies. Still unknown: whether other Workers use cron slots.
 - That an outbound gateway socket in a DO survives for days in practice; the docs describe eviction and billing, not Discord gateways. Timer behaviour of `setInterval` in a DO after eviction is untested.
 - Whether the 20:1 WebSocket message billing applies to an outbound client socket.
 - Discord interaction token lifetime (15 min) and the behaviour of a reply with ping off against the Message Content rule: not opened or tested this session.

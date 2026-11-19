@@ -31,7 +31,7 @@ Gate, in order:
 3. `ASK_RESEARCH` off: 409 (the research path is what is compared).
 4. The body must be exactly the known keys with `"purpose":"shadow-ask"`: `question` (required), `as`, `channel` (a Discord channel id, so group memory reads that channel as an ask there would), `private` (true runs the member's private path), `local_answer`. Anything else, including a validly signed `/api/listen` event or self-test body, is 400 before any spend. A question that holds a secret-shaped value is refused (400) and never stored.
 5. A signature already accepted: 409. The SHA-256 of the lower-cased signature (never the signature) is kept in the limiter row from acceptance until its verifier expiry (its timestamp plus 120 s), pruned by expiry only. Only accepted calls are recorded: rejected (400) and rate-limited (429) requests never enter or evict the cache, however many arrive. At most `SHADOW_ASK_DAILY` (20 by default) accepted calls a day exist, so the list stays small.
-6. Rate limit: 6 an hour and 20 a day by default (`SHADOW_ASK_HOURLY`, `SHADOW_ASK_DAILY`, see "Limits" below): 429 with `Retry-After`. The limiter row is `kv_state` key `shadow_ask_rate`; if it cannot be written: 503 and nothing runs. Refused calls (401, 400, 409) do not use up the allowance.
+6. Rate limit: 6 an hour and 20 a day by default (`SHADOW_ASK_LIMITS`, see "Limits" below): 429 with `Retry-After`. The limiter row is `kv_state` key `shadow_ask_rate`; if it cannot be written: 503 and nothing runs. Refused calls (401, 400, 409) do not use up the allowance.
 
 Then `answerWithAi` runs with a record-only sink (the `sink` parameter; every other caller passes none and is unchanged, which `tests/unit/shadow-ask.test.mjs` proves with a differential trace recorded on master before the sink existed). With the sink: no Discord message, no interaction followup, no webhook, no socket message, no card, no stats entry, no group-memory write, no `answer_details`, no `ask_turns` row. The only writes are the row in `shadow_answers` (migration `0014_shadow_answers.sql`, also in `schema.sql`), the limiter row and the Claude spend counters. The table is private: no route reads it back; the signed caller gets the answer in the response of the call itself, and the admin export (`GET /api/admin/export`) can read it.
 
@@ -75,13 +75,13 @@ Same guard as an ask: the monthly counter `claude_tokens_YYYYMM` against `RESEAR
 
 ## Limits (Worker vars)
 
-The limits are Worker `[vars]` in `infrastructure/wrangler.toml`, shipped at the original hard-coded values, so nothing changes until they are edited. Values are numeric strings.
+The limits are ONE Worker var, `SHADOW_ASK_LIMITS = "hourly/daily/percent"`, in `infrastructure/wrangler.toml` (absent = the defaults 6/20/2). One variable because the Workers Free plan allows 64 variables in all; see `tests/unit/var-budget.test.mjs`. Each part is parsed and clamped on its own.
 
-| Var | Default | Range | Effect |
+| Part of `SHADOW_ASK_LIMITS` | Default | Range | Effect |
 |---|---|---|---|
-| `SHADOW_ASK_HOURLY` | `"6"` | integer 1 to 120 | accepted calls in any rolling hour; the next is 429 |
-| `SHADOW_ASK_DAILY` | `"20"` | integer 1 to 600 | accepted calls in any rolling day; raised to the hourly value if set below it |
-| `SHADOW_ASK_SUBCAP_PERCENT` | `"2"` | number 0.1 to 20 | the shadow counter's share of `RESEARCH_CLAUDE_MONTHLY_TOKENS`, in percent |
+| part 1 (hourly) | `6` | integer 1 to 120 | accepted calls in any rolling hour; the next is 429 |
+| part 2 (daily) | `20` | integer 1 to 600 | accepted calls in any rolling day; raised to the hourly value if set below it |
+| part 3 (percent) | `2` | number 0.1 to 20 | the shadow counter's share of `RESEARCH_CLAUDE_MONTHLY_TOKENS`, in percent |
 
 Unset, empty, non-numeric, `NaN`, `Infinity`, zero, negative or exponent-form values use the default, never unlimited. A positive value outside the range is clamped to the nearest edge. Raising them in production is a separate `wrangler.toml` change and deploy; the monthly cap still binds, and a shadow reservation past the sub-cap ends as `claude:subcap`.
 
