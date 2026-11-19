@@ -518,3 +518,20 @@ CREATE TABLE IF NOT EXISTS listen_quiet (
   channel TEXT PRIMARY KEY,
   at TEXT NOT NULL
 );
+
+-- shadow_answers: the SHADOW_ASK recorder (flag SHADOW_ASK; migration 0014). Private storage; no route reads it. Erased by asker_slug.
+CREATE TABLE IF NOT EXISTS shadow_answers (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  asker_slug TEXT,
+  question TEXT NOT NULL,
+  answer TEXT,
+  model TEXT,
+  latency_ms INTEGER,
+  status TEXT NOT NULL,
+  reason TEXT,
+  local_answer TEXT,
+  meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_shadow_answers_created ON shadow_answers(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_shadow_answers_asker ON shadow_answers(asker_slug);
