@@ -49,12 +49,12 @@ export const safeReason = (r) => (typeof r === "string" && /^[a-z0-9][a-z0-9:@._
 export const safeModel = (m) => (typeof m === "string" && /^[A-Za-z0-9\[][A-Za-z0-9:@._+\[\]-]{0,159}$/.test(m) ? m : m == null ? null : "other");
 
 // How long (ms) until one more call fits the route's 6/hour and 20/day windows, given the send times so far. Mirrors the Worker's own computation.
-export function waitMs(times, now) {
+export function waitMs(times, now, perHour = SHADOW_PER_HOUR, perDay = SHADOW_PER_DAY) {
   const hits = times.filter((t) => now - t < DAY_MS).sort((a, b) => a - b);
   let wait = 0;
   const lastHour = hits.filter((t) => now - t < HOUR_MS);
-  if (lastHour.length >= SHADOW_PER_HOUR) wait = Math.max(wait, lastHour[lastHour.length - SHADOW_PER_HOUR] + HOUR_MS - now);
-  if (hits.length >= SHADOW_PER_DAY) wait = Math.max(wait, hits[hits.length - SHADOW_PER_DAY] + DAY_MS - now);
+  if (lastHour.length >= perHour) wait = Math.max(wait, lastHour[lastHour.length - perHour] + HOUR_MS - now);
+  if (hits.length >= perDay) wait = Math.max(wait, hits[hits.length - perDay] + DAY_MS - now);
   return Math.max(0, wait);
 }
 
@@ -89,12 +89,13 @@ export function loadItems(file) {
 // Results file lines: one header {type:"header", input_sha256}, then per attempt a {type:"sent"} marker written BEFORE the POST, then the result row (or {type:"aborted"} when the run stopped on that call).
 // A marker with no result row (a crash, or an aborted call) is retried on resume but its time stays in the rate windows.
 export async function runReplay(opts, deps = {}) {
-  const { tokenFile, input, outPath, maxItems, delayMs = 660000, maxWaitMs = 900000, base = "https://api.leeroy.party", allowHosts = [], keepAnswers = false, log = () => {} } = opts;
+  const { tokenFile, input, outPath, maxItems, delayMs = 660000, maxWaitMs = 900000, base = "https://api.leeroy.party", allowHosts = [], keepAnswers = false, log = () => {}, perHour = SHADOW_PER_HOUR, perDay = SHADOW_PER_DAY } = opts;
   const fetchImpl = deps.fetchImpl || fetch;
   const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   const now = deps.now || (() => Date.now());
   const target = checkBase(base, allowHosts);
-  if (!Number.isInteger(maxItems) || maxItems < 1 || maxItems > SHADOW_PER_DAY) throw new Error(`--max-items must be an integer from 1 to ${SHADOW_PER_DAY}`);
+  if (!Number.isInteger(maxItems) || maxItems < 1 || maxItems > perDay) throw new Error(`--max-items must be an integer from 1 to ${perDay} (the route's daily limit; pass --daily when the Worker's SHADOW_ASK_LIMITS is higher)`);
+  if (!Number.isInteger(perHour) || perHour < 1 || perHour > 120 || !Number.isInteger(perDay) || perDay < perHour || perDay > 600) throw new Error("--hourly must be 1..120 and --daily perHour..600, matching the Worker's SHADOW_ASK_LIMITS clamps");
   assertOutsideRepo(outPath);
   let token = "";
   try { token = readFileSync(tokenFile, "utf8").trim(); } catch { throw new Error("cannot read the token file"); }
@@ -128,7 +129,7 @@ export async function runReplay(opts, deps = {}) {
 
     for (const rec of todo) {
       if (sent >= maxItems) { stop = "max-items"; break; }
-      const wait = waitMs(times, now());
+      const wait = waitMs(times, now(), perHour, perDay);
       if (wait > maxWaitMs) { stop = "rate-window"; log(`rate window: next call fits in ${Math.ceil(wait / 1000)} s (over --max-wait-s); resume later`); break; }
       if (wait > 0) await sleep(wait);
       if (sent > 0 && delayMs > 0) await sleep(delayMs);
@@ -217,12 +218,12 @@ export function formatSummary(rows) {
 }
 
 async function main() {
-  const a = parseArgs(process.argv.slice(2), { in: "value", out: "value", resume: "value", "max-items": "value", "delay-s": "value", "max-wait-s": "value", "keep-answers": "bool", base: "value", "allow-host": "value", summarize: "value" });
+  const a = parseArgs(process.argv.slice(2), { in: "value", out: "value", resume: "value", "max-items": "value", "delay-s": "value", "max-wait-s": "value", "keep-answers": "bool", base: "value", "allow-host": "value", summarize: "value", hourly: "value", daily: "value" });
   if (a.summarize) {
     try { console.log(formatSummary(readJsonl(a.summarize))); } catch (e) { die(e.message); }
     return;
   }
-  const usage = "usage: node tools/replay/run.mjs <token-file> --in <items.jsonl> --max-items N [--out file | --resume results.jsonl] [--delay-s N] [--max-wait-s N] [--keep-answers] [--base url] [--allow-host host]";
+  const usage = "usage: node tools/replay/run.mjs <token-file> --in <items.jsonl> --max-items N [--out file | --resume results.jsonl] [--delay-s N] [--max-wait-s N] [--keep-answers] [--base url] [--allow-host host] [--hourly N --daily N]";
   if (a._.length !== 1 || !a.in || a["max-items"] === undefined) die(usage);
   if (a.out && a.resume && path.resolve(a.out) !== path.resolve(a.resume)) die("--out and --resume name different files; give only --resume to continue a run");
   let outPath = a.resume || a.out;
@@ -232,7 +233,7 @@ async function main() {
   let r;
   try {
     r = await runReplay({
-      tokenFile: a._[0], input: a.in, outPath, maxItems: Number(a["max-items"]), delayMs: num(a["delay-s"], 660) * 1000, maxWaitMs: num(a["max-wait-s"], 900) * 1000,
+      tokenFile: a._[0], input: a.in, outPath, maxItems: Number(a["max-items"]), delayMs: num(a["delay-s"], 660) * 1000, maxWaitMs: num(a["max-wait-s"], 900) * 1000, perHour: num(a.hourly, SHADOW_PER_HOUR), perDay: num(a.daily, SHADOW_PER_DAY),
       base: a.base || "https://api.leeroy.party", allowHosts: a["allow-host"] ? a["allow-host"].split(",").map((h) => h.trim()).filter(Boolean) : [], keepAnswers: Boolean(a["keep-answers"]), log: (m) => console.log(m),
     });
   } catch (e) { die(e.message); }
