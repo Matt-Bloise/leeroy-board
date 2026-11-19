@@ -187,3 +187,12 @@ export function cleanRealReply(raw, env, extra = []) {
   if (scanSecrets(text, env, { extra, ids: false }).length) return null;
   return defangPings(redactIds(text));
 }
+
+// Why cleanRealReply dropped a reply, as a fixed word only (never a value): "empty" for no text, else the first scanSecrets kind ("env-secret", "hex-token", "api-key" ...), else "other".
+// research/claude.js appends it to the claude:reply-flagged reason (claude:reply-flagged@empty) so an operator can tell an empty model reply from a secret-shaped one.
+export function replyFlagKind(raw, env, extra = []) {
+  const text = redactHex(raw);
+  if (!String(text ?? "").trim()) return "empty";
+  const kinds = scanSecrets(text, env, { extra, ids: false });
+  return kinds.length && /^[a-z-]{1,24}$/.test(kinds[0]) ? kinds[0] : "other";
+}

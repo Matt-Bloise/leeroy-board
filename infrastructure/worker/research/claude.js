@@ -20,7 +20,7 @@ import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
 import { researchMembers, researchMembersFor, genericAliases } from "../privacy/roster-config.js";
 import { RESEARCH_MAX_TOKENS } from "./rules.js";
-import { prepareRealPrompt, guardSecretsInBody, cleanRealReply, scanSecrets, defangPings, redactHex } from "./real-names.js";
+import { prepareRealPrompt, guardSecretsInBody, cleanRealReply, replyFlagKind, scanSecrets, defangPings, redactHex } from "./real-names.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 5000000;
 // The Claude hop's budget. The ask's hard end is the deadline minus a sixth (research/no-wall.js hardEndMs): with ASK_DEADLINE_MS 26 s that is 22 s after the ask started. The Worker runs the ask under ctx.waitUntil, which
@@ -405,7 +405,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   }
   await settle(usageTokens(res.usage, estimate) - estimate);
   const text = cleanReply(res.answer);
-  if (text === null) return { reason: "claude:reply-flagged" };
+  if (text === null) return { reason: `claude:reply-flagged@${real ? replyFlagKind(res.answer, env) : "name"}` }; // the fixed kind only: empty, a secret kind, or name (tokenised mode)
   return { answer: text, model: res.model, provider: "claude" };
 }
 
