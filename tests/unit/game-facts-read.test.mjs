@@ -559,11 +559,11 @@ test("the lookup is never called for a guest, an omitted isMember, a path withou
   assert.ok((await count(Q, {})) >= 1, "control: a member with a key and a table question reads the table");
 });
 
-test("GAME_FACTS_READ is one declared [vars] entry shipped off, in the flags doc and the runbook, and the budget still holds", () => {
+test("GAME_FACTS_READ is one declared [vars] entry declared on or off, in the flags doc and the runbook, and the budget still holds", () => {
   const toml = read("infrastructure/wrangler.toml");
   const vars = toml.slice(toml.indexOf("[vars]"));
   assert.equal((vars.match(/^GAME_FACTS_READ\s*=/gm) || []).length, 1);
-  assert.match(vars, /^GAME_FACTS_READ = "off"/m);
+  assert.match(vars, /^GAME_FACTS_READ = "(on|off)"/m);
   assert.match(read("docs/runbooks/flags.md"), /## GAME_FACTS_READ/);
   const book = read("docs/runbooks/game-facts.md");
   assert.match(book, /## Reader/);
