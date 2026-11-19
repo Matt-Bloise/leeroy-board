@@ -897,7 +897,7 @@ test("begin declares the kinds with a count each; finish needs every declared ki
 test("anchors: a field that ends in a newline, CRLF or CR is rejected (in JS a bare $ matches only at the very end; this pins it)", () => {
   const base = mkRow(1);
   for (const field of ["id", "source_table", "row_id", "build", "unit", "verdict", "source_class", "kind"]) {
-    for (const suffix of ["\n", "\r\n", "\r", " ", " "]) assert.ok(validateRow({ ...base, [field]: base[field] + suffix }, "client").error, `${field} + ${JSON.stringify(suffix)}`);
+    for (const suffix of ["\n", "\r\n", "\r", "\u2028", " "]) assert.ok(validateRow({ ...base, [field]: base[field] + suffix }, "client").error, `${field} + ${JSON.stringify(suffix)}`);
   }
   const shaOk = "a".repeat(64), files = { "a.csv": { sha256: shaOk, bytes: 1, rows: 1 } };
   const ok = { purpose: P, op: "begin", build: BUILD, manifest_sha256: shaOk, files, kind: "client", kinds: { spell_level: 1 } };
