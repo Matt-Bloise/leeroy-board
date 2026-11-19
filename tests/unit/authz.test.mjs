@@ -26,6 +26,7 @@ const TABLE = {
   "POST /shadow/ask": PUBLIC, // signed with the same key as /listen (checked inside the handler); 404 while SHADOW_ASK is off; posts nothing
   "POST /heartbeat": PUBLIC, // signed with its own derived key (checked inside the handler); 404 while DEADMAN is off; posts nothing
   "POST /heartbeat/status": PUBLIC, // same key; read only; 404 while DEADMAN is off
+  "POST /facts/load": PUBLIC, // signed with its own derived key (checked inside the handler); 404 while GAME_FACTS_LOAD is off; writes only game_facts rows, posts nothing
   "POST /selftest/claude": PUBLIC, // signed with the same key as /listen (checked inside the handler); 404 without a usable bot token; one call per 60 s
   "GET /discord/commands": PUBLIC,
   "GET /votes": PUBLIC,
@@ -181,6 +182,7 @@ const CALLS = {
   "POST /shadow/ask": ["POST", "/api/shadow/ask", "{}"],
   "POST /heartbeat": ["POST", "/api/heartbeat", "{}"],
   "POST /heartbeat/status": ["POST", "/api/heartbeat/status", "{}"],
+  "POST /facts/load": ["POST", "/api/facts/load", "{}"],
   "GET /discord/commands": ["GET", "/api/discord/commands"],
   "GET /votes": ["GET", "/api/votes"],
   "GET /me": ["GET", "/api/me"],

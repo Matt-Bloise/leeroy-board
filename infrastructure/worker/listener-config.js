@@ -152,3 +152,10 @@ async function cachedLabeled(env, label) {
 export const heartbeatKeyFor = (env, source) => (typeof source === "string" && source ? cachedLabeled(env, heartbeatLabel(source)) : null);
 export const heartbeatStatusKeyFor = (env) => cachedLabeled(env, HEARTBEAT_STATUS_KEY_LABEL);
 export function resetHeartbeatKeyCacheForTests() { heartbeatKeyCache = { token: null, keys: new Map() }; }
+
+// FACTS-LOAD KEY (POST /api/facts/load, game-facts.js). Appended last on purpose. One more independent derived key:
+//   key = HMAC-SHA256(key = the bot token as UTF-8 bytes, message = the ASCII string "leeroy-facts-load-v1")   -> 32 raw bytes
+// Same headers and signature as the listener's (signListen / verifyListen). The listener, self-test, shadow, heartbeat and status keys never verify on the facts route, and the reverse.
+export const FACTS_LOAD_KEY_LABEL = "leeroy-facts-load-v1";
+export const factsLoadKey = (botToken) => deriveLabeled(botToken, FACTS_LOAD_KEY_LABEL);
+export const factsLoadKeyFor = (env) => cachedLabeled(env, FACTS_LOAD_KEY_LABEL);

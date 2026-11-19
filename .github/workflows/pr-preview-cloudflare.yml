@@ -343,6 +343,12 @@ jobs:
             D1_DATABASE_NAME="$D1_DATABASE_NAME" node ./scripts/seed-d1.mjs --remote
           fi
 
+      - name: Prove the game_facts store on the real preview D1 (lookups, rows written, plain export)
+        # PREVIEW DATABASE ONLY: tools/d1-facts-smoke.mjs refuses any name that is not leeroy-board-db-pr-<number> (the production name leeroy-board-db included) before it calls wrangler.
+        # It inserts fictional rows, runs the Worker's own lookup against the real D1, loads a few hundred fictional facts with the loader's own statements and reads meta.rows_written, then runs a plain
+        # `wrangler d1 export --remote` and the restore drill. A failed assertion, including a failed export, FAILS this step. Results go to the job summary.
+        working-directory: infrastructure
+        run: node ../tools/d1-facts-smoke.mjs smoke
       - name: Deploy Ephemeral PR Worker & Durable Object (Single Deploy)
         id: worker
         working-directory: infrastructure
