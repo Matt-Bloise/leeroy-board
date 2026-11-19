@@ -1,0 +1,17 @@
+# THROWAWAY spike worker. Deploy with: cd tools/gateway-spike && npx wrangler deploy
+# Not the production worker (that is infrastructure/wrangler.toml, name leeroy-brain). No D1, no AI, no KV, no routes, no triggers, no [vars].
+# Secret (throwaway worker only): npx wrangler secret put DISCORD_BOT_TOKEN   (a DISPOSABLE test bot token, never the real bot's)
+# Delete when done: npx wrangler delete --name leeroy-gateway-spike
+name = "leeroy-gateway-spike"
+main = "src/index.js"
+compatibility_date = "2025-02-01"
+workers_dev = true
+
+[durable_objects]
+bindings = [
+  { name = "GATEWAY", class_name = "GatewayDO" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GatewayDO"]
