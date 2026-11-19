@@ -16,7 +16,11 @@ const SEC_BEFORE = /(?:\bcooldown|\bcast\s*time|\brecharge|\bcd)\s*(?:of|is|was|
 const MANA_BEFORE = /\bmana(?:\s+cost)?\s*(?:of|is|was|:|=)?\s*$/i;
 const MANA_AFTER = /^\s*mana\b/i;
 const OTHER_AFTER = /^\s*(?:%|percent\b|gold\b|silver\b|copper\b|g\b|yards?\b|yds?\b|damage\b|dmg\b|hp\b|health\b|points?\b|stacks?\b|charges?\b|times\b|hits\b|ticks\b|attack\s+power\b|armou?r\b|stamina\b|strength\b|agility\b|intellect\b|spirit\b)/i;
-const DIFFERENT_FACT = /\b(?:max(?:imum)?|cap(?:ped)?|until|ranks?|next|previous|then|later|upgrade[sd]?|improved)\b/i;
+// A clause about another fact (a cap, a rank, an upgrade). Time words (until, then, next, later) are NOT here: "level 30 until the next update, then level 20" is a contradiction.
+const DIFFERENT_FACT = /\b(?:max(?:imum)?|cap(?:ped)?|ranks?|upgrade[sd]?|improved)\b/i;
+// Negation just before a number's phrase, inside its clause: "not level 20", "isn't 20", "no longer 20", "never level 20". Up to three words may sit between.
+const NEG_BEFORE = /(?:n['\u2019]t\b|\bnot\b|\bnever\b|\bno longer\b)(?:\s+[\w'\u2019-]+){0,3}\s*$/i;
+const negatedAt = (text, idx) => NEG_BEFORE.test(text.slice(Math.max(0, idx - 60), idx).split(/[.,;:!?\n]/).pop());
 
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 const tail = (text, idx) => text.slice(Math.max(0, idx - 32), idx);
@@ -69,7 +73,7 @@ function unitTokens(text, unit) {
   const out = [];
   for (const t of toks) {
     const u = unitOf(text, t);
-    if (u && u.unit === unit) out.push({ ...t, norm: t.value * u.mult });
+    if (u && u.unit === unit) out.push({ ...t, norm: t.value * u.mult, negated: negatedAt(text, t.index) });
   }
   return out;
 }
@@ -81,10 +85,10 @@ export function exact_match(answer, expected) {
   const want = Number(expected.value);
   const unit = unitForExpected(expected);
   const ctx = unitTokens(answer, unit);
-  if (ctx.some((t) => !ID_BEFORE.test(tail(answer, t.index)) && near(t.norm, want))) return true;
+  if (ctx.some((t) => !t.negated && !ID_BEFORE.test(tail(answer, t.index)) && near(t.norm, want))) return true;
   if (ctx.length) return false;
   for (const t of extractNumbers(answer)) {
-    if (ID_BEFORE.test(tail(answer, t.index))) continue;
+    if (ID_BEFORE.test(tail(answer, t.index)) || negatedAt(answer, t.index)) continue;
     if (unitOf(answer, t)) continue; // a number with some other unit is not this answer
     if (near(t.value, want)) return true;
   }
@@ -113,17 +117,18 @@ export function unsupported_numbers(answer, { question = "", expected = null, al
   return [...bad].sort((a, b) => a - b);
 }
 
-// contradiction: the answer states a DIFFERENT number in the question's unit than the expected one ("level 30" when the fact is level 20), unless that number is in the question or sits in a sentence about a
-// different fact (max, cap, until, rank, next, previous, then, later, upgrade, improved). Number words next to the unit count.
+// contradiction: the answer states a DIFFERENT number in the question's unit than the expected one ("level 30" when the fact is level 20), unless that number is negated ("not level 30"), is in the question, or sits in a clause about a
+// different fact (max, cap, rank, upgrade, improved). Number words next to the unit count.
 export function contradiction(answer, expected, question = "") {
   if (typeof answer !== "string" || !answer || !expected || !Number.isFinite(Number(expected.value))) return false;
   const want = Number(expected.value);
   const unit = unitForExpected(expected);
   const qn = extractNumbers(question).map((t) => t.value);
-  for (const sentence of answer.split(/(?<=[.!?])\s+|\n+/)) {
+  // per CLAUSE: sentences, then commas, semicolons and but/though/however/while
+  for (const sentence of answer.split(/(?<=[.!?])\s+|\n+|;|,(?!\d)|\s+(?:but|though|however|while)\s+/)) {
     if (DIFFERENT_FACT.test(sentence)) continue;
     for (const t of unitTokens(sentence, unit)) {
-      if (!near(t.norm, want) && !qn.some((q) => near(q, t.norm))) return true;
+      if (!t.negated && !near(t.norm, want) && !qn.some((q) => near(q, t.norm))) return true;
     }
   }
   return false;
@@ -146,7 +151,7 @@ export function scoreTruthItem(record, res, answer) {
   const em = exact_match(answer, expected);
   const ct = contradiction(answer, expected, record.question);
   const un = unsupported_numbers(answer, { question: record.question, expected, allowed_numbers: record.allowed_numbers });
-  return { exact_match: em, contradiction: ct, exact: em && !ct, unsupported_count: un.length, degraded: degraded(res) };
+  return { exact_match: em, contradiction: ct, exact: em && !ct && !degraded(res), unsupported_count: un.length, degraded: degraded(res) };
 }
 
 export function percentile(values, p) {
@@ -168,7 +173,7 @@ function group(rows) {
     exact_scored: truth.length,
     exact_rate: rate(truth.filter((r) => r.scores.exact).length, truth.length),
     unsupported_rate: rate(truth.filter((r) => r.scores.unsupported_count > 0).length, truth.length),
-    degraded_rate: rate(scored.filter((r) => degraded({ reason: r.reason, model: r.model, status: r.status })).length, scored.length),
+    degraded_rate: rate(scored.filter((r) => (typeof r.degraded === "boolean" ? r.degraded : degraded({ reason: r.reason, model: r.model, status: r.status }))).length, scored.length),
     within_budget_rate: rate(scored.filter((r) => withinBudget(r.latency_ms)).length, scored.length),
     latency_p50_ms: percentile(scored.map((r) => r.latency_ms), 50),
     latency_p95_ms: percentile(scored.map((r) => r.latency_ms), 95),

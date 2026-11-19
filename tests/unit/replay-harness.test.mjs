@@ -71,6 +71,7 @@ function writeTables(dir, mutate = {}) {
 }
 function fixtureDir() { const d = tmp(); writeTables(d); return d; }
 const records = (text) => text.trim().split("\n").map((l) => JSON.parse(l));
+const resultRows = (p) => records(readFileSync(p, "utf8")).filter((x) => !x.type);
 
 // ---- manifest ----
 test("manifest: a matching table loads; a changed hash, byte count or row count refuses", () => {
@@ -290,13 +291,17 @@ test("run: signed calls, scored results, answers NOT retained without --keep-ans
   assert.equal(r.stop, "done"); assert.equal(r.sent, recs.length);
   assert.ok(s.seen.every((x) => x.ok && x.method === "POST" && x.url === "/api/shadow/ask" && x.body.purpose === "shadow-ask" && Object.keys(x.body).every((k) => ["purpose", "question", "as", "local_answer"].includes(k))));
   const text = readFileSync(join(dir, "results.jsonl"), "utf8");
-  const rows = records(text);
+  const lines = records(text);
+  assert.equal(lines[0].type, "header"); assert.match(lines[0].input_sha256, /^[0-9a-f]{64}$/);
+  assert.equal(lines.filter((x) => x.type === "sent").length, recs.length, "one sent marker per call");
+  const rows = lines.filter((x) => !x.type);
+  assert.ok(rows.every((x) => /^[0-9a-f]{64}$/.test(x.question_sha256) && x.fictional === false));
   assert.ok(rows.every((x) => x.scored && x.ok && x.within_budget && x.scores.exact === true && x.answer_length > 0 && /^[0-9a-f]{64}$/.test(x.answer_sha256) && x.answer === undefined));
   assert.ok(!text.includes("It is level"), "answer text retained without --keep-answers");
   assert.ok(!text.includes(TOKEN) && !text.includes(recs[0].question), "token or question leaked into results");
   const dir2 = join(dir, "k"); mkdirSync(dir2);
   const r2 = await runReplay(opts(dir, { base: s.base, outPath: join(dir2, "r.jsonl"), keepAnswers: true }), instant);
-  assert.ok(records(readFileSync(join(dir2, "r.jsonl"), "utf8")).every((x) => /^It is level/.test(x.answer)));
+  assert.ok(resultRows(join(dir2, "r.jsonl")).every((x) => /^It is level/.test(x.answer)));
   assert.equal(r2.sent, recs.length);
   await s.close(); rmSync(dir, { recursive: true, force: true });
 });
@@ -331,7 +336,7 @@ test("run: --max-items stops cleanly; --resume continues without repeating ids a
   const firstIds = r.results.map((x) => x.id);
   r = await runReplay(opts(dir, { base: s.base, maxItems: 2 }), instant);
   assert.equal(r.sent, 2); assert.equal(s.seen.length, 5);
-  const all = records(readFileSync(join(dir, "results.jsonl"), "utf8")).map((x) => x.id);
+  const all = resultRows(join(dir, "results.jsonl")).map((x) => x.id);
   assert.equal(new Set(all).size, all.length, "an id was run twice");
   assert.ok(firstIds.every((id) => all.includes(id)));
   assert.equal(all.length, 5);
@@ -362,7 +367,7 @@ test("run: rate windows (6/hour, 20/day) stop the run cleanly and resumably; a 4
   rmSync(join(dir, "results.jsonl"));
   limited = true;
   r = await runReplay(opts(dir, { base: s.base }), instant);
-  assert.equal(r.stop, "rate-limited"); assert.equal(existsSync(join(dir, "results.jsonl")), false, "a 429 must not record the item");
+  assert.equal(r.stop, "rate-limited"); assert.equal(resultRows(join(dir, "results.jsonl")).length, 0, "a 429 must not record a result for the item");
   limited = false;
   r = await runReplay(opts(dir, { base: s.base, maxItems: 1 }), instant);
   assert.equal(r.results[0].id, recs[0].id);
@@ -375,7 +380,7 @@ test("run: 401 and 404 stop with an error; a redirect is refused and never follo
   const redir = await stub((b, n, res) => { res.writeHead(302, { Location: target.base + "/api/shadow/ask" }).end(); });
   let r = await runReplay(opts(dir, { base: redir.base }), instant);
   assert.equal(r.stop, "error:request-failed"); assert.equal(target.seen.length, 0, "the redirect was followed");
-  assert.equal(existsSync(join(dir, "results.jsonl")), false);
+  assert.equal(resultRows(join(dir, "results.jsonl")).length, 0);
   const s404 = await stub(() => ({ status: 404, json: { error: "not found" } }));
   r = await runReplay(opts(dir, { base: s404.base }), instant);
   assert.equal(r.stop, "error:http-404");
@@ -416,7 +421,7 @@ test("run CLI: prints a summary, never a question, an answer or the token; --sum
   assert.equal(missing.code, 2);
   const redo = await runCli("run.mjs", [join(dir, "token"), "--in", join(dir, "truth.jsonl"), "--max-items", "2", "--delay-s", "0", "--resume", out, "--base", s.base]);
   assert.match(redo.out, /sent 2/);
-  assert.equal(records(readFileSync(out, "utf8")).length, 6);
+  assert.equal(resultRows(out).length, 6);
   await s.close(); rmSync(dir, { recursive: true, force: true });
 });
 test("run: a pair corpus sends as/local_answer when they fit 4 KB, leaves the local answer out when not, and is never printed", () => {
@@ -428,9 +433,11 @@ test("run: a pair corpus sends as/local_answer when they fit 4 KB, leaves the lo
 
 // ---- grade-pack ----
 const pairs = (n, extra = {}) => Array.from({ length: n }, (_, i) => ({ id: `c${i}`, question: `Q${i}?`, local_answer: `LOCAL-${i}`, ...extra }));
-const workerResults = (n) => Array.from({ length: n }, (_, i) => ({ id: `c${i}`, answer: `WORKER-${i}`, model: "claude:claude-sonnet-5-5+research" }));
+const SHA = "f".repeat(64);
+const workerResults = (n, fictional = false, sha = SHA) => [{ type: "header", input_sha256: sha }, ...Array.from({ length: n }, (_, i) => ({ id: `c${i}`, answer: `WORKER-${i}`, model: "claude:claude-sonnet-5-5+research", question_sha256: sha256(`Q${i}?`), fictional }))];
+const bp = (o) => buildPackets({ corpusSha256: SHA, ...o });
 test("grade-pack: packets are blinded (no labels, no ids), A/B order varies, the key unblinds", () => {
-  const r = buildPackets({ corpus: pairs(60, { fictional: true }), results: workerResults(60), grader: "claude", seed: 5 });
+  const r = bp({ corpus: pairs(60, { fictional: true }), results: workerResults(60, true), grader: "claude", seed: 5 });
   const lines = r.packetText.trim().split("\n").map((l) => JSON.parse(l));
   const packets = lines.slice(1);
   assert.equal(lines[0].type, "header"); assert.equal(packets.length, 60);
@@ -445,24 +452,24 @@ test("grade-pack: packets are blinded (no labels, no ids), A/B order varies, the
   const workerFirst = key.filter((k) => k.A === "worker").length;
   assert.ok(workerFirst > 10 && workerFirst < 50, `A/B not randomised: ${workerFirst}/60`);
   for (const k of key) { const p = packets.find((x) => x.packet_id === k.packet_id); assert.ok((k.A === "worker" ? p.A : p.B).startsWith("WORKER-")); assert.ok((k.A === "local" ? p.A : p.B).startsWith("LOCAL-")); }
-  assert.notEqual(buildPackets({ corpus: pairs(60, { fictional: true }), results: workerResults(60), grader: "claude", seed: 6 }).keyText, r.keyText);
+  assert.notEqual(bp({ corpus: pairs(60, { fictional: true }), results: workerResults(60, true), grader: "claude", seed: 6 }).keyText, r.keyText);
   assert.equal(r.header.private, false); assert.equal(r.header.same_family_warning, true);
   assert.deepEqual(packets.map((p) => p.packet_id), [...new Set(packets.map((p) => p.packet_id))]);
 });
 test("grade-pack: a private corpus is refused unless --grader claude, and is marked private; external needs every record fictional", () => {
-  const priv = pairs(4), res = workerResults(4);
-  assert.throws(() => buildPackets({ corpus: priv, results: res, grader: "external" }), /private/);
-  assert.throws(() => buildPackets({ corpus: [...pairs(3, { fictional: true }), { ...pairs(1)[0], id: "c3" }], results: res, grader: "external" }), /private/); // one unflagged record makes it private
-  assert.throws(() => buildPackets({ corpus: priv, results: res, grader: "gemini" }), /--grader/);
-  const ok = buildPackets({ corpus: priv, results: res, grader: "claude" });
+  const priv = pairs(4), res = workerResults(4, true);
+  assert.throws(() => bp({ corpus: priv, results: res, grader: "external" }), /private/);
+  assert.throws(() => bp({ corpus: [...pairs(3, { fictional: true }), { ...pairs(1)[0], id: "c3" }], results: res, grader: "external" }), /private/); // one unflagged record makes it private
+  assert.throws(() => bp({ corpus: priv, results: res, grader: "gemini" }), /--grader/);
+  const ok = bp({ corpus: priv, results: res, grader: "claude" });
   assert.equal(ok.header.private, true); assert.match(ok.header.note, /PRIVATE/);
-  const fict = buildPackets({ corpus: pairs(4, { fictional: true }), results: res, grader: "external" });
+  const fict = bp({ corpus: pairs(4, { fictional: true }), results: res, grader: "external" });
   assert.equal(fict.header.private, false); assert.equal(fict.header.same_family_warning, false);
-  assert.throws(() => buildPackets({ corpus: pairs(4, { fictional: "true" }), results: res, grader: "external" }), /private/); // only the boolean true counts
-  assert.equal(buildPackets({ corpus: priv, results: [], grader: "claude" }).n, 0); // no kept answers: nothing to grade
+  assert.throws(() => bp({ corpus: pairs(4, { fictional: "true" }), results: res, grader: "external" }), /private/); // only the boolean true counts
+  assert.equal(bp({ corpus: priv, results: [{ type: "header", input_sha256: SHA }], grader: "claude" }).n, 0); // no kept answers: nothing to grade
 });
 test("grade-pack merge: unblinds, validates 1-5 integers, applies the decision rule", () => {
-  const r = buildPackets({ corpus: pairs(40, { fictional: true }), results: workerResults(40), grader: "claude", seed: 1 });
+  const r = bp({ corpus: pairs(40, { fictional: true }), results: workerResults(40, true), grader: "claude", seed: 1 });
   const key = r.keyText.trim().split("\n").map((l) => JSON.parse(l));
   const g = (t, h, gr) => ({ tone: t, helpfulness: h, groundedness: gr });
   const grades = key.map((k) => ({ packet_id: k.packet_id, [k.A === "worker" ? "A" : "B"]: g(4, 4, 5), [k.A === "worker" ? "B" : "A"]: g(4, 4, 4) }));
@@ -478,7 +485,7 @@ test("grade-pack merge: unblinds, validates 1-5 integers, applies the decision r
 test("grade-pack CLI: writes the packet and a separate key file outside the repo; a private corpus with --grader external exits non-zero and writes nothing", async () => {
   const dir = tmp();
   writeFileSync(join(dir, "c.jsonl"), pairs(3).map((x) => JSON.stringify(x)).join("\n") + "\n");
-  writeFileSync(join(dir, "r.jsonl"), workerResults(3).map((x) => JSON.stringify(x)).join("\n") + "\n");
+  writeFileSync(join(dir, "r.jsonl"), workerResults(3, false, sha256(readFileSync(join(dir, "c.jsonl")))).map((x) => JSON.stringify(x)).join("\n") + "\n");
   const outp = join(dir, "packet.jsonl");
   let r = await runCli("grade-pack.mjs", ["build", "--corpus", join(dir, "c.jsonl"), "--results", join(dir, "r.jsonl"), "--grader", "external", "--out", outp]);
   assert.notEqual(r.code, 0); assert.match(r.err, /private/); assert.equal(existsSync(outp), false); assert.equal(existsSync(outp + ".key.jsonl"), false);
@@ -487,4 +494,194 @@ test("grade-pack CLI: writes the packet and a separate key file outside the repo
   assert.ok(!readFileSync(outp, "utf8").includes('"worker"')); assert.match(readFileSync(outp, "utf8"), /"private":true/);
   assert.ok(!r.out.includes("LOCAL-") && !r.out.includes("WORKER-") && !r.out.includes("Q0"));
   rmSync(dir, { recursive: true, force: true });
+});
+
+// ================= review round: binding, guard, hosts, vocabulary, lock, resume, negation, manifest =================
+import { linkSync, symlinkSync } from "node:fs";
+import { isInside, writeOut, withLock } from "../../tools/replay/common.mjs";
+import { scoreTruthItem } from "../../tools/replay/score.mjs";
+import { safeStatus, safeKind, safeModel, safeReason, DEFAULT_HOSTS } from "../../tools/replay/run.mjs";
+
+const resultsOf = (p) => resultRows(p);
+function writeInput(dir, recs) { const f = join(dir, "in.jsonl"); writeFileSync(f, recs.map((r) => JSON.stringify(r)).join("\n") + "\n"); return f; }
+const rec1 = (i, extra = {}) => ({ id: `r${i}`, question: `Fictional question ${i}?`, ...extra });
+const okReply = (o = {}) => ({ json: { id: "i", ok: true, status: "answered", model: "m", latency_ms: 10, reason: "ok", answer: "fine", ...o } });
+
+test("guard: separator boundary (a child named ..replay is inside), hard links refused, exclusive create, symlink into the root resolved", () => {
+  const fake = tmp(); const root = join(fake, "repo"); mkdirSync(root);
+  assert.equal(isInside(root, join(root, "..replay", "x")), true, "a child named ..replay must count as inside");
+  assert.equal(isInside(root, join(root, "..", "x")), false);
+  assert.equal(isInside(root, join(root, "..")), false);
+  assert.equal(isInside(root, root), true);
+  assert.throws(() => assertOutsideRepo(join(root, "..replay", "a.jsonl"), root), /inside the repo/);
+  assert.doesNotThrow(() => assertOutsideRepo(join(fake, "elsewhere", "a.jsonl"), root));
+  // hard link: a second name outside the root for a file inside it
+  writeFileSync(join(root, "tracked.txt"), "x");
+  linkSync(join(root, "tracked.txt"), join(fake, "alias.txt"));
+  assert.throws(() => assertOutsideRepo(join(fake, "alias.txt"), root), /hard-linked/);
+  // exclusive create: an existing file is never overwritten
+  writeFileSync(join(fake, "exists.jsonl"), "keep");
+  assert.throws(() => writeOut(join(fake, "exists.jsonl"), "new", root), /overwrite/);
+  assert.equal(readFileSync(join(fake, "exists.jsonl"), "utf8"), "keep");
+  writeOut(join(fake, "fresh.jsonl"), "ok", root); assert.equal(readFileSync(join(fake, "fresh.jsonl"), "utf8"), "ok");
+  try { symlinkSync(root, join(fake, "link"), "junction"); assert.throws(() => assertOutsideRepo(join(fake, "link", "a.jsonl"), root), /inside the repo/); } catch (e) { if (e.code !== "EPERM" && e.code !== "EEXIST" && !/inside/.test(String(e.message))) throw e; }
+  rmSync(fake, { recursive: true, force: true });
+});
+
+test("base host: only api.leeroy.party, localhost and 127.0.0.1 by default; anything else needs --allow-host; the host is printed before sending", async () => {
+  assert.deepEqual([...DEFAULT_HOSTS], ["api.leeroy.party", "localhost", "127.0.0.1"]);
+  assert.doesNotThrow(() => checkBase("https://api.leeroy.party"));
+  assert.throws(() => checkBase("https://staging.leeroy.party"), /--allow-host staging\.leeroy\.party/);
+  assert.throws(() => checkBase("https://api.leeroy.party.evil.example"), /not allowed/);
+  assert.doesNotThrow(() => checkBase("https://staging.leeroy.party", ["staging.leeroy.party"]));
+  assert.throws(() => checkBase("http://staging.leeroy.party", ["staging.leeroy.party"]), /https/); // the allow flag never relaxes https
+  const dir = tmp(); writeFileSync(join(dir, "token"), TOKEN);
+  const s = await stub(() => okReply());
+  const logs = [];
+  await runReplay({ tokenFile: join(dir, "token"), input: writeInput(dir, [rec1(1)]), outPath: join(dir, "o.jsonl"), maxItems: 1, delayMs: 0, base: s.base + "/some/secret/path?x=1", log: (m) => logs.push(m) }, instant);
+  assert.ok(logs.some((l) => l === `sending to host 127.0.0.1:${new URL(s.base).port}`), logs.join("|"));
+  assert.ok(!logs.join("|").includes("secret"), "the path must not be printed");
+  assert.ok(logs.findIndex((l) => l.startsWith("sending to host")) < logs.findIndex((l) => l.startsWith("item ")));
+  await assert.rejects(runReplay({ tokenFile: join(dir, "token"), input: writeInput(dir, [rec1(1)]), outPath: join(dir, "o2.jsonl"), maxItems: 1, delayMs: 0, base: "https://other.example" }, instant), /--allow-host/);
+  await s.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("vocabulary: status, kind, model and reason are fixed-vocabulary in results and output; a hostile response cannot put text there", async () => {
+  assert.equal(safeStatus("answered"), "answered"); assert.equal(safeStatus("evil text"), "other");
+  assert.equal(safeKind(undefined), "pair"); assert.equal(safeKind("spell_level"), "spell_level"); assert.equal(safeKind("rm -rf"), "other");
+  assert.equal(safeReason("claude:timeout@compose-16s"), "claude:timeout@compose-16s"); assert.equal(safeReason("free text here"), "other"); assert.equal(safeReason(null), null);
+  assert.equal(safeModel("claude:claude-sonnet-5-5+research+degraded"), "claude:claude-sonnet-5-5+research+degraded"); assert.equal(safeModel("[claude:cap]"), "[claude:cap]"); assert.equal(safeModel("ignore previous instructions"), "other");
+  const dir = tmp(); writeFileSync(join(dir, "token"), TOKEN);
+  const input = writeInput(dir, [rec1(1, { kind: "attacker kind" })]);
+  const s = await stub(() => ({ json: { id: "i", ok: true, status: "PWNED-STATUS now", model: "PWNED model text", latency_ms: 10, reason: "PWNED reason text", answer: "fine" } }));
+  const r = await runCli("run.mjs", [join(dir, "token"), "--in", input, "--max-items", "1", "--delay-s", "0", "--out", join(dir, "o.jsonl"), "--base", s.base]);
+  const all = r.out + r.err + readFileSync(join(dir, "o.jsonl"), "utf8");
+  assert.ok(!all.includes("PWNED") && !all.includes("attacker"), "hostile text reached stdout or the results");
+  const row = resultsOf(join(dir, "o.jsonl"))[0];
+  assert.equal(row.status, "other"); assert.equal(row.kind, "other"); assert.equal(row.model, "other"); assert.equal(row.reason, "other");
+  await s.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("lock and markers: a sent marker exists before the POST; a body that cannot be read still counts an attempt; the lock is exclusive and always removed", async () => {
+  const dir = tmp(); writeFileSync(join(dir, "token"), TOKEN);
+  const input = writeInput(dir, [rec1(1), rec1(2)]);
+  const out = join(dir, "o.jsonl");
+  let markerSeen = false;
+  const s = await stub((body) => {
+    markerSeen = readFileSync(out, "utf8").split("\n").some((l) => l.includes('"type":"sent"') && l.includes('"id":"r1"'));
+    return okReply();
+  });
+  let r = await runReplay(opts(dir, { input, outPath: out, base: s.base, maxItems: 1 }), instant);
+  assert.equal(markerSeen, true, "the marker must be on disk before the request is answered");
+  assert.equal(existsSync(out + ".lock"), false, "lock left behind");
+  // a dropped connection: the attempt is counted and an aborted row is written
+  const bad = await stub((b, n, res) => { res.destroy(); });
+  r = await runReplay(opts(dir, { input, outPath: out, base: bad.base, maxItems: 5 }), instant);
+  assert.equal(r.stop, "error:request-failed"); assert.equal(r.sent, 1, "an unreadable body must still count as an attempt");
+  const lines = records(readFileSync(out, "utf8"));
+  assert.equal(lines.filter((x) => x.type === "sent").length, 2); assert.equal(lines.filter((x) => x.type === "aborted").length, 1);
+  assert.equal(existsSync(out + ".lock"), false, "lock left behind after a failure");
+  // the aborted item is retried on resume and the failed attempt still counts in the rate windows
+  r = await runReplay(opts(dir, { input, outPath: out, base: s.base, maxItems: 5 }), instant);
+  assert.equal(r.sent, 1); assert.equal(r.unresolved, 1);
+  assert.deepEqual(resultsOf(out).map((x) => x.id), ["r1", "r2"]);
+  // exclusive lock
+  writeFileSync(out + ".lock", "123");
+  await assert.rejects(runReplay(opts(dir, { input, outPath: out, base: s.base }), instant), /locked/);
+  assert.equal(existsSync(out + ".lock"), true, "a lock that is not ours must not be removed");
+  rmSync(out + ".lock");
+  await assert.rejects(withLock(join(dir, "x.jsonl"), async () => { await assert.rejects(withLock(join(dir, "x.jsonl"), async () => {}), /locked/); throw new Error("boom"); }), /boom/);
+  assert.equal(existsSync(join(dir, "x.jsonl.lock")), false);
+  await s.close(); await bad.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("resume: the results header binds the input hash; a different input, a missing header, or duplicate ids refuse", async () => {
+  const dir = tmp(); writeFileSync(join(dir, "token"), TOKEN);
+  const s = await stub(() => okReply());
+  const out = join(dir, "o.jsonl");
+  const inputA = writeInput(dir, [rec1(1), rec1(2), rec1(3)]);
+  await runReplay(opts(dir, { input: inputA, outPath: out, base: s.base, maxItems: 1 }), instant);
+  const inputB = join(dir, "b.jsonl"); writeFileSync(inputB, [rec1(1), rec1(2), rec1(3, { question: "changed text" })].map((r) => JSON.stringify(r)).join("\n") + "\n");
+  await assert.rejects(runReplay(opts(dir, { input: inputB, outPath: out, base: s.base }), instant), /different input/);
+  assert.equal(s.seen.length, 1, "nothing may be sent for a refused resume");
+  await runReplay(opts(dir, { input: inputA, outPath: out, base: s.base, maxItems: 1 }), instant); // same input resumes
+  assert.equal(s.seen.length, 2);
+  const noHeader = join(dir, "nh.jsonl"); writeFileSync(noHeader, JSON.stringify({ id: "r1", ok: true }) + "\n");
+  await assert.rejects(runReplay(opts(dir, { input: inputA, outPath: noHeader, base: s.base }), instant), /no header/);
+  const dupIn = join(dir, "dup.jsonl"); writeFileSync(dupIn, [rec1(1), rec1(1)].map((r) => JSON.stringify(r)).join("\n") + "\n");
+  await assert.rejects(runReplay(opts(dir, { input: dupIn, outPath: join(dir, "d.jsonl"), base: s.base }), instant), /duplicate id/);
+  const lines = readFileSync(out, "utf8").split("\n").filter(Boolean);
+  const dupRes = join(dir, "dr.jsonl"); writeFileSync(dupRes, [lines[0], ...lines.filter((l) => !l.includes('"type"')), ...lines.filter((l) => !l.includes('"type"'))].join("\n") + "\n");
+  await assert.rejects(runReplay(opts(dir, { input: inputA, outPath: dupRes, base: s.base }), instant), /duplicate id/);
+  assert.equal(s.seen.length, 2);
+  await s.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("score: negated statements are not exact; a degraded response is never exact", () => {
+  const L = { value: 20, unit: "level" };
+  for (const t of ["It is not level 20.", "That isn't level 20", "The spell is no longer level 20", "It is not 20", "Never level 20", "it's not at level 20"]) assert.equal(exact_match(t, L), false, t);
+  for (const t of ["It's not level 30, it is level 20.", "Not sure, but level 20.", "It is level 20, not 30"]) assert.equal(exact_match(t, L), true, t);
+  assert.equal(exact_match("It is not level 20, it is level 30.", L), false);
+  assert.equal(contradiction("It is level 20, not level 30.", L, "q"), false); // a negated different number is not a claim
+  const rec = { question: "What level is Zorbo?", expected: L, allowed_numbers: [20] };
+  assert.equal(scoreTruthItem(rec, { reason: "ok", model: "m", status: "answered" }, "Level 20.").exact, true);
+  assert.equal(scoreTruthItem(rec, { reason: "claude:cap", model: "m+degraded", status: "degraded" }, "Level 20.").exact, false);
+  assert.equal(scoreTruthItem(rec, { reason: "ok", model: "m+degraded", status: "answered" }, "Level 20.").exact, false);
+});
+test("score: contradiction is checked per clause", () => {
+  const L = { value: 20, unit: "level" };
+  assert.equal(contradiction("It is level 30 until the next update, then level 20.", L, "q"), true);
+  assert.equal(exact_match("It is level 30 until the next update, then level 20.", L), true); // the number is there; exact is cut by the contradiction, not by exact_match
+  assert.equal(scoreTruthItem({ question: "q", expected: L, allowed_numbers: [] }, { reason: "ok", model: "m", status: "answered" }, "It is level 30 until the next update, then level 20.").exact, false);
+  assert.equal(contradiction("Level 20; at level 40 you also get a mount", L, "q"), true);
+  assert.equal(contradiction("Level 20, and the max level is 60", L, "q"), false);
+  assert.equal(contradiction("Rank 2 is the one you want, and it is level 30.", L, "q"), true); // the rank word must not hide the other clause
+  assert.equal(contradiction("Level 20 but rank 2 needs level 30", L, "q"), false);
+  assert.equal(contradiction("Level 20 for 1,200 gold", L, "q"), false);
+});
+
+test("manifest rows: a physical-line count is accepted only when a quoted field really spans lines; the manifest itself can be pinned", () => {
+  const d = tmp();
+  const multi = 'ID,Name_lang\n1,"two\nlines"\n2,plain\n';
+  writeFileSync(join(d, "m.csv"), multi);
+  const entry = (text, rows) => ({ sha256: sha256(Buffer.from(text)), bytes: Buffer.byteLength(text), rows });
+  assert.equal(loadVerifiedTable(d, { files: { "m.csv": entry(multi, 2) } }, "m.csv").rows.length, 2); // record count
+  assert.equal(loadVerifiedTable(d, { files: { "m.csv": entry(multi, 3) } }, "m.csv").rows.length, 2); // physical lines, and the table has a multi-line field
+  const plain = "ID,Name_lang\n1,a\n2,b\n";
+  writeFileSync(join(d, "p.csv"), plain);
+  assert.throws(() => loadVerifiedTable(d, { files: { "p.csv": entry(plain, 3) } }, "p.csv"), /row count/); // 3 is neither the records nor a multi-line table
+  assert.equal(loadVerifiedTable(d, { files: { "p.csv": entry(plain, 2) } }, "p.csv").rows.length, 2);
+  const blank = "ID,Name_lang\n1,a\n\n2,b\n"; // a blank line: 3 physical lines, 2 records, no multi-line field
+  writeFileSync(join(d, "b.csv"), blank);
+  assert.throws(() => loadVerifiedTable(d, { files: { "b.csv": entry(blank, 3) } }, "b.csv"), /row count/);
+  rmSync(d, { recursive: true, force: true });
+  const f = fixtureDir();
+  const manifestHash = sha256(readFileSync(join(f, "MANIFEST.json")));
+  const pinned = generate({ dir: f, seed: 1, perKind: 3, manifestSha256: manifestHash });
+  assert.equal(pinned.header.manifest_sha256, manifestHash); assert.equal(pinned.header.manifest_pinned, true);
+  assert.equal(generate({ dir: f, seed: 1, perKind: 3 }).header.manifest_pinned, false);
+  assert.throws(() => generate({ dir: f, manifestSha256: "0".repeat(64) }), /MANIFEST\.json sha256/);
+  writeFileSync(join(f, "MANIFEST.json"), readFileSync(join(f, "MANIFEST.json"), "utf8").replace("0.0.0.FAKE", "9.9.9.EDITED"));
+  assert.throws(() => generate({ dir: f, manifestSha256: manifestHash }), /MANIFEST\.json sha256/); // an edited manifest no longer matches the pin
+  rmSync(f, { recursive: true, force: true });
+});
+
+test("grade-pack binding: results must come from this corpus file and these questions; private:false needs corpus AND results flagged fictional", () => {
+  const corpus = pairs(5, { fictional: true });
+  assert.throws(() => buildPackets({ corpus, corpusSha256: SHA, results: workerResults(5, true, "a".repeat(64)), grader: "claude" }), /not produced from this corpus file/);
+  assert.throws(() => buildPackets({ corpus, corpusSha256: SHA, results: workerResults(5, true).slice(1), grader: "claude" }), /not produced from this corpus file/); // no header
+  const swapped = pairs(5, { fictional: true }).map((r, i) => (i === 2 ? { ...r, question: "A different question than the one that was run?" } : r));
+  assert.throws(() => bp({ corpus: swapped, results: workerResults(5, true), grader: "claude" }), /question text/);
+  const tampered = workerResults(5, true); tampered[3] = { ...tampered[3], question_sha256: "0".repeat(64) };
+  assert.throws(() => bp({ corpus, results: tampered, grader: "claude" }), /question text/);
+  assert.throws(() => bp({ corpus, results: [...workerResults(5, true), { id: "c1", answer: "x", question_sha256: sha256("Q1?"), fictional: true }], grader: "claude" }), /duplicate id/);
+  assert.throws(() => bp({ corpus: [...corpus, corpus[0]], results: workerResults(5, true), grader: "claude" }), /duplicate id/);
+  // fictional corpus but one non-fictional results row: private, external refused
+  const mixed = workerResults(5, true); mixed[2] = { ...mixed[2], fictional: false };
+  assert.throws(() => bp({ corpus, results: mixed, grader: "external" }), /private/);
+  assert.equal(bp({ corpus, results: mixed, grader: "claude" }).header.private, true);
+  // fictional results but one non-fictional corpus record
+  const corpus2 = pairs(5, { fictional: true }); corpus2[1] = { ...corpus2[1], fictional: false };
+  assert.throws(() => bp({ corpus: corpus2, results: workerResults(5, true), grader: "external" }), /private/);
+  assert.equal(bp({ corpus, results: workerResults(5, true), grader: "external" }).header.private, false);
 });

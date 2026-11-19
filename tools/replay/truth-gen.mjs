@@ -1,5 +1,5 @@
 // Builds a deterministic (seeded) question set from the Forever client's exported data tables. docs/runbooks/replay-harness.md.
-//   node tools/replay/truth-gen.mjs --tables <dir> [--out <file.jsonl>] [--seed 1] [--per-kind 40]
+//   node tools/replay/truth-gen.mjs --tables <dir> [--out <file.jsonl>] [--seed 1] [--per-kind 40] [--manifest-sha256 <hex>]
 // --tables: directory of CSV exports (header row) plus MANIFEST.json {build, files:{name:{sha256,bytes,rows}}}. Every table used is checked against the manifest first; a mismatch refuses the run.
 // --out: default <os tmp>/leeroy-replay/truth-<build>-s<seed>.jsonl. Writing inside this repo checkout is refused: neither the tables nor a generated set may ever enter the repo.
 // Output line 1 is a header {type:"header", ...build, seed, per-kind, table hashes, columns chosen}; then one record per question:
@@ -19,7 +19,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadVerifiedTable, writeOut, rng, shuffle, parseArgs, die, DEFAULT_OUT_DIR } from "./common.mjs";
+import { loadVerifiedTable, writeOut, rng, shuffle, parseArgs, die, sha256, DEFAULT_OUT_DIR } from "./common.mjs";
 
 export const KINDS = Object.freeze(["spell_level", "item_level_req", "spell_cooldown", "spell_cast_time", "spell_mana_cost"]);
 const NAME_OK = (n) => typeof n === "string" && n.length >= 3 && n.length <= 60 && /^[\p{L}\p{N} '\-:,.!]+$/u.test(n) && n.trim() === n;
@@ -159,12 +159,16 @@ export function buildCandidates(dir, manifest) {
 }
 
 // Pure and deterministic: same tables + seed + perKind -> byte-identical output (no clock, no randomness beyond the seed).
-export function generate({ dir, seed = 1, perKind = 40 }) {
-  const manifest = JSON.parse(readFileSync(path.join(dir, "MANIFEST.json"), "utf8"));
+// manifestSha256: optional pin of MANIFEST.json itself. Without it the manifest is the trust root: a table and a manifest edited together pass every check, so keep the pin where the tables are not.
+export function generate({ dir, seed = 1, perKind = 40, manifestSha256 = null }) {
+  const manifestBytes = readFileSync(path.join(dir, "MANIFEST.json"));
+  const manifestHash = sha256(manifestBytes);
+  if (manifestSha256 && String(manifestSha256).toLowerCase() !== manifestHash) throw new Error("MANIFEST.json sha256 differs from --manifest-sha256");
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
   const { out, used } = buildCandidates(dir, manifest);
   const rand = rng(seed);
   const header = {
-    type: "header", generator: "tools/replay/truth-gen.mjs", build: manifest.build ?? null, seed: Number(seed), per_kind: Number(perKind),
+    type: "header", generator: "tools/replay/truth-gen.mjs", build: manifest.build ?? null, manifest_sha256: manifestHash, manifest_pinned: Boolean(manifestSha256), seed: Number(seed), per_kind: Number(perKind),
     tables: Object.fromEntries(Object.keys(used).sort().map((n) => [n, { sha256: used[n].sha256, bytes: used[n].bytes }])),
     columns: { spell_level: "spelllevels.BaseLevel", item_level_req: "itemsparse.RequiredLevel", spell_cooldown: "spellcooldowns.RecoveryTime/1000", spell_cast_time: "spellcasttimes.Base/1000 via spellmisc.CastingTimeIndex", spell_mana_cost: "spellpower.ManaCost" },
     candidates: {}, selected: {},
@@ -185,13 +189,13 @@ export function generate({ dir, seed = 1, perKind = 40 }) {
 }
 
 async function main() {
-  const a = parseArgs(process.argv.slice(2), { tables: "value", out: "value", seed: "value", "per-kind": "value" });
+  const a = parseArgs(process.argv.slice(2), { tables: "value", out: "value", seed: "value", "per-kind": "value", "manifest-sha256": "value" });
   if (!a.tables) die("usage: node tools/replay/truth-gen.mjs --tables <dir> [--out file.jsonl] [--seed N] [--per-kind N]");
   const seed = a.seed === undefined ? 1 : Number(a.seed);
   const perKind = a["per-kind"] === undefined ? 40 : Number(a["per-kind"]);
   if (!Number.isInteger(seed) || !Number.isInteger(perKind) || perKind < 1) die("--seed and --per-kind must be integers (per-kind >= 1)");
   let res;
-  try { res = generate({ dir: a.tables, seed, perKind }); } catch (e) { die(`refusing: ${e.message}`); }
+  try { res = generate({ dir: a.tables, seed, perKind, manifestSha256: a["manifest-sha256"] }); } catch (e) { die(`refusing: ${e.message}`); }
   const out = a.out || path.join(DEFAULT_OUT_DIR, `truth-${res.header.build || "unknown"}-s${seed}.jsonl`);
   try { writeOut(out, res.text); } catch (e) { die(e.message); }
   console.log(`build ${res.header.build}, seed ${seed}, per-kind ${perKind}`);

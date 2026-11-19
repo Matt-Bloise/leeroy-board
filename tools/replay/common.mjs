@@ -1,7 +1,7 @@
 // Shared helpers for tools/replay: CSV parsing, MANIFEST verification, the repo-write refusal, JSONL I/O, a seeded PRNG.
 // Real game tables and every generated question set live OUTSIDE the repo. assertOutsideRepo is the guard every writer here goes through.
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, realpathSync, lstatSync, openSync, writeSync, closeSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
@@ -11,7 +11,16 @@ export const DEFAULT_OUT_DIR = path.join(os.tmpdir(), "leeroy-replay");
 export const die = (msg, code = 2) => { console.error(msg); process.exit(code); };
 export const sha256 = (data) => createHash("sha256").update(data).digest("hex");
 
-// Refuses any path inside the repo checkout (symlinks and junctions resolved through the nearest existing ancestor).
+// Refuses any path inside the repo checkout (symlinks and junctions resolved through the nearest existing ancestor) and any existing target that is a hard link (nlink > 1: a second name for a file that may live in the repo).
+// The comparison uses a separator boundary: a child named "..replay" is INSIDE, a sibling "../x" is outside.
+// Residual TOCTOU: the check and the open are two steps. Between them a directory component could be swapped for a link into the repo. The writers narrow it (exclusive-create "wx" for new files, append "a" for results, which never truncates)
+// but cannot close it on Windows without handle-based checks; the output directory should be one only the owner can write to.
+export function isInside(root, target) {
+  const rel = path.relative(root, target);
+  if (rel === "") return true;
+  if (path.isAbsolute(rel)) return false; // another drive
+  return !(rel === ".." || rel.startsWith(".." + path.sep));
+}
 export function assertOutsideRepo(p, root = REPO_ROOT) {
   let cur = path.resolve(p);
   const rest = [];
@@ -22,21 +31,33 @@ export function assertOutsideRepo(p, root = REPO_ROOT) {
     cur = up;
   }
   const real = path.join(realpathSync(cur), ...rest);
-  const rel = path.relative(realpathSync(root), real);
-  if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) throw new Error("refusing to write inside the repo checkout; pick an output path outside it");
+  if (isInside(realpathSync(root), real)) throw new Error("refusing to write inside the repo checkout; pick an output path outside it");
+  if (existsSync(real) && lstatSync(real).isFile() && lstatSync(real).nlink > 1) throw new Error("refusing to write to a hard-linked file (it may be another name for a file in the repo)");
   return path.resolve(p);
 }
+// Exclusive create: an existing file is never truncated or replaced.
 export function writeOut(p, text, root = REPO_ROOT) {
   const abs = assertOutsideRepo(p, root);
   mkdirSync(path.dirname(abs), { recursive: true });
-  writeFileSync(abs, text, "utf8");
+  try { writeFileSync(abs, text, { encoding: "utf8", flag: "wx" }); } catch (e) { if (e && e.code === "EEXIST") throw new Error("refusing to overwrite an existing file: " + path.basename(abs)); throw e; }
   return abs;
 }
 export function appendOut(p, text, root = REPO_ROOT) {
   const abs = assertOutsideRepo(p, root);
   mkdirSync(path.dirname(abs), { recursive: true });
-  appendFileSync(abs, text, "utf8");
+  appendFileSync(abs, text, { encoding: "utf8", flag: "a" });
   return abs;
+}
+// Exclusive-create lock file beside the results file; removed in finally. A leftover lock (crashed run) is reported, never silently taken over.
+export async function withLock(p, fn, root = REPO_ROOT) {
+  const lock = assertOutsideRepo(p + ".lock", root);
+  mkdirSync(path.dirname(lock), { recursive: true });
+  let fd;
+  try { fd = openSync(lock, "wx"); } catch (e) {
+    if (e && e.code === "EEXIST") throw new Error("the results file is locked by " + path.basename(lock) + ": another run is using it, or a run died; if no run is active, delete that lock file and resume");
+    throw e;
+  }
+  try { writeSync(fd, String(process.pid)); closeSync(fd); return await fn(); } finally { try { unlinkSync(lock); } catch { /* already gone */ } }
 }
 
 export function readJsonl(p) {
@@ -81,9 +102,10 @@ export function loadVerifiedTable(dir, manifest, name) {
   const all = parseCsv(buf.toString("utf8")).filter((r) => !(r.length === 1 && r[0] === ""));
   const header = all[0] || [];
   const rows = all.slice(1);
-  // MANIFEST rows is the count of data lines in some exports (a quoted field with an embedded newline makes a record span two lines), so either count must match.
+  // MANIFEST rows counts data rows. A physical-line count is accepted ONLY when the table really has a quoted field with an embedded newline (which makes records span lines); otherwise a mismatch refuses.
   const physicalLines = buf.toString("utf8").split("\n").filter((l, i, a) => !(i === a.length - 1 && l === "")).length - 1;
-  if (rows.length !== meta.rows && physicalLines !== meta.rows) throw new Error(`${name}: row count differs from MANIFEST`);
+  const multiline = rows.some((r) => r.some((c) => c.includes("\n")));
+  if (rows.length !== meta.rows && !(multiline && physicalLines === meta.rows)) throw new Error(`${name}: row count differs from MANIFEST`);
   const pos = new Map(header.map((h, i) => [h, i]));
   const col = (c) => { if (!pos.has(c)) throw new Error(`${name}: column ${c} missing`); return pos.get(c); };
   return { header, rows, col, sha256: meta.sha256, bytes: meta.bytes };

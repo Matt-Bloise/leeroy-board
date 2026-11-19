@@ -11,7 +11,8 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertOutsideRepo, writeOut, readJsonl, parseArgs, die, rng, shuffle } from "./common.mjs";
+import { readFileSync } from "node:fs";
+import { assertOutsideRepo, writeOut, readJsonl, parseArgs, die, rng, shuffle, sha256 } from "./common.mjs";
 import { RUBRIC_DIMENSIONS, RUBRIC_MIN, RUBRIC_MAX, PAIR_RULE, evaluatePairRule } from "./pass-bar.mjs";
 
 export const RUBRIC_TEXT = `Score each answer 1-5 on each dimension. 1 = bad, 3 = acceptable, 5 = excellent. Score A and B independently; you do not know who wrote either.
@@ -19,13 +20,24 @@ tone: sounds like a friendly, in-voice game-group regular; not stiff, not rude, 
 helpfulness: answers what was asked, directly, with what the asker needs next; no dodging, no dumping.
 groundedness: every game fact is correct or hedged; nothing invented; no numbers stated that the question or common knowledge do not support. An invented number caps this at 2.`;
 
-export function buildPackets({ corpus, results, grader, seed }) {
+// corpus: the pair-corpus records; corpusSha256: the hash of the corpus FILE; results: the lines of a run.mjs results file (header, markers and result rows).
+// The join is bound: the results header must carry the corpus file's hash, and every joined row's question_sha256 must equal the hash of the corpus question. Ids that match with different text refuse the build.
+// private is false only when EVERY corpus record and EVERY results row is flagged fictional: true.
+export function buildPackets({ corpus, corpusSha256, results, grader, seed }) {
   if (!["claude", "external"].includes(grader)) throw new Error("--grader must be claude or external");
   const records = corpus.filter((r) => r && r.id && typeof r.question === "string");
-  const allFictional = records.length > 0 && records.every((r) => r.fictional === true);
+  const ids = records.map((r) => r.id);
+  if (new Set(ids).size !== ids.length) throw new Error("the corpus holds a duplicate id");
+  const resHeader = results.find((r) => r && r.type === "header");
+  const rows = results.filter((r) => r && r.id && !r.type);
+  if (!resHeader || typeof resHeader.input_sha256 !== "string" || !corpusSha256 || resHeader.input_sha256 !== corpusSha256) throw new Error("refusing: the results were not produced from this corpus file (input hash differs or is missing)");
+  if (new Set(rows.map((r) => r.id)).size !== rows.length) throw new Error("the results hold a duplicate id");
+  const allFictional = records.length > 0 && records.every((r) => r.fictional === true) && rows.length > 0 && rows.every((r) => r.fictional === true);
   const priv = !allFictional;
-  if (priv && grader !== "claude") throw new Error("refusing: this corpus is private (not every record is flagged fictional: true); only --grader claude may see it");
-  const byId = new Map(results.filter((r) => r && r.id).map((r) => [r.id, r]));
+  if (priv && grader !== "claude") throw new Error("refusing: this input is private (every corpus record and every results row must be flagged fictional: true); only --grader claude may see it");
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const mismatched = records.filter((rec) => { const r = byId.get(rec.id); return r && r.question_sha256 !== sha256(rec.question.trim()); }).length;
+  if (mismatched) throw new Error(`refusing: ${mismatched} result row(s) match a corpus id but not its question text (hash differs): the results are from a different corpus`);
   const rand = seed === undefined ? (() => randomBytes(4).readUInt32BE(0) / 4294967296) : rng(Number(seed));
   const packets = [], key = [];
   let skipped = 0;
@@ -83,7 +95,7 @@ async function main() {
     const keyPath = a.out + ".key.jsonl";
     try { assertOutsideRepo(a.out); assertOutsideRepo(keyPath); } catch (e) { die(e.message); }
     let r;
-    try { r = buildPackets({ corpus: readJsonl(a.corpus), results: readJsonl(a.results), grader: a.grader, seed: a.seed }); } catch (e) { die(e.message); }
+    try { r = buildPackets({ corpus: readJsonl(a.corpus), corpusSha256: sha256(readFileSync(a.corpus)), results: readJsonl(a.results), grader: a.grader, seed: a.seed }); } catch (e) { die(e.message); }
     if (!r.n) die("no item has both a local answer and a kept Worker answer (run the replay with --keep-answers)", 1);
     writeOut(a.out, r.packetText); writeOut(keyPath, r.keyText);
     console.log(`packets: ${r.n} (skipped ${r.skipped}); private: ${r.header.private}; grader: ${a.grader}${r.header.same_family_warning ? "; WARNING: grader family equals the writer family (see runbook)" : ""}`);
