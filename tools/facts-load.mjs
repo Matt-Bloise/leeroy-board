@@ -3,7 +3,7 @@
 //   node tools/facts-load.mjs <token-file> --tables <dir> ... --apply [--base https://api.leeroy.party] [--allow-host <host>] [--state <file>] [--max-calls 100] [--scope client|curated|both]
 // --tables: the client DB2 CSV export folder with MANIFEST.json {build, files:{name:{sha256,bytes,rows}}}. Every table used is checked against it first (sha256, bytes, rows; the replay harness's common.mjs does it); a mismatch refuses the run.
 // Client facts: the SAME kinds and uniqueness rules as tools/replay/truth-gen.mjs (its buildCandidates is imported, not copied) for spell_level, item_level_req, spell_cooldown, spell_cast_time, spell_mana_cost, plus the trait kinds
-// from --traits (the same rules as the replay harness's trait kinds; see deriveTraitRows). Curated facts: --facts (cid, claim, value, verdict, source_class, build, next_step) and --client-facts (cids, claim, value, verdict, ...), kind 'curated'.
+// from --traits (truth-gen's buildTraitCandidates; see deriveTraitRows). Curated facts: --facts (cid, claim, value, verdict, source_class, build, next_step) and --client-facts (cids, claim, value, verdict, ...), kind 'curated'.
 // NOTHING from the tables or the facts files is written anywhere but the signed request body: no output file, nothing in the repo. The tool prints counts only, never a row's text.
 // <token-file>: a file holding the Discord bot token. It is read, used to derive the FACTS-LOAD signing key (HMAC-SHA256 of the token with the label "leeroy-facts-load-v1") and never printed. Owner's machine only.
 // --base: https only (http only for localhost, 127.0.0.1 or [::1]); no credentials in the URL; only api.leeroy.party or a local host unless --allow-host names the host; redirects are refused (a redirect would replay the signed body elsewhere).
@@ -15,16 +15,12 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { factsLoadKey, signListen } from "../infrastructure/worker/listener-config.js";
 import { validateRow, FACT_SOURCE_CLASSES, FACT_VERDICTS, FACTS_MAX_ROWS, FACTS_PURPOSE, MAX } from "../infrastructure/worker/game-facts.js";
-import { buildCandidates } from "./replay/truth-gen.mjs";
+import { buildCandidates, buildTraitCandidates, TRAIT_KINDS } from "./replay/truth-gen.mjs";
 import { sha256, assertOutsideRepo, readJsonl } from "./replay/common.mjs";
 
 export const DEFAULT_BASE = "https://api.leeroy.party";
 export const DEFAULT_ALLOWED_HOSTS = Object.freeze(["api.leeroy.party", "localhost", "127.0.0.1", "[::1]"]);
 export const MAX_BODY_BYTES = 200 * 1024; // the Worker refuses 256 KB; stay well under
-// treeId -> class, the same eight class trees the replay harness uses (README beside traits.json).
-export const TRAIT_CLASSES = Object.freeze({ 1112: "Mage", 1100: "Paladin", 1114: "Priest", 1116: "Warlock", 1083: "Druid", 1111: "Rogue", 1117: "Warrior", 1091: "Hunter" });
-const NAME_OK = (n) => typeof n === "string" && n.length >= 3 && n.length <= 60 && /^[\p{L}\p{N} '\-:,.!]+$/u.test(n) && n.trim() === n;
-const key = (n) => n.toLowerCase();
 const CLEAN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 const clean = (s) => String(s == null ? "" : s).replace(CLEAN, " ").replace(/\s+/g, " ").trim();
 const cut = (s, max) => Array.from(s).slice(0, max).join("");
@@ -57,44 +53,19 @@ export function deriveTableRows(dir, manifest) {
   return { rows, files };
 }
 
-// Pure over the parsed traits object. Same eligibility as the replay harness's trait kinds: a node counts only if its nodeId occurs once in its tree, its name is well formed and unique (case-insensitive) in the tree and its maxRanks is a positive integer;
-// points_required needs exactly one cond (condType 0, currency > 0, spentAmountRequired a positive integer); prereq needs exactly one distinct entry in the node's own `requires`, itself eligible, with neither name containing the other.
+// The trait kinds come from truth-gen's buildTraitCandidates (the same eligibility rules as the replay harness: a node counts only if its nodeId occurs once in its tree, its name is well formed and unique in the tree and
+// maxRanks is a positive integer; points_required needs exactly one cond; prereq needs exactly one distinct entry in the node's own requires, itself eligible, neither name containing the other), turned into claim rows.
+const TRAIT_CLAIM = {
+  trait_max_ranks: (r) => `${r.entity_name} is a ${r.class_name} talent with ${plural(r.expected.value, "rank")}.`,
+  trait_points_required: (r) => `${r.entity_name} (${r.class_name} talent) needs ${plural(r.expected.value, "point")} spent in its tree before it can be learned.`,
+  trait_prereq: (r) => `${r.entity_name} (${r.class_name} talent) has ${r.expected.value} as its prerequisite talent.`,
+};
 export function deriveTraitRows(traits, build) {
+  const { out, used } = buildTraitCandidates(traits);
   const rows = [];
-  const rawTrees = traits && traits.trees ? (Array.isArray(traits.trees) ? traits.trees : Object.values(traits.trees)) : [];
-  const seenTree = new Set();
-  let used = 0;
-  for (const tr of rawTrees) {
-    const treeId = Number(tr && tr.treeId);
-    const cls = TRAIT_CLASSES[treeId];
-    if (!cls || seenTree.has(treeId) || !Array.isArray(tr.nodes)) continue;
-    seenTree.add(treeId); used++;
-    const idCount = new Map(), nameCount = new Map();
-    for (const n of tr.nodes) {
-      idCount.set(String(n.nodeId), (idCount.get(String(n.nodeId)) || 0) + 1);
-      const k = typeof n.name === "string" ? key(n.name) : "";
-      nameCount.set(k, (nameCount.get(k) || 0) + 1);
-    }
-    const eligible = (n) => n && idCount.get(String(n.nodeId)) === 1 && NAME_OK(n.name) && nameCount.get(key(n.name)) === 1 && Number.isInteger(Number(n.maxRanks)) && Number(n.maxRanks) > 0;
-    const byId = new Map(tr.nodes.filter((n) => idCount.get(String(n.nodeId)) === 1).map((n) => [String(n.nodeId), n]));
-    const base = (kind, n) => ({ id: `${kind}:${treeId}-${n.nodeId}`, kind, subject: n.name, source_table: "traitnode", row_id: String(n.nodeId), build, verdict: "holds", source_class: "client-db2", note: "" });
-    for (const n of tr.nodes) {
-      if (!eligible(n)) continue;
-      const ranks = Number(n.maxRanks);
-      rows.push({ ...base("trait_max_ranks", n), claim: `${n.name} is a ${cls} talent with ${plural(ranks, "rank")}.`, value: String(ranks), unit: "ranks" });
-      const cs = Array.isArray(n.conds) ? n.conds : [];
-      if (cs.length === 1 && String(cs[0].condType) === "0" && Number(cs[0].currency) > 0 && Number.isInteger(Number(cs[0].spentAmountRequired)) && Number(cs[0].spentAmountRequired) > 0) {
-        const need = Number(cs[0].spentAmountRequired);
-        rows.push({ ...base("trait_points_required", n), claim: `${n.name} (${cls} talent) needs ${plural(need, "point")} spent in its tree before it can be learned.`, value: String(need), unit: "points" });
-      }
-      const req = [...new Set((Array.isArray(n.requires) ? n.requires : []).map((r) => String(r && typeof r === "object" ? r.nodeId : r)))];
-      if (req.length === 1) {
-        const src = byId.get(req[0]);
-        if (!src || src === n || !eligible(src)) continue;
-        const a = key(n.name), b = key(src.name);
-        if (a.includes(b) || b.includes(a)) continue;
-        rows.push({ ...base("trait_prereq", n), claim: `${n.name} (${cls} talent) has ${src.name} as its prerequisite talent.`, value: src.name, unit: "" });
-      }
+  for (const kind of TRAIT_KINDS) {
+    for (const r of out[kind]) {
+      rows.push({ id: `${kind}:${r.rows[0].id}-${r.rows[1].id}`, kind, subject: r.entity_name, claim: TRAIT_CLAIM[kind](r), value: String(r.expected.value), unit: kind === "trait_max_ranks" ? "ranks" : kind === "trait_points_required" ? "points" : "", source_table: "traitnode", row_id: String(r.rows[1].id), build, verdict: "holds", source_class: "client-db2", note: "" });
     }
   }
   return { rows, treesUsed: used };
