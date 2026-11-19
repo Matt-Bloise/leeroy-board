@@ -44,7 +44,7 @@ const readSrc = (rel) => readFileSync(new URL(rel, ROOT), "utf8");
 // ---- 1. the table is checked against the code -----------------------------------------------------------------------------------------
 // Every route of ROUTES. "member": its answer (or its broadcast) can carry another member's build; it must be covered by an entry of READS below.
 const ROUTE_CLASS = {
-  "POST /discord": "member", "POST /listen": "member", "POST /selftest/claude": "none", "POST /shadow/ask", "POST /heartbeat", "POST /heartbeat/status": "none", "GET /discord/commands": "none", "GET /votes": "none", "GET /me": "none", "POST /probe": "none", "ANY /sheet": "member",
+  "POST /discord": "member", "POST /listen": "member", "POST /selftest/claude": "none", "POST /shadow/ask": "none", "POST /heartbeat": "none", "POST /heartbeat/status": "none", "GET /discord/commands": "none", "GET /votes": "none", "GET /me": "none", "POST /probe": "none", "ANY /sheet": "member",
   "POST /announce": "none", "PUT /vocab": "none", "PUT /config/:key": "none", "POST /admin/members": "none", "POST /admin/sheet": "none", "POST /admin/cards/post": "none",
   "GET /admin/feedback": "none", "GET /admin/export": "none", "GET /admin/requests": "none", "PUT /persona": "none", "POST /dispatch": "none", "POST /admin/events/sync": "none",
   "GET /admin/moments": "none", "POST /admin/eval": "none", "GET /intents": "none", "POST /ack": "none", "POST /answer": "none", "GET /signups": "none", "POST /signups": "none",
