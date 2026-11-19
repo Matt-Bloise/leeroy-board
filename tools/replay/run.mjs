@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { shadowKey, signListen } from "../../infrastructure/worker/listener-config.js";
 import { MAX_QUESTION_CHARS } from "../../infrastructure/worker/limits.js";
 import { appendOut, assertOutsideRepo, readJsonl, sha256, parseArgs, die, withLock, DEFAULT_OUT_DIR } from "./common.mjs";
-import { KINDS } from "./truth-gen.mjs";
+import { KINDS, TRAIT_KINDS } from "./truth-gen.mjs";
 import { scoreTruthItem, summarize, withinBudget, degraded } from "./score.mjs";
 import { evaluateBar, PASS_BAR } from "./pass-bar.mjs";
 
@@ -41,7 +41,7 @@ export function checkBase(base, allowHosts = []) {
 }
 
 // Only fixed vocabularies reach stdout or the results file: a response cannot smuggle text through these fields.
-export const KNOWN_KINDS = Object.freeze([...KINDS, "pair"]);
+export const KNOWN_KINDS = Object.freeze([...KINDS, ...TRAIT_KINDS, "pair"]);
 export const safeStatus = (v) => (WORKER_SETS.includes(v) ? v : "other");
 export const safeKind = (v) => (v === undefined || v === null ? "pair" : KNOWN_KINDS.includes(v) ? v : "other");
 // reason: the same pattern as safeReason in infrastructure/worker/shadow-ask.js. model: the same but it may also carry "+" and "[ ]" (the label is provider:model+research+degraded or [reason]).
