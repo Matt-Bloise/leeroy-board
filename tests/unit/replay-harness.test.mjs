@@ -886,3 +886,13 @@ test("grade-pack binding: results must come from this corpus file and these ques
   assert.throws(() => bp({ corpus: corpus2, results: workerResults(5, true), grader: "external" }), /private/);
   assert.equal(bp({ corpus, results: workerResults(5, true), grader: "external" }).header.private, false);
 });
+
+test("waitMs honours custom hourly/daily limits; defaults stay 6/20", async () => {
+  const { waitMs } = await import("../../tools/replay/run.mjs");
+  const now = 10 * 3600 * 1000;
+  const sent = Array.from({ length: 7 }, (_, i) => now - (7 - i) * 1000);
+  assert.ok(waitMs(sent, now) > 0, "7 in an hour blocks at the default 6");
+  assert.equal(waitMs(sent, now, 60, 100), 0, "7 in an hour fits 60/hour");
+  const day = Array.from({ length: 21 }, (_, i) => now - i * 3 * 3600 * 1000 / 21 * 2);
+  assert.ok(waitMs(day, now, 60, 20) > 0, "a daily limit of 20 blocks the 21st");
+});
