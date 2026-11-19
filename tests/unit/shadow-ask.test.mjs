@@ -330,7 +330,7 @@ test("the row has the right columns and the response carries the same values", a
   const t0 = Date.now();
   const r = (await quiet(() => post(mkEnv(DB), body))).value;
   assert.equal(r.status, 200);
-  assert.deepEqual(Object.keys(r.json).sort(), ["answer", "id", "latency_ms", "model", "ok", "reason", "status"]);
+  assert.deepEqual(Object.keys(r.json).sort(), ["answer", "id", "input_tokens", "latency_ms", "model", "ok", "output_tokens", "reason", "status"]);
   const rows = shadowRows(DB);
   assert.equal(rows.length, 1);
   const row = rows[0];
@@ -358,6 +358,8 @@ test("the row has the right columns and the response carries the same values", a
   assert.equal(meta.within_hard_end, true);
   assert.equal(meta.hard_end_ms, 22000);
   assert.equal(meta.deadline_ms, 26000);
+  assert.deepEqual([r.json.input_tokens, r.json.output_tokens], [111, 22], "the measured usage of the compose (the fake Anthropic reports 111 / 22)");
+  assert.deepEqual([meta.input_tokens, meta.output_tokens], [111, 22]);
   assert.ok(!JSON.stringify(meta).includes(BODY.question), "meta holds counts and flags, never text");
   assert.ok(!JSON.stringify(meta).includes("Red Fox"));
 });
@@ -418,6 +420,29 @@ test("a Claude failure is a degraded row with its reason and the +degraded model
   assert.ok(row.answer && row.answer.length > 0, "the honest in-voice line is recorded: that is what the friend would have seen");
   assert.deepEqual(others, []);
   assert.equal(count(DB, "SELECT COUNT(*) AS c FROM ask_turns"), 0);
+  assert.equal(r.json.input_tokens, null, "a degraded (non-Claude) answer has no measured usage");
+  assert.equal(r.json.output_tokens, null);
+  const dm = JSON.parse(row.meta);
+  assert.equal(dm.input_tokens, null);
+  assert.equal(dm.output_tokens, null);
+});
+
+test("hostile usage from the API: clamped to integers, or null when unusable; the response fields are integers or null only", async () => {
+  for (const [usage, want] of [[{ input_tokens: 5e12, output_tokens: 12.7 }, [1e7, 12]], [{ input_tokens: "1", output_tokens: 2 }, [null, null]], [{ input_tokens: 4 }, [null, null]]]) {
+    const DB = await freshDb();
+    const real = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      if (!String(url).includes("anthropic")) return real(url, init);
+      return new Response(JSON.stringify({ content: [{ type: "text", text: OK }], usage }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    let r;
+    try { r = (await quiet(() => post(mkEnv(DB), { ...BODY, question: "who tanks tonight" }))).value; } finally { globalThis.fetch = real; }
+    assert.equal(r.status, 200);
+    assert.deepEqual([r.json.input_tokens, r.json.output_tokens], want);
+    for (const v of [r.json.input_tokens, r.json.output_tokens]) assert.ok(v === null || Number.isInteger(v));
+    const m = JSON.parse(shadowRows(DB)[0].meta);
+    assert.deepEqual([m.input_tokens, m.output_tokens], want);
+  }
 });
 
 test("no Anthropic key: a degraded row, no send", async () => {
@@ -460,7 +485,7 @@ test("hostile question text is data: it cannot reach status, reason, model, aske
     const r = (await quiet(() => post(env, { ...BODY, question: q }))).value;
     assert.equal(r.status, 200, q);
     assert.ok(r.json, "the envelope is still one JSON object");
-    assert.deepEqual(Object.keys(r.json).sort(), ["answer", "id", "latency_ms", "model", "ok", "reason", "status"]);
+    assert.deepEqual(Object.keys(r.json).sort(), ["answer", "id", "input_tokens", "latency_ms", "model", "ok", "output_tokens", "reason", "status"]);
     assert.equal(r.json.status, "answered");
     assert.equal(r.json.reason, "ok");
     assert.ok(!/evil/.test(r.json.model), "model label is built by the Worker");
