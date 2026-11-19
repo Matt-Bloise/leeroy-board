@@ -1,5 +1,5 @@
-1. source database: 49 tables from schema.sql, seeded with 465 fixture statements
-2. export: 44 tables exported, 5 never exported (account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens), 606 lines
+1. source database: 51 tables from schema.sql, seeded with 467 fixture statements
+2. export: 44 tables exported, 7 never exported (account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens, game_fact_loads, game_facts), 608 lines
    no secret value in the export file (6 checked)
 3. checksums of the source: 44 tables, 464 rows
 4. wipe: the database is deleted
@@ -23,5 +23,7 @@
    ok   guest_rate_limits      rows    1 ->    0   never exported: comes back empty (by design)
    ok   sessions_v2            rows    1 ->    0   never exported: comes back empty (by design)
    ok   provider_tokens        rows    1 ->    0   never exported: comes back empty (by design)
+   ok   game_fact_loads        rows    1 ->    0   never exported: comes back empty (by design)
+   ok   game_facts             rows    2 ->    0   never exported: comes back empty (by design)
 
 RESTORE DRILL PASSED: 44 tables, 464 rows, every count and checksum matches
