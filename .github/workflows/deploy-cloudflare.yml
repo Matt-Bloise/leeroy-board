@@ -246,7 +246,7 @@ jobs:
               echo "$CREATE_OUT"
               DB_ID=$(echo "$CREATE_OUT" | grep -oE '[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}' | head -n 1)
             else
-              echo "::error::D1 database '$D1_DATABASE_NAME' was not found in this Cloudflare account. Refusing to create an empty one: production would run on an empty database. Check CLOUDFLARE_ACCOUNT_ID and the token's account. If this really is a first-time setup, run this workflow manually (workflow_dispatch) with allow_create_database=true. See docs/runbooks/rollback.md (Deploy safety)."
+              echo "::error::D1 database '$D1_DATABASE_NAME' was not found in this Cloudflare account. Refusing to create an empty one: production would run on an empty database. Check CLOUDFLARE_ACCOUNT_ID and the account that owns the Worker. If this really is a first-time setup, run this workflow manually (workflow_dispatch) with allow_create_database=true. See docs/runbooks/rollback.md (Deploy safety)."
               exit 1
             fi
           fi
