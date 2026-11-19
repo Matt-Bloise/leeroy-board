@@ -14,7 +14,7 @@ const GENERIC = new Set(["level", "levels", "cooldown", "cooldowns", "cast", "ca
 
 // -> { specific: [...], generic: [...] }, lower-case, deduplicated, at most LOOKUP_MAX_TOKENS in all.
 export function extractTokens(question) {
-  const text = String(question == null ? "" : question).slice(0, LOOKUP_MAX_CHARS).normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const text = String(question == null ? "" : question).slice(0, LOOKUP_MAX_CHARS).normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const seen = new Set();
   const specific = [];
   const generic = [];

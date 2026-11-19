@@ -47,7 +47,7 @@ const num = (v) => (Number.isFinite(v) ? v : 0);
 
 // Lowercase, punctuation folded to single spaces, diacritics stripped.
 export function normSubject(s) {
-  return String(s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 // One fact row, strictly. -> { row } or { error: "<class>" }. No other key, no non-string text field, no control character, every vocabulary fixed.

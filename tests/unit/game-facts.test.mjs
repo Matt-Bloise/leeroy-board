@@ -245,7 +245,7 @@ test("strict validation: ONE bad row refuses the WHOLE batch (400 invalid_row), 
     subject: { subject: long(121) }, subjectEmpty: { subject: "" }, claim: { claim: long(401) }, claimEmpty: { claim: "" }, value: { value: long(81) }, note: { note: long(301) },
     unit: { unit: "furlongs" }, verdict: { verdict: "maybe" }, source_class: { source_class: "friend-said" }, build: { build: "v9" }, build2: { build: "1.2" }, buildOther: { build: BUILD2 },
     table: { source_table: "Spell Levels" }, rowid: { row_id: "1 2" }, num: { value: 5 }, nullClaim: { claim: null }, arrClaim: { claim: ["x"] },
-    ctl: { claim: "fine\u0000text" }, ctl2: { claim: "line\nbreak" }, ctl3: { subject: "tab\there" }, ctl4: { note: "esc\u001b[0m" }, ctl5: { claim: "zero​width" }, ctl6: { claim: "bidi‮text" }, ctl7: { claim: "sep x" }, del: { claim: "del\u007f" },
+    ctl: { claim: "fine\u0000text" }, ctl2: { claim: "line\nbreak" }, ctl3: { subject: "tab\there" }, ctl4: { note: "esc\u001b[0m" }, ctl5: { claim: "zero\u200bwidth" }, ctl6: { claim: "bidi\u202etext" }, ctl7: { claim: "sep\u2028x" }, del: { claim: "del\u007f" },
     extra: { slug: "red-fox" }, extra2: { author: "x" }, extra3: { asker_slug: "x" }, extra4: { question: "x" },
   };
   for (const [name, patch] of Object.entries(bad)) {
@@ -272,7 +272,7 @@ test("validateRow accepts every vocabulary value and the edge lengths", () => {
   assert.ok(validateRow({ ...mkRow(1), id: "curated:C003", kind: "curated", subject: "", source_table: "", row_id: "" }, "curated").row);
   assert.equal(validateRow(mkRow(1, { kind: "curated" }), "client").error, "row_kind");
   assert.equal(normSubject("  Zorbo's  Bolt!! "), "zorbo s bolt");
-  assert.equal(normSubject("Café-Ünit"), "cafe unit");
+  assert.equal(normSubject("Caf\u00e9-\u00dcnit"), "cafe unit");
   for (const v of [null, 1, "x", [], {}]) assert.ok(validateRow(v, "client").error);
   assert.equal(parseFactsBody({ purpose: P, op: "rows", load_id: "0".repeat(36), rows: [{}] }).op, "rows");
 });
@@ -444,7 +444,7 @@ test("hostile questions: operators, quotes, NEAR, star, caret, column filters, p
   await loadAll(env, [mkRow(1, { subject: "Gloomhowl", claim: "Gloomhowl requires level 30." }), mkRow(2, { subject: "Brightwing", claim: "Brightwing requires level 31." })]);
   const hostile = [
     'Gloomhowl OR Brightwing', 'Gloomhowl AND NOT Brightwing', 'NEAR(Gloomhowl Brightwing, 3)', 'Gloomhowl*', '^Gloomhowl', 'subject:Gloomhowl', '{subject claim}: Gloomhowl', 'claim : "Gloomhowl"',
-    '"unbalanced', 'Gloomhowl" OR "', "Gloomhowl'; DROP TABLE game_facts; --", '(((Gloomhowl', ')Gloomhowl(', 'Gloomhowl -Brightwing', '+Gloomhowl', 'game_facts_fts MATCH', '* * *', '"', '""', 'NOT', 'AND OR NEAR NOT', '\u0000Gloomhowl', 'Gloomhowl‮', 'GLOOMHOWL NEAR/2 brightwing',
+    '"unbalanced', 'Gloomhowl" OR "', "Gloomhowl'; DROP TABLE game_facts; --", '(((Gloomhowl', ')Gloomhowl(', 'Gloomhowl -Brightwing', '+Gloomhowl', 'game_facts_fts MATCH', '* * *', '"', '""', 'NOT', 'AND OR NEAR NOT', '\u0000Gloomhowl', 'Gloomhowl\u202e', 'GLOOMHOWL NEAR/2 brightwing',
     'a'.repeat(5000), Array.from({ length: 500 }, (_, i) => `w${i}`).join(" "),
   ];
   for (const q of hostile) {
