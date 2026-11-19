@@ -2,7 +2,7 @@
 //   node tools/facts-load.mjs --tables <dir> [--traits <traits.json>] [--facts <facts.jsonl>] [--client-facts <client-facts.jsonl>]            (dry run: the default; sends nothing, prints counts)
 //   node tools/facts-load.mjs <token-file> --tables <dir> ... --apply [--base https://api.leeroy.party] [--allow-host <host>] [--state <file>] [--max-calls 100] [--scope client|curated|both]
 // --tables: the client DB2 CSV export folder with MANIFEST.json {build, files:{name:{sha256,bytes,rows}}}. Every table used is checked against it first (sha256, bytes, rows; the replay harness's common.mjs does it); a mismatch refuses the run.
-// Client facts: the SAME kinds and uniqueness rules as tools/replay/truth-gen.mjs (its buildCandidates is imported, not copied) for spell_level, item_level_req, spell_cooldown, spell_cast_time, spell_mana_cost, plus the trait kinds
+// Client facts (plus, for player-facing spells whose name is shared, one row per spell id and rank: deriveRankRows): the SAME kinds and uniqueness rules as tools/replay/truth-gen.mjs (its buildCandidates is imported, not copied) for spell_level, item_level_req, spell_cooldown, spell_cast_time, spell_mana_cost, plus the trait kinds
 // from --traits (truth-gen's buildTraitCandidates; see deriveTraitRows). Curated facts: --facts (cid, claim, value, verdict, source_class, build, next_step) and --client-facts (cids, claim, value, verdict, ...), kind 'curated'.
 // NOTHING from the tables or the facts files is written anywhere but the signed request body: no output file, nothing in the repo. The tool prints counts only, never a row's text.
 // <token-file>: a file holding the Discord bot token. It is read, used to derive the FACTS-LOAD signing key (HMAC-SHA256 of the token with the label "leeroy-facts-load-v1") and never printed. Owner's machine only.
@@ -16,8 +16,8 @@ import { fileURLToPath } from "node:url";
 import { factsLoadKey, signListen } from "../infrastructure/worker/listener-config.js";
 import { validateRow, FACT_SOURCE_CLASSES, FACT_VERDICTS, FACT_KINDS, FACTS_MAX_ROWS, FACTS_PURPOSE, MAX } from "../infrastructure/worker/game-facts.js";
 import { normName, baseName } from "../infrastructure/worker/game-facts-name.js";
-import { buildCandidates, buildTraitCandidates, TRAIT_KINDS } from "./replay/truth-gen.mjs";
-import { sha256, assertOutsideRepo, readJsonl } from "./replay/common.mjs";
+import { buildCandidates, buildTraitCandidates, TRAIT_KINDS, NAME_OK } from "./replay/truth-gen.mjs";
+import { sha256, assertOutsideRepo, readJsonl, loadVerifiedTable } from "./replay/common.mjs";
 
 export const DEFAULT_BASE = "https://api.leeroy.party";
 export const DEFAULT_ALLOWED_HOSTS = Object.freeze(["api.leeroy.party", "localhost", "127.0.0.1", "[::1]"]);
@@ -60,9 +60,101 @@ export function deriveTableRows(dir, manifest) {
       rows.push({ id: `${ref.table}:${ref.id}`, kind, subject: rec.entity_name, claim: CLAIM[kind](rec.entity_name, rec.expected.value), value: String(rec.expected.value), unit: rec.expected.unit, source_table: ref.table, row_id: String(ref.id), build, verdict: "holds", source_class: "client-db2", note: "" });
     }
   }
+  const ranked = deriveRankRows(dir, manifest);
+  rows.push(...ranked.rows);
+  Object.assign(used, ranked.used);
   const files = {};
   for (const n of Object.keys(used).sort()) files[n] = { sha256: manifest.files[n].sha256, bytes: manifest.files[n].bytes, rows: manifest.files[n].rows };
-  return { rows, files };
+  return { rows, files, rankIds: new Set(ranked.rows.map((r) => r.id)) };
+}
+
+// ---- player-facing spells whose NAME is shared (ranks, or unrelated spells with one name) -----------------------------------------------------------------
+// The unique-name rules above leave out every spell whose name occurs in more than one spellname row, which is every spell that has ranks. deriveRankRows covers exactly those spells and only the player-facing ones:
+//   player-facing = the spell has exactly one spelllevels row with BaseLevel > 0 (the client's learn-level of a class spell; the column and rule of spell_level) and a well-formed name (truth-gen's NAME_OK).
+//   The PARTITION with the legacy rules is by name: a spell whose name is unique in spellname.Name_lang is produced by buildCandidates (unchanged ids, claims and values); a spell whose name is shared is produced here. No spell is in both.
+//   Each spell is its own fact row per kind, id = <own table>:<that table's row id>, the legacy convention (spelllevels:<spelllevels.ID>). It is NOT the SpellID: in the real export spelllevels.ID differs from SpellID on every row,
+//   so a SpellID-keyed id would collide in name with the legacy ids of other spells. Each spell has exactly one spelllevels row, so the id is unique per spell.
+//   The per-kind rules are truth-gen's (spell_cooldown: one spellcooldowns row, RecoveryTime a whole number of seconds, no category or start cooldown; spell_cast_time: one spellmisc row, spellcasttimes.Base > 0 in 100 ms steps;
+//   spell_mana_cost: one spellpower row, PowerType 0, no per-level, percent or optional cost) minus the name-uniqueness test. tests/unit/game-facts.test.mjs pins that both paths agree on a unique name.
+//   Rank: spell.NameSubtext_lang 'Rank <n>' (the rank line of the spellbook). spellname has only Name_lang. Any other subtext (a title, 'Passive', empty) is no rank.
+//   Class hint: spellclassoptions.SpellClassSet (one row per spell) matched to chrclasses.SpellClassSet (a non-zero set held by exactly one class) gives chrclasses.Name_lang. Not every spell has one.
+//   Both go into `note` as 'rank=4;class=Mage' (machine readable, no schema change); the rank is also in the claim: 'Fireball (Rank 4) requires level 18.'
+const RANK_RE = /^Rank ([0-9]{1,3})$/;
+export const rankNote = (rank, cls) => [rank ? `rank=${rank}` : "", cls ? `class=${cls}` : ""].filter(Boolean).join(";");
+export function deriveRankRows(dir, manifest, { includeUnique = false } = {}) {
+  const load = (n) => loadVerifiedTable(dir, manifest, n);
+  const spellname = load("spellname.csv"), spell = load("spell.csv"), levels = load("spelllevels.csv"), sco = load("spellclassoptions.csv"), cls = load("chrclasses.csv");
+  const cd = load("spellcooldowns.csv"), misc = load("spellmisc.csv"), casts = load("spellcasttimes.csv"), power = load("spellpower.csv");
+  const used = { "spellname.csv": spellname, "spell.csv": spell, "spelllevels.csv": levels, "spellclassoptions.csv": sco, "chrclasses.csv": cls, "spellcooldowns.csv": cd, "spellmisc.csv": misc, "spellcasttimes.csv": casts, "spellpower.csv": power };
+  const num = (v) => (v !== "" && v !== undefined && Number.isFinite(Number(v)) ? Number(v) : null);
+  const countBy = (rs, i) => rs.reduce((m, r) => m.set(r[i], (m.get(r[i]) || 0) + 1), new Map());
+  const lc = (s) => s.toLowerCase();
+  const sn = { id: spellname.col("ID"), name: spellname.col("Name_lang") };
+  const nameCount = new Map(), idCount = countBy(spellname.rows, sn.id);
+  for (const r of spellname.rows) nameCount.set(lc(r[sn.name]), (nameCount.get(lc(r[sn.name])) || 0) + 1);
+  const nameOf = new Map(spellname.rows.filter((r) => idCount.get(r[sn.id]) === 1).map((r) => [r[sn.id], r[sn.name]]));
+  const subId = spell.col("ID"), subCol = spell.col("NameSubtext_lang");
+  const spellCount = countBy(spell.rows, subId);
+  const rankOf = new Map();
+  for (const r of spell.rows) { const m = RANK_RE.exec(r[subCol]); if (m && spellCount.get(r[subId]) === 1) rankOf.set(r[subId], Number(m[1])); }
+  const setToClass = new Map(); // SpellClassSet -> class name, only when exactly one class holds the (non-zero) set
+  const ccSet = cls.col("SpellClassSet"), ccName = cls.col("Name_lang"), ccSetCount = countBy(cls.rows, ccSet);
+  for (const r of cls.rows) { const s = num(r[ccSet]); if (s !== null && s > 0 && ccSetCount.get(r[ccSet]) === 1 && /^[\p{L} '-]{2,30}$/u.test(r[ccName])) setToClass.set(r[ccSet], r[ccName]); }
+  const scoSpell = sco.col("SpellID"), scoSet = sco.col("SpellClassSet"), scoCount = countBy(sco.rows, scoSpell);
+  const classOf = new Map();
+  for (const r of sco.rows) if (scoCount.get(r[scoSpell]) === 1 && setToClass.has(r[scoSet])) classOf.set(r[scoSpell], setToClass.get(r[scoSet]));
+
+  const lvSpell = levels.col("SpellID"), lvBase = levels.col("BaseLevel"), lvId = levels.col("ID");
+  const lvCount = countBy(levels.rows, lvSpell);
+  const player = new Map(); // SpellID -> { name, levelRow }
+  for (const r of levels.rows) {
+    const id = r[lvSpell], nm = nameOf.get(id), b = num(r[lvBase]);
+    if (!nm || !NAME_OK(nm) || lvCount.get(id) !== 1 || b === null || b <= 0) continue;
+    if (!includeUnique && nameCount.get(lc(nm)) === 1) continue; // unique names belong to the legacy rules
+    player.set(id, { name: nm, levelRow: r });
+  }
+  const rows = [];
+  const push = (kind, spellId, ownTable, ownId, value, unit) => {
+    const sp = player.get(spellId);
+    const rank = rankOf.get(spellId) || 0;
+    const label = rank ? `${sp.name} (Rank ${rank})` : sp.name;
+    rows.push({ id: `${ownTable}:${ownId}`, kind, subject: sp.name, claim: CLAIM[kind](label, value), value: String(value), unit, source_table: ownTable, row_id: String(ownId), build: manifest.build, verdict: "holds", source_class: "client-db2", note: rankNote(rank, classOf.get(spellId)) });
+  };
+  for (const [id, sp] of player) push("spell_level", id, "spelllevels", sp.levelRow[lvId], num(sp.levelRow[lvBase]), "level");
+  { // spell_cooldown
+    const iS = cd.col("SpellID"), iRec = cd.col("RecoveryTime"), iCat = cd.col("CategoryRecoveryTime"), iSt = cd.col("StartRecoveryTime"), iId = cd.col("ID");
+    const per = countBy(cd.rows, iS);
+    for (const r of cd.rows) {
+      if (!player.has(r[iS]) || per.get(r[iS]) !== 1) continue;
+      const ms = num(r[iRec]);
+      if (ms === null || ms <= 0 || ms % 1000 !== 0 || num(r[iCat]) !== 0 || num(r[iSt]) !== 0) continue;
+      push("spell_cooldown", r[iS], "spellcooldowns", r[iId], ms / 1000, "seconds");
+    }
+  }
+  { // spell_cast_time
+    const iS = misc.col("SpellID"), iIdx = misc.col("CastingTimeIndex"), iId = misc.col("ID");
+    const per = countBy(misc.rows, iS), cIdCount = countBy(casts.rows, casts.col("ID"));
+    const cById = new Map(casts.rows.map((r) => [r[casts.col("ID")], r]));
+    for (const r of misc.rows) {
+      if (!player.has(r[iS]) || per.get(r[iS]) !== 1) continue;
+      const cr = cById.get(r[iIdx]);
+      if (!cr || cIdCount.get(r[iIdx]) !== 1) continue;
+      const ms = num(cr[casts.col("Base")]);
+      if (ms === null || ms <= 0 || ms % 100 !== 0) continue;
+      push("spell_cast_time", r[iS], "spellmisc", r[iId], ms / 1000, "seconds");
+    }
+  }
+  { // spell_mana_cost
+    const iS = power.col("SpellID"), iCost = power.col("ManaCost"), iType = power.col("PowerType"), iPer = power.col("ManaCostPerLevel"), iPct = power.col("PowerCostPct"), iOpt = power.col("OptionalCost"), iId = power.col("ID");
+    const per = countBy(power.rows, iS);
+    for (const r of power.rows) {
+      if (!player.has(r[iS]) || per.get(r[iS]) !== 1) continue;
+      const v = num(r[iCost]);
+      if (v === null || v <= 0 || num(r[iType]) !== 0 || num(r[iPer]) !== 0 || num(r[iPct]) !== 0 || num(r[iOpt]) !== 0) continue;
+      push("spell_mana_cost", r[iS], "spellpower", r[iId], v, "mana");
+    }
+  }
+  return { rows, used };
 }
 
 // The trait kinds come from truth-gen's buildTraitCandidates (the same eligibility rules as the replay harness: a node counts only if its nodeId occurs once in its tree, its name is well formed and unique in the tree and
@@ -150,9 +242,11 @@ export function buildPlan({ tables, traits = null, facts = null, clientFacts = n
   const skipped = { client: {}, curated: {} };
   const reject = (bucket, rows) => rows.filter((r) => { const v = validateRow(r, bucket === "client" ? "client" : "curated"); if (v.error) { skipped[bucket][v.error] = (skipped[bucket][v.error] || 0) + 1; return false; } return true; });
   const loads = [];
+  let rankIds = new Set();
   if (scope !== "curated") {
     const t = deriveTableRows(tables, manifest);
     let rows = t.rows;
+    rankIds = t.rankIds;
     const files = { ...t.files };
     if (traits) {
       const tb = readFileSync(traits);
@@ -185,6 +279,7 @@ export function buildPlan({ tables, traits = null, facts = null, clientFacts = n
     l.counts = count(l.rows);
     l.suffixed = l.rows.filter((r) => baseNameOf(r.subject)).length;
     l.names = nameStats(l.rows);
+    l.ranked = l.kind === "client" ? rankStats(l.rows, rankIds) : null;
   }
   if (!loads.length) throw new Error("nothing to load for those kinds and scope");
   return { build: manifest.build, manifest_sha256: manifestHash, loads, skipped, notes };
@@ -215,6 +310,21 @@ export function nameStats(rows) {
     m.set(k, (m.get(k) || 0) + 1);
   }
   return Object.fromEntries(Object.entries(byKind).map(([k, m]) => [k, { names: m.size, unique: [...m.values()].filter((c) => c === 1).length, ambiguous: [...m.values()].filter((c) => c > 1).length }]));
+}
+// The player-facing shared-name spells (deriveRankRows), counted per kind from their ids, and for spell_level how their names split: a name whose rows all carry a distinct rank is the ranks of ONE spell; any other shared name
+// (a repeated rank, or a spell without a rank line) is several different spells. Counts only.
+export function rankStats(rows, rankIds) {
+  const mine = rows.filter((r) => rankIds.has(r.id));
+  const perKind = count(mine);
+  const byName = new Map();
+  for (const r of mine) if (r.kind === "spell_level") { const k = normName(r.subject); if (!byName.has(k)) byName.set(k, []); byName.get(k).push(r); }
+  let ranksOfOne = 0, differentSpells = 0, single = 0;
+  for (const rs of byName.values()) {
+    if (rs.length === 1) { single++; continue; }
+    const rk = rs.map((r) => /rank=([0-9]+)/.exec(r.note)?.[1] || "");
+    if (rk.every(Boolean) && new Set(rk).size === rk.length) ranksOfOne++; else differentSpells++;
+  }
+  return { rows: mine.length, perKind, names: byName.size, single, ranksOfOne, differentSpells, suffixed: mine.filter((r) => baseNameOf(r.subject)).length };
 }
 const planSha = (load, manifestHash) => sha256(JSON.stringify([manifestHash, load.kind, load.build, load.files, load.rows]));
 export const callsFor = (load) => 2 + load.batches.length;
@@ -270,6 +380,7 @@ export async function run(argv, deps = {}) {
   for (const l of plan.loads) {
     log(`load ${l.kind}: ${l.rows.length} rows in ${l.batches.length} batches, ${callsFor(l)} calls (begin, ${l.batches.length} rows, finish)`);
     for (const [k, n] of KIND_ORDER.filter((x) => l.counts[x]).map((x) => [x, l.counts[x]])) { const ns = l.names[k]; log(`  ${k.padEnd(22)} ${String(n).padStart(6)}${ns ? `   names ${ns.names}: unique ${ns.unique}, ambiguous ${ns.ambiguous}` : ""}`); }
+    if (l.ranked && l.ranked.rows) log(`  shared-name player spells (ranks): ${l.ranked.rows} rows (${Object.entries(l.ranked.perKind).map(([k, n]) => `${k} ${n}`).join(", ")}); spell_level names ${l.ranked.names}: ${l.ranked.single} with one spell, ${l.ranked.ranksOfOne} with the ranks of one spell, ${l.ranked.differentSpells} shared by different spells`);
     log(`  estimated D1 rows written: ${writeCost(l.rows.length, l.suffixed, callsFor(l))} (${WRITES_PER_FACT} per fact, +${WRITES_PER_SUFFIXED_FACT} for ${l.suffixed} rank-suffixed names, ${WRITES_PER_CALL} per call)`);
     const sk = plan.skipped[l.kind];
     if (Object.keys(sk).length) log(`  skipped: ${Object.entries(sk).sort().map(([k, n]) => `${k} ${n}`).join(", ")}`);

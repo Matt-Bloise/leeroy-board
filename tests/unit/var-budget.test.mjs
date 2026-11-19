@@ -21,7 +21,7 @@ export const BUDGET = 62; // two below the cap: one new flag fits, the second mu
 const total = () => names.length + SECRETS_DEPLOYED;
 
 test("the [vars] scan finds the variables and no name is declared twice", () => {
-  assert.ok(names.length > 40, `found ${names.length}`);
+  assert.ok(names.length > 25, `found ${names.length}`);
   assert.equal(new Set(names).size, names.length, "a duplicate [vars] key");
 });
 
@@ -37,5 +37,11 @@ test("the budget really is below the cap and the count is stated", () => {
 
 test("the three SHADOW_ASK_* tuning vars and the two DEADMAN_* tuning vars are not declared separately (they are optional overrides with in-code defaults)", () => {
   for (const k of ["SHADOW_ASK_HOURLY", "SHADOW_ASK_DAILY", "SHADOW_ASK_SUBCAP_PERCENT", "DEADMAN_STALE_SECONDS", "DEADMAN_EXPECT"]) assert.ok(!names.includes(k), k);
-  assert.ok(names.includes("SHADOW_ASK") && names.includes("DEADMAN"));
+  assert.ok(names.includes("SHADOW_ASK") && !names.includes("DEADMAN"), "DEADMAN is an optional flag now (absent = off), see off-flag-absence.test.mjs");
+});
+
+// Headroom bought back by not declaring the 18 flags the code already reads as off when absent (docs/runbooks/flags.md, off-flag-absence.test.mjs): on master 51 text variables + 9 secrets = 60 became 33 + 9 = 42.
+// The budget above stays 62; this pins that at least ten of the slots below it stay free so the next flags do not need another round of folding.
+test("at least 10 slots stay free under the budget (total <= 52)", () => {
+  assert.ok(total() <= BUDGET - 10, `${total()} variables: more than ${BUDGET - 10}; fold flags or leave default-off ones undeclared (see off-flag-absence.test.mjs)`);
 });
