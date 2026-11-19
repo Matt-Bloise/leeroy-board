@@ -34,7 +34,7 @@ export const KINDS = Object.freeze(["spell_level", "item_level_req", "spell_cool
 export const TRAIT_KINDS = Object.freeze(["trait_max_ranks", "trait_points_required", "trait_prereq"]);
 // treeId -> class. Source: the README beside traits.json. Trees not listed there are never used.
 export const TRAIT_CLASSES = Object.freeze({ 1112: "Mage", 1100: "Paladin", 1114: "Priest", 1116: "Warlock", 1083: "Druid", 1111: "Rogue", 1117: "Warrior", 1091: "Hunter" });
-const NAME_OK =(n) => typeof n === "string" && n.length >= 3 && n.length <= 60 && /^[\p{L}\p{N} '\-:,.!]+$/u.test(n) && n.trim() === n;
+export const NAME_OK = (n) => typeof n === "string" && n.length >= 3 && n.length <= 60 && /^[\p{L}\p{N} '\-:,.!]+$/u.test(n) && n.trim() === n;
 const numCell = (v) => (v !== "" && v !== undefined && Number.isFinite(Number(v)) ? Number(v) : null);
 const key = (n) => n.toLowerCase();
 

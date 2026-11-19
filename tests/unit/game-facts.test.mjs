@@ -14,11 +14,11 @@ import { fileURLToPath } from "node:url";
 import http from "node:http";
 import worker from "../../infrastructure/worker/index.js";
 import { handleFactsLoad, validateRow, parseFactsBody, FACTS_STATE_KEY, FACTS_MAX_BODY, FACTS_PER_HOUR, FACT_KINDS } from "../../infrastructure/worker/game-facts.js";
-import { lookupGameFacts, questionWindows, candidateKeys, buildNameSql, buildCuratedSql, chooseNames, curatedMatches, LOOKUP_MAX_KEYS, LOOKUP_MAX_TOKENS } from "../../infrastructure/worker/game-facts-lookup.js";
+import { lookupGameFacts, questionWindows, candidateKeys, buildNameSql, buildCuratedSql, chooseNames, curatedMatches, askedRank, parseNote, LOOKUP_MAX_KEYS, LOOKUP_MAX_TOKENS } from "../../infrastructure/worker/game-facts-lookup.js";
 import { normName, baseName } from "../../infrastructure/worker/game-facts-name.js";
 import { signListen, listenerKey, shadowKey, heartbeatKey, heartbeatStatusKey, factsLoadKey, FACTS_LOAD_KEY_LABEL, resetListenerKeyCacheForTests, resetHeartbeatKeyCacheForTests } from "../../infrastructure/worker/listener-config.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
-import { run as runTool, checkBase, buildPlan, deriveTraitRows, deriveCuratedRows, curatedBuild, batch, nameStats, writeCost, KIND_ORDER, DEFAULT_ROW_BUDGET, WRITES_PER_FACT, WRITES_PER_SUFFIXED_FACT, WRITES_PER_CALL, WRITES_PER_RETIRED_FACT } from "../../tools/facts-load.mjs";
+import { run as runTool, checkBase, buildPlan, deriveRankRows, deriveTableRows, rankStats, rankNote, deriveTraitRows, deriveCuratedRows, curatedBuild, batch, nameStats, writeCost, KIND_ORDER, DEFAULT_ROW_BUDGET, WRITES_PER_FACT, WRITES_PER_SUFFIXED_FACT, WRITES_PER_CALL, WRITES_PER_RETIRED_FACT } from "../../tools/facts-load.mjs";
 import { sha256 } from "../../tools/replay/common.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -529,9 +529,9 @@ test("no friend data: the tables have no person column, a row with one is refuse
 const tmp = () => mkdtempSync(join(tmpdir(), "facts-test-"));
 const letters = (i) => { let s = ""; while (i > 0) { s = String.fromCharCode(97 + ((i - 1) % 26)) + s; i = Math.floor((i - 1) / 26); } return s; };
 // Fictional tables with the real tables' columns. nItems items make several batches.
-function writeTables(dir, { nItems = 450, build = BUILD } = {}) {
+function writeTables(dir, { nItems = 450, build = BUILD, ranks = false } = {}) {
   const csv = (header, rows) => [header.join(","), ...rows.map((r) => r.join(","))].join("\n") + "\n";
-  const spellname = [], spelllevels = [], cds = [], misc = [], power = [];
+  const spellname = [], spelllevels = [], cds = [], misc = [], power = [], spell = [], sco = [];
   for (let i = 1; i <= 6; i++) {
     const id = 1000 + i;
     spellname.push([id, `Zorbo ${letters(i)} Bolt`]);
@@ -539,8 +539,26 @@ function writeTables(dir, { nItems = 450, build = BUILD } = {}) {
     cds.push([id, 0, 0, (i + 1) * 1000, 0, 0, id]);
     misc.push([id, 0, 1 + (i % 2), id]);
     power.push([id, 0, 10 * i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, id]);
+    spell.push([id, i === 1 && ranks ? "Rank 1" : "", "", ""]); // a UNIQUE name with a rank line stays a legacy row: no rank in its claim
   }
-  spellname.push([2001, "Twinname Strike"], [2002, "Twinname Strike"]); spelllevels.push([2001, 0, 0, 0, 9, 0, 2001], [2002, 0, 0, 0, 9, 0, 2002]);
+  // Twinname Strike: two unrelated spells with one name. Not player-facing (BaseLevel 0) unless the ranks fixture is on.
+  spellname.push([2001, "Twinname Strike"], [2002, "Twinname Strike"]); spelllevels.push([2001, 0, 0, 0, ranks ? 9 : 0, 0, 2001], [2002, 0, 0, 0, ranks ? 9 : 0, 0, 2002]);
+  spell.push([2001, ranks ? "Rank 1" : "", "", ""], [2002, ranks ? "Rank 1" : "", "", ""]);
+  if (ranks) {
+    // Zephyr Lance: four ranks of one spell (ids 3001-3004). Ember's Vow: Rite: two ranks, apostrophe and colon. Row ids of every own table are NOT the SpellID.
+    const ladder = (name, firstId, levels) => levels.forEach((lv, k) => {
+      const id = firstId + k;
+      spellname.push([id, name]); spell.push([id, `Rank ${k + 1}`, "", ""]);
+      spelllevels.push([7000 + id, 0, 0, 0, lv, 0, id]);
+      cds.push([9000 + id, 0, 0, 8000, 0, 0, id]);
+      misc.push([8000 + id, 0, 2, id]);
+      power.push([6000 + id, 0, 10 * (k + 1), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, id]);
+      sco.push([id, id, 8]);
+    });
+    ladder("Zephyr Lance", 3001, [4, 12, 20, 28]);
+    ladder("Ember's Vow: Rite", 3011, [10, 30]);
+    sco.push([2001, 2001, 5], [2002, 2002, 7]);
+  }
   const items = [];
   for (let i = 1; i <= nItems; i++) items.push([5000 + i, "", `Fakeblade of ${letters(i)}`, 10 + i, 2 + (i % 50), 1]);
   const tables = {
@@ -550,6 +568,9 @@ function writeTables(dir, { nItems = 450, build = BUILD } = {}) {
     "spellcooldowns.csv": csv(["ID", "DifficultyID", "CategoryRecoveryTime", "RecoveryTime", "StartRecoveryTime", "AuraSpellID", "SpellID"], cds),
     "spellmisc.csv": csv(["ID", "DifficultyID", "CastingTimeIndex", "SpellID"], misc),
     "spellcasttimes.csv": csv(["ID", "Base", "Minimum"], [[1, 0, 0], [2, 1500, 0]]),
+    "spell.csv": csv(["ID", "NameSubtext_lang", "Description_lang", "AuraDescription_lang"], spell),
+    "spellclassoptions.csv": csv(["ID", "SpellID", "SpellClassSet"], sco),
+    "chrclasses.csv": csv(["Name_lang", "ID", "SpellClassSet"], [["Fiction Mage", 8, 8], ["Fiction Rogue", 4, 5], ["Fiction Priest", 5, 7], ["Fiction None", 99, 0]]),
     "spellpower.csv": csv(["ID", "OrderIndex", "ManaCost", "ManaCostPerLevel", "ManaPerSecond", "PowerDisplayID", "AltPowerBarID", "PowerCostPct", "PowerCostMaxPct", "OptionalCostPct", "PowerPctPerSecond", "PowerType", "RequiredAuraSpellID", "OptionalCost", "SpellID"], power),
   };
   const files = {};
@@ -1046,4 +1067,143 @@ test("tool write constants: the tool's counting and the smoke's measurement use 
   assert.equal(writeCost(0, 0, 1), 3);
   assert.ok(DEFAULT_ROW_BUDGET <= 100000 && DEFAULT_ROW_BUDGET === 60000);
   assert.deepEqual(KIND_ORDER.slice(-1), ["item_level_req"]);
+});
+
+// ---- shared-name player spells: ranks ---------------------------------------------------------------------------------------------------------------
+const rankPlan = (dir, extra = {}) => buildPlan({ tables: dir, scope: "client", ...extra });
+const rankDir = (opts = {}) => { const dir = tmp(); writeTables(dir, { nItems: 10, ranks: true, ...opts }); return dir; };
+const rowsById = (rows) => new Map(rows.map((r) => [r.id, r]));
+const manifestOf = (dir) => JSON.parse(readFileSync(join(dir, "MANIFEST.json"), "utf8"));
+
+test("rank rows: every rank of a shared-name player spell is its own fact per kind, keyed by its own table row id, with the rank in the claim and the note", () => {
+  const dir = rankDir();
+  const { rows } = deriveRankRows(dir, manifestOf(dir));
+  const lance = rows.filter((r) => r.subject === "Zephyr Lance");
+  assert.deepEqual(lance.reduce((m, r) => (m[r.kind] = (m[r.kind] || 0) + 1, m), {}), { spell_level: 4, spell_cooldown: 4, spell_cast_time: 4, spell_mana_cost: 4 });
+  const r4 = rowsById(lance);
+  assert.equal(r4.get("spelllevels:10004").claim, "Zephyr Lance (Rank 4) requires level 28.");
+  assert.equal(r4.get("spelllevels:10004").value, "28"); assert.equal(r4.get("spelllevels:10004").unit, "level");
+  assert.equal(r4.get("spelllevels:10004").note, "rank=4;class=Fiction Mage");
+  assert.equal(r4.get("spellcooldowns:12004").claim, "Zephyr Lance (Rank 4) has a cooldown of 8 seconds.");
+  assert.equal(r4.get("spellmisc:11004").claim, "Zephyr Lance (Rank 4) has a cast time of 1.5 seconds.");
+  assert.equal(r4.get("spellpower:9004").claim, "Zephyr Lance (Rank 4) costs 40 mana.");
+  assert.ok(rows.every((r) => r.id !== "spelllevels:3004"), "the id is the table row id, never the SpellID");
+  const vow = rows.filter((r) => r.subject === "Ember's Vow: Rite" && r.kind === "spell_level").map((r) => r.claim).sort();
+  assert.deepEqual(vow, ["Ember's Vow: Rite (Rank 1) requires level 10.", "Ember's Vow: Rite (Rank 2) requires level 30."]);
+  const twin = rows.filter((r) => r.subject === "Twinname Strike" && r.kind === "spell_level");
+  assert.deepEqual(twin.map((r) => r.note).sort(), ["rank=1;class=Fiction Priest", "rank=1;class=Fiction Rogue"]);
+  assert.equal(new Set(rows.map((r) => r.id)).size, rows.length);
+  assert.ok(rows.every((r) => !validateRow(r, "client").error), "every row passes the Worker's own validation");
+  assert.equal(rankNote(0, ""), ""); assert.equal(rankNote(3, ""), "rank=3");
+});
+
+test("rank rows: ids, claims and values of every row the unique-name loader already produced are unchanged, and the two derivations never share a spell", () => {
+  const before = tmp(); writeTables(before, { nItems: 10 });
+  const after = rankDir();
+  const old = rankPlan(before).loads[0].rows, now = rankPlan(after).loads[0].rows;
+  const nowById = rowsById(now);
+  for (const r of old) assert.deepEqual(nowById.get(r.id), r, "a row that existed before keeps its id and every field: " + r.id);
+  const rankRows = deriveRankRows(after, manifestOf(after)).rows;
+  const oldIds = new Set(old.map((r) => r.id));
+  assert.ok(rankRows.every((r) => !oldIds.has(r.id)), "no rank row reuses a legacy id");
+  assert.equal(now.length, old.length + rankRows.length);
+  const zorbo = nowById.get("spelllevels:1001");
+  assert.equal(zorbo.claim, "Zorbo a Bolt requires level 5."); assert.equal(zorbo.note, "", "a unique name with a rank line stays a legacy row");
+  assert.deepEqual(rankPlan(after).loads[0].rows, now, "a re-derivation is identical, so a re-load does not churn");
+});
+
+test("rank rows: the rank path and the legacy path agree on a unique name (drift guard); BaseLevel 0 is not a player spell", () => {
+  const dir = tmp(); writeTables(dir, { nItems: 10 });
+  const manifest = manifestOf(dir);
+  const legacy = rowsById(deriveTableRows(dir, manifest).rows);
+  const viaRank = deriveRankRows(dir, manifest, { includeUnique: true }).rows;
+  assert.ok(viaRank.length >= 20, "level, cooldown, cast time and mana rows of the six Zorbo spells");
+  for (const r of viaRank) assert.deepEqual(legacy.get(r.id), r, "same id, claim, value and unit on both paths: " + r.id);
+  assert.equal(deriveRankRows(dir, manifest).rows.length, 0, "no shared name, no rank row");
+  assert.ok(!viaRank.some((r) => r.subject === "Twinname Strike"));
+});
+
+test("rank rows: the plan counts them per kind (counts only) and splits shared names into ranks of one spell and different spells; they load before item_level_req", () => {
+  const dir = rankDir();
+  const l = rankPlan(dir).loads[0];
+  assert.deepEqual(l.ranked.perKind, { spell_level: 8, spell_cooldown: 6, spell_cast_time: 6, spell_mana_cost: 6 });
+  assert.equal(l.ranked.names, 3);
+  assert.equal(l.ranked.ranksOfOne, 2, "Zephyr Lance and Ember's Vow have distinct ranks");
+  assert.equal(l.ranked.differentSpells, 1, "Twinname Strike: two spells, the same rank");
+  assert.equal(l.ranked.single, 0);
+  const kinds = l.rows.map((r) => r.kind);
+  assert.ok(kinds.lastIndexOf("spell_mana_cost") < kinds.indexOf("item_level_req"));
+  const only = rankPlan(dir, { kinds: ["spell_level"] }).loads[0];
+  assert.deepEqual(Object.keys(only.counts), ["spell_level"]);
+  assert.equal(only.counts.spell_level, 6 + 8);
+  assert.equal(rankStats(only.rows, new Set()).rows, 0);
+});
+
+test("rank lookup: 'Zephyr Lance rank 4' returns only the rank-4 rows; no rank returns every rank in order; a rank that does not exist returns nothing and says so", async () => {
+  const { env } = await fresh();
+  await loadAll(env, rankPlan(rankDir()).loads[0].rows);
+  const r4 = await lookupGameFacts(env, "what is the cooldown and level of Zephyr Lance rank 4?", { limit: 5 });
+  assert.deepEqual(r4.rows.map((r) => [r.kind, r.rank, r.id]).sort(), [["spell_cooldown", 4, "spellcooldowns:12004"], ["spell_level", 4, "spelllevels:10004"], ["spell_cast_time", 4, "spellmisc:11004"], ["spell_mana_cost", 4, "spellpower:9004"]].sort());
+  assert.equal(r4.rows.find((r) => r.kind === "spell_level").value, "28");
+  assert.equal(r4.rows[0].hint, "Fiction Mage");
+  assert.equal(r4.ambiguous, false);
+  assert.equal(r4.rankMissing, undefined);
+  for (const q of ["Zephyr Lance rank IV level", "rank 4 Zephyr Lance level", "Zephyr Lance Rank 4"]) assert.deepEqual((await lookupGameFacts(env, q)).rows.map((r) => r.rank), [4, 4, 4, 4], q);
+  const all = await lookupGameFacts(env, "when do I get Zephyr Lance?");
+  assert.deepEqual(all.rows.map((r) => r.rank), [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4], "the whole ladder, lowest rank first, never cut by the limit");
+  assert.deepEqual(all.rows.filter((r) => r.kind === "spell_level").map((r) => r.value), ["4", "12", "20", "28"]);
+  assert.equal(all.ambiguous, true, "several rows of one kind for one name");
+  const none = await lookupGameFacts(env, "level of Zephyr Lance rank 9");
+  assert.deepEqual(none.rows, []); assert.equal(none.rankMissing, true);
+});
+
+test("rank lookup: a name shared by different spells returns both with class hints and ambiguous; apostrophes and colons fold; a legacy row has no rank key", async () => {
+  const { env } = await fresh();
+  await loadAll(env, rankPlan(rankDir()).loads[0].rows);
+  const tw = await lookupGameFacts(env, "What level is Twinname Strike rank 1?");
+  assert.deepEqual(tw.rows.map((r) => [r.id, r.hint, r.rank]).sort(), [["spelllevels:2001", "Fiction Rogue", 1], ["spelllevels:2002", "Fiction Priest", 1]].sort());
+  assert.equal(tw.ambiguous, true);
+  const vow = await lookupGameFacts(env, "what level is embers vow rite rank 2");
+  assert.deepEqual(vow.rows.filter((r) => r.kind === "spell_level").map((r) => [r.rank, r.value]), [[2, "30"]]);
+  assert.equal(vow.rows.length, 4);
+  const z = (await lookupGameFacts(env, "what level is Zorbo a Bolt")).rows.find((r) => r.kind === "spell_level");
+  assert.deepEqual(Object.keys(z).sort(), ["build", "claim", "id", "kind", "row_id", "source_table", "subject", "unit", "value"]);
+  assert.equal(z.claim, "Zorbo a Bolt requires level 5.");
+});
+
+test("rank lookup helpers: askedRank reads rank N, rank roman and rank-before-name; parseNote accepts only the two known keys", () => {
+  const t = (s) => questionWindows(s).tokens;
+  assert.equal(askedRank(t("fireball rank 4 level"), { start: 0, len: 1 }), 4);
+  assert.equal(askedRank(t("fireball rank iv"), { start: 0, len: 1 }), 4);
+  assert.equal(askedRank(t("rank 7 fireball"), { start: 2, len: 1 }), 7);
+  assert.equal(askedRank(t("when do I get fireball"), { start: 4, len: 1 }), null);
+  assert.equal(askedRank(t("fireball rank"), { start: 0, len: 1 }), null);
+  assert.deepEqual(parseNote("rank=4;class=Mage"), { rank: 4, hint: "Mage" });
+  assert.deepEqual(parseNote("rank=abc;evil=1;class=<b>"), {});
+  assert.deepEqual(parseNote(""), {}); assert.deepEqual(parseNote(null), {});
+});
+
+test("rank load: --max-rows-per-run stops after the batch that carries the rank rows, the load stays open, the next run resumes; a second identical load changes nothing", async () => {
+  const { DB, env } = await fresh();
+  const dir = tmp(); writeTables(dir, { nItems: 450, ranks: true });
+  const state = join(dir, "state.json");
+  const argv = (extra, st = state) => [tokenFile(dir), "--tables", dir, "--scope", "client", "--apply", "--base", "http://localhost:8787", "--state", st, ...extra];
+  const first = rankPlan(dir).loads[0].batches[0];
+  assert.ok(first.some((r) => r.id === "spelllevels:10004"), "the rank rows are in the first batch (spells come before item_level_req)");
+  const { deps, out } = clockDeps();
+  const a = inprocess(env);
+  const budget = writeCost(0, 0, 2) + writeCost(first.length, first.filter((r) => baseName(normName(r.subject))).length, 1) + 50;
+  assert.equal(await runTool(argv(["--max-rows-per-run", String(budget)]), { ...deps, fetchImpl: a.fetchImpl }), 1);
+  assert.deepEqual(a.seen.map((x) => x.op), ["begin", "rows"]);
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE id = 'spelllevels:10004'").c, 1, "the rank row is in the open load");
+  assert.deepEqual((await lookupGameFacts(env, "Zephyr Lance rank 4")).rows, [], "open load: invisible");
+  await deps.sleep(2000);
+  const b = inprocess(env);
+  assert.equal(await runTool(argv([]), { ...deps, fetchImpl: b.fetchImpl }), 0, out.join("; "));
+  assert.equal((await lookupGameFacts(env, "Zephyr Lance rank 4")).rows.length, 4);
+  const again = inprocess(env);
+  const lines = [];
+  await deps.sleep(2000);
+  assert.equal(await runTool(argv([], join(dir, "state2.json")), { ...deps, log: (l) => lines.push(l), fetchImpl: again.fetchImpl }), 0);
+  assert.match(lines.join("\n"), /finish client: total \d+, added 0, changed 0, unchanged \d+, removed 0/);
 });

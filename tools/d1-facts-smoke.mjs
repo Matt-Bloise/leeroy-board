@@ -22,7 +22,11 @@ import { WRITES_PER_FACT, WRITES_PER_SUFFIXED_FACT, WRITES_PER_CALL, WRITES_PER_
 export const PRODUCTION_DB = "leeroy-board-db";
 const PREVIEW_DB_RE = /^leeroy-board-db-pr-[0-9]{1,8}$/;
 export const FREE_ROWS_WRITTEN_PER_DAY = 100000; // https://developers.cloudflare.com/d1/platform/pricing/ (Free plan: 100,000 rows written per day, 5 million rows read per day)
-export const REAL_CLIENT_FACTS = 18752, REAL_CLIENT_SUFFIXED = 754, REAL_CLIENT_CALLS = 96, REAL_CURATED_FACTS = 142, REAL_CURATED_CALLS = 3; // from the real-table dry run of tools/facts-load.mjs (counts only)
+// From the real-table dry run of tools/facts-load.mjs (counts only). REAL_RANK_ROWS are the player-facing shared-name spell rows (deriveRankRows, one fact per spell id and kind) and are INCLUDED in REAL_CLIENT_FACTS;
+// REAL_BEFORE_* are the PR 403 numbers without them (18,752 facts, 754 rank-suffixed, 96 calls: 38,742 rows written together with the curated load).
+export const REAL_CLIENT_FACTS = 22520, REAL_CLIENT_SUFFIXED = 794, REAL_CLIENT_CALLS = 115, REAL_CURATED_FACTS = 142, REAL_CURATED_CALLS = 3, REAL_RANK_ROWS = 3768;
+export const REAL_BEFORE_CLIENT_FACTS = 18752, REAL_BEFORE_CLIENT_SUFFIXED = 754, REAL_BEFORE_CLIENT_CALLS = 96;
+export const DEFAULT_RUN_BUDGET = 60000; // tools/facts-load.mjs DEFAULT_ROW_BUDGET
 const NOW = "2026-01-01T00:00:00.000Z";
 
 // -> the name, or throws. The only accepted shape is the per-PR ephemeral database.
@@ -147,15 +151,33 @@ export function measureRows(prefix, from = 0, to = MEASURE_FACTS) {
   }
   return out;
 }
+// RANK_FACTS fictional rank rows: RANK_SPELLS names with ranks 1..RANK_RANKS each, spell_level, with the note the loader writes ('rank=<n>;class=Test Mage'), ids keyed by a table row id. Built through validateRow.
+export const RANK_SPELLS = 60, RANK_RANKS = 5, RANK_FACTS = RANK_SPELLS * RANK_RANKS;
+export const RANK_LOAD = "smoke-load-m3";
+export function rankRows() {
+  const out = [];
+  for (let n = 0; n < RANK_SPELLS; n++) {
+    const name = `Test Rankbolt ${WORDS[n % 10]} ${WORDS[Math.floor(n / 10) % 10]} ${n}`;
+    for (let k = 1; k <= RANK_RANKS; k++) {
+      const v = validateRow({ id: `spelllevels:R${n}x${k}`, kind: "spell_level", subject: name, claim: `${name} (Rank ${k}) requires level ${k * 4}.`, value: String(k * 4), unit: "level", source_table: "spelllevels", row_id: `R${n}x${k}`, build: "9.9.9.1", verdict: "holds", source_class: "client-db2", note: `rank=${k};class=Test Mage` }, "client");
+      if (!v.row) throw new Error(`bad rank row ${n}/${k}: ${v.error}`);
+      out.push(v.row);
+    }
+  }
+  return out;
+}
 export const countKinds = (rows) => rows.reduce((m, r) => (m[r.kind] = (m[r.kind] || 0) + 1, m), {});
 
 // Pure: the projection from the measured numbers. m: { perFact, perSuffixedExtra, perCall, finishFixed, perRetired }.
 export function project(m) {
   const first = (facts, suffixed, calls) => Math.ceil(facts * m.perFact + suffixed * m.perSuffixedExtra + calls * m.perCall + m.finishFixed);
   const client = first(REAL_CLIENT_FACTS, REAL_CLIENT_SUFFIXED, REAL_CLIENT_CALLS);
+  const clientBefore = first(REAL_BEFORE_CLIENT_FACTS, REAL_BEFORE_CLIENT_SUFFIXED, REAL_BEFORE_CLIENT_CALLS);
+  const rankRowsWritten = Math.ceil(REAL_RANK_ROWS * (m.perRankRow === undefined ? m.perFact : m.perRankRow));
   const curated = first(REAL_CURATED_FACTS, 0, REAL_CURATED_CALLS);
   const rebuild = client + Math.ceil(REAL_CLIENT_FACTS * m.perRetired); // a second load of a new build: every new row written and every old row retired
-  return { client, curated, firstLoadTotal: client + curated, rebuild, pctFirst: ((client + curated) / FREE_ROWS_WRITTEN_PER_DAY) * 100, pctRebuild: (rebuild / FREE_ROWS_WRITTEN_PER_DAY) * 100 };
+  const total = client + curated;
+  return { client, clientBefore, beforeTotal: clientBefore + curated, rankRowsWritten, curated, firstLoadTotal: total, daysAtLimit: Math.ceil(total / FREE_ROWS_WRITTEN_PER_DAY), runsAtDefaultBudget: Math.ceil(total / DEFAULT_RUN_BUDGET), rebuild, pctFirst: ((client + curated) / FREE_ROWS_WRITTEN_PER_DAY) * 100, pctRebuild: (rebuild / FREE_ROWS_WRITTEN_PER_DAY) * 100 };
 }
 const r2 = (n) => Math.round(n * 100) / 100;
 
@@ -166,6 +188,8 @@ export function checkMeasurements(m, exp) {
   const check = (cond, msg) => { lines.push(`${cond ? "PASS" : "FAIL"} ${msg}`); if (!cond) ok = false; };
   check(m.perFact <= WRITES_PER_FACT + 0.001, `measured writes per fact ${r2(m.perFact)} are within the tool's constant WRITES_PER_FACT = ${WRITES_PER_FACT}`);
   check(m.perSuffixedExtra <= WRITES_PER_SUFFIXED_FACT + 0.001, `measured extra writes per rank-suffixed fact ${r2(m.perSuffixedExtra)} are within WRITES_PER_SUFFIXED_FACT = ${WRITES_PER_SUFFIXED_FACT}`);
+  check(m.perRankRow !== undefined && m.perRankRow <= WRITES_PER_FACT + 0.001, `measured writes per rank row (note and rank in the claim, no suffix) ${m.perRankRow === undefined ? "missing" : r2(m.perRankRow)} are within WRITES_PER_FACT = ${WRITES_PER_FACT}`);
+  check(exp.rankLookupOk === true, "on the real D1 a question 'Test Rankbolt ... rank 4' returns exactly the rank-4 row with rank 4 and the class hint, and a question without a rank returns all five ranks in order");
   check(m.perCall <= WRITES_PER_CALL + 0.001, `measured writes per call ${r2(m.perCall)} are within WRITES_PER_CALL = ${WRITES_PER_CALL}`);
   check(m.perRetired <= WRITES_PER_RETIRED_FACT + 0.001, `measured writes per retired fact ${r2(m.perRetired)} are within WRITES_PER_RETIRED_FACT = ${WRITES_PER_RETIRED_FACT}`);
   check(m.retired === exp.retired, `finish retired all ${exp.retired} rows of the previous load: the re-sent ones are replaced by the new load's rows, the rest are gone from the new build (${m.retired})`);
@@ -246,6 +270,14 @@ export async function runSmoke(db) {
     const declared2 = countKinds([...keep, ...fresh]);
     const finB = finishOn(db, m2, declared2, keep.length + fresh.length);
     const retired = rowsOf(command(db, "SELECT COUNT(*) AS c FROM game_facts WHERE load_id = 'smoke-load-m1' AND superseded = 1;"), 0)[0].c;
+    // ranks: a few hundred synthetic rank rows (the shape deriveRankRows writes), their writes per row from D1's own meta, then the Worker's lookup on the real D1
+    const rk = rankRows();
+    openLoad(db, RANK_LOAD);
+    const wRank = upsertAll(db, RANK_LOAD, rk);
+    finishOn(db, RANK_LOAD, { spell_level: rk.length }, rk.length);
+    const rl = await lookupGameFacts({ DB: remoteDb((sql) => command(db, sql)) }, "What level is Test Rankbolt Amber Amber 0 rank 4?", { limit: 10 });
+    const rlAll = await lookupGameFacts({ DB: remoteDb((sql) => command(db, sql)) }, "when do I get Test Rankbolt Amber Amber 0", { limit: 10 });
+    const rankLookupOk = rl.rows.length === 1 && rl.rows[0].rank === 4 && rl.rows[0].value === "16" && rl.rows[0].hint === "Test Mage" && rlAll.rows.map((r) => r.rank).join() === "1,2,3,4,5";
     const measured = {
       perFact: wPlain / plainProbe.length,
       perSuffixedExtra: Math.max(0, (wA - rowsA.length * (wPlain / plainProbe.length)) / suffixed.length), // what a rank-suffixed fact costs ABOVE a plain one
@@ -253,6 +285,7 @@ export async function runSmoke(db) {
       finishFixed: finA.written,
       perRetired: retired ? Math.max(0, (finB.written - finA.written) / retired) : 0,
       retired,
+      perRankRow: wRank / rk.length,
     };
     const proj = project(measured);
     out.push("", "| measured on the preview D1 (rows written, from D1 meta.rows_written) | value |", "| --- | --- |",
@@ -264,12 +297,15 @@ export async function runSmoke(db) {
       `| begin (insert of the load row) | ${beginWrites} |`,
       `| finish with nothing to retire (rows written / rows read) | ${finA.written} / ${finA.read} |`,
       `| finish retiring ${retired} rows (rows written / rows read) | ${finB.written} / ${finB.read} |`,
+      `| **writes per rank row** (${rk.length} synthetic rows, ${RANK_SPELLS} names x ${RANK_RANKS} ranks, rank and class in the note: ${wRank} rows) | **${r2(measured.perRankRow)}** |`,
       `| writes per retired fact | ${r2(measured.perRetired)} |`,
       `| kv_state insert + update in one call (not used for the constants) | ${kvW} |`,
       "", "| projection from the measured numbers | rows written | of the D1 Free limit (100,000 a day) |", "| --- | --- | --- |",
       `| client load, ${REAL_CLIENT_FACTS} facts (${REAL_CLIENT_SUFFIXED} rank-suffixed), ${REAL_CLIENT_CALLS} calls | ${proj.client} | ${r2((proj.client / FREE_ROWS_WRITTEN_PER_DAY) * 100)}% |`,
       `| curated load, ${REAL_CURATED_FACTS} rows, ${REAL_CURATED_CALLS} calls | ${proj.curated} | ${r2((proj.curated / FREE_ROWS_WRITTEN_PER_DAY) * 100)}% |`,
-      `| first load of both | ${proj.firstLoadTotal} | ${r2(proj.pctFirst)}% |`,
+      `| of which the ${REAL_RANK_ROWS} shared-name rank rows | ${proj.rankRowsWritten} | ${r2((proj.rankRowsWritten / FREE_ROWS_WRITTEN_PER_DAY) * 100)}% |`,
+      `| first load of both (before the rank rows: ${proj.beforeTotal}) | ${proj.firstLoadTotal} | ${r2(proj.pctFirst)}% |`,
+      `| days for the whole first load at the 100,000 limit / runs at the default ${DEFAULT_RUN_BUDGET} budget | ${proj.daysAtLimit} day(s) / ${proj.runsAtDefaultBudget} run(s) | |`,
       `| rebuild of the client load for a new build (all new rows written, all old rows retired) | ${proj.rebuild} | ${r2(proj.pctRebuild)}% |`, "");
 
     // ---- 3. plain export of the preview database, with the smoke rows still in it
@@ -287,7 +323,7 @@ export async function runSmoke(db) {
       `| plain \`wrangler d1 export --remote\` on the preview D1 | ${exportOk ? `ok (${dumpText.length} bytes)` : `FAILED: ${firstLine(ex.stderr || ex.stdout)}`} |`,
       `| dump applied to an in-memory SQLite (informational) | ${dumpApplies} |`,
       `| restore drill, in process on schema.sql | ${drill.status === 0 ? "passed" : `FAILED (exit ${drill.status})`} |`, "");
-    add(checkMeasurements(measured, { retired: MEASURE_FACTS, exportOk, exportError: exportOk ? "" : firstLine(ex.stderr || ex.stdout), dumpHasRows, drillOk: drill.status === 0 }));
+    add(checkMeasurements(measured, { retired: MEASURE_FACTS, exportOk, exportError: exportOk ? "" : firstLine(ex.stderr || ex.stdout), dumpHasRows, rankLookupOk, drillOk: drill.status === 0 }));
   } catch (e) {
     ok = false;
     out.push(`- FAIL smoke could not complete: ${firstLine(e.message)}`);
