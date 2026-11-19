@@ -109,7 +109,11 @@ function wrangler(args, { allowFail = false } = {}) {
   if (r.status !== 0 && !allowFail) throw new Error(`wrangler ${args.slice(0, 3).join(" ")} failed (exit ${r.status}): ${firstLine(r.stderr || r.stdout)}`);
   return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
 }
-export const firstLine = (t) => String(t || "").split("\n").map((l) => l.trim()).find((l) => l && !/^[-=]+$/.test(l)) || "(no output)";
+export const firstLine = (t) => String(t || "").replace(/\u001b\[[0-9;]*m/g, "").split("\n").map((l) => l.trim()).find((l) => l && !/^[-=]+$/.test(l)) || "(no output)";
+// SELECTs go through --command: on a remote D1, --file is an import and returns no rows. Writes (several statements) go through --file.
+function query(db, sql) {
+  return parseWranglerJson(wrangler(["d1", "execute", db, "--remote", "--json", "--command", sql]).stdout);
+}
 function execSql(db, sql) {
   const dir = mkdtempSync(path.join(tmpdir(), "d1-smoke-"));
   const f = path.join(dir, "q.sql");
@@ -123,18 +127,18 @@ export async function runSmoke(db) {
   try {
     execSql(db, CLEANUP_SQL); // a leftover of an earlier attempt
     execSql(db, INSERT_SQL);
-    const lookupRows = rowsOf(execSql(db, lookupSqlFor("Test Frostwhirl level")), 0);
-    const hostileRows = rowsOf(execSql(db, lookupSqlFor(HOSTILE)), 0);
-    const still = rowsOf(execSql(db, "SELECT COUNT(*) AS c FROM game_facts WHERE load_id LIKE 'smoke-load-%';"), 0)[0];
-    if (!still || still.c !== 4) throw new Error("the hostile question changed the table");
-    const ftsCount = rowsOf(execSql(db, `SELECT COUNT(*) AS c FROM game_facts_fts WHERE game_facts_fts MATCH '"frostwhirl"';`), 0)[0].c;
+    const lookupRows = rowsOf(query(db, lookupSqlFor("Test Frostwhirl level")), 0);
+    const hostileRows = rowsOf(query(db, lookupSqlFor(HOSTILE)), 0);
+    const still = rowsOf(query(db, "SELECT COUNT(*) AS c FROM game_facts WHERE load_id LIKE 'smoke-load-%';"), 0)[0];
+    if (!still || still.c !== 4) throw new Error(`the hostile question changed the table (smoke rows now: ${JSON.stringify(still)})`);
+    const ftsCount = rowsOf(query(db, `SELECT COUNT(*) AS c FROM game_facts_fts WHERE game_facts_fts MATCH '"frostwhirl"';`), 0)[0].c;
     let integrityOk = false;
-    try { execSql(db, "INSERT INTO game_facts_fts(game_facts_fts) VALUES ('integrity-check');"); integrityOk = true; } catch { integrityOk = false; }
+    try { query(db, "INSERT INTO game_facts_fts(game_facts_fts) VALUES ('integrity-check');"); integrityOk = true; } catch { integrityOk = false; }
     execSql(db, "UPDATE game_facts SET claim = 'Test Frostwhirl requires level 12 and a Zzyzxquux.' WHERE id = 'spelllevels:smoke1';");
-    const afterUpdateCount = rowsOf(execSql(db, `SELECT COUNT(*) AS c FROM game_facts_fts WHERE game_facts_fts MATCH '"zzyzxquux"';`), 0)[0].c;
-    const inv = rowsOf(execSql(db, "SELECT name FROM sqlite_master WHERE name LIKE 'game_fact%';"), 0).map((r) => r.name);
+    const afterUpdateCount = rowsOf(query(db, `SELECT COUNT(*) AS c FROM game_facts_fts WHERE game_facts_fts MATCH '"zzyzxquux"';`), 0)[0].c;
+    const inv = rowsOf(query(db, "SELECT name FROM sqlite_master WHERE name LIKE 'game_fact%';"), 0).map((r) => r.name);
     execSql(db, CLEANUP_SQL);
-    const afterDeleteCount = rowsOf(execSql(db, `SELECT COUNT(*) AS c FROM game_facts_fts WHERE game_facts_fts MATCH '"frostwhirl"';`), 0)[0].c;
+    const afterDeleteCount = rowsOf(query(db, `SELECT COUNT(*) AS c FROM game_facts_fts WHERE game_facts_fts MATCH '"frostwhirl"';`), 0)[0].c;
     outcome = checkLookup({ lookupRows, hostileRows, ftsCount, integrityOk, afterUpdateCount, afterDeleteCount, inventory: inv });
   } catch (e) {
     outcome = { ok: false, lines: [`FAIL smoke could not complete: ${e.message}`] };
