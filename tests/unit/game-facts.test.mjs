@@ -522,7 +522,7 @@ test("no friend data: the tables have no person column, a row with one is refuse
   const readers = [];
   const walk = (d) => { for (const e of readdirSync(d, { withFileTypes: true })) { const p = join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.js$/.test(e.name) && /game_facts|game_fact_loads/.test(readFileSync(p, "utf8"))) readers.push(e.name); } };
   walk(dir);
-  assert.deepEqual(readers.sort(), ["data-rights.js", "export.js", "game-facts-lookup.js", "game-facts.js"], "the ask path does not read the store in this PR");
+  assert.deepEqual(readers.sort(), ["data-rights.js", "export.js", "game-facts-lookup.js", "game-facts-read.js", "game-facts.js"], "the only ask-path file that names the store is the reader (game-facts-read.js, behind GAME_FACTS_READ)");
 });
 
 // ---- the tool --------------------------------------------------------------------------------------------------------------------------------------

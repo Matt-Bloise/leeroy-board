@@ -11,6 +11,7 @@ import { badPhrases, HOUSE } from "../ask-build.js";
 import { isRefusalSentence, refusalRemainder, contentSentences, splitBanter, splitSentenceText } from "../answer-lint.js";
 import { RESEARCH_DOWN_ANSWER, DEGRADED_ANSWERS } from "./provider.js";
 import { defangPings } from "./real-names.js";
+import { dropUnshownRowIds, clientTableItem, citedRowIds } from "../game-facts-read.js";
 
 export const CLASSIC_TAG = "Classic value, not confirmed for Forever";
 export const CLASSIC_NAME_TAG = "Classic-era name, not confirmed for Forever";
@@ -173,16 +174,21 @@ function tagSentence(sent, tag) {
   return `${sent.slice(0, start)} (${tag})${sent.slice(start)}`;
 }
 // groundingText: the same text the deleters used (library facts as shown, build, party, the question). Returns the labelled text and what was tagged.
-export function labelClassic(text, groundingText) {
+// rows (GAME_FACTS_READ only, null otherwise): { ids: Set of the shown client-table row ids, ground: the text of the shown row lines }. A sentence that cites a shown row id (or is followed by a sentence that is only ids) may use the numbers and
+// names of those row lines; a sentence that states a figure the library does not hold and cites no shown row is labelled like any other unsupported figure.
+export function labelClassic(text, groundingText, rows = null) {
   const allowedNums = allowedValues(groundingText);
   const allowedNames = `${groundingText || ""} ${HOUSE.join(" ")}`.toLowerCase();
+  const rowNums = rows ? new Set([...allowedNums, ...allowedValues(rows.ground)]) : null;
+  const rowNames = rows ? `${allowedNames} ${String(rows.ground || "").toLowerCase()}` : "";
   const tagged = { numbers: [], names: [] };
   let tags = 0;
   const nextTag = (nums) => { const tag = tags === 0 ? (nums.length ? CLASSIC_TAG : CLASSIC_NAME_TAG) : tags === 1 && nums.length ? CLASSIC_TAG : CLASSIC_SHORT_TAG; tags += 1; return tag; };
   // What is unsupported in one run of text. `clean` has links reduced to their label and code spans to their content (protect().plain), so a number in either is seen.
-  const flagged = (clean) => {
-    const nums = unsupportedIn(clean, allowedNums).filter((x) => !covered(clean, x));
-    const names = badPhrases(clean, allowedNames).filter((x) => !covered(clean, x));
+  const flagged = (clean, citing = clean) => {
+    const viaRows = Boolean(rows) && citedRowIds(citing, rows.ids).length > 0;
+    const nums = unsupportedIn(clean, viaRows ? rowNums : allowedNums).filter((x) => !covered(clean, x));
+    const names = badPhrases(clean, viaRows ? rowNames : allowedNames).filter((x) => !covered(clean, x));
     return { nums, names, any: nums.length + names.length > 0 };
   };
   const out = [];
@@ -209,8 +215,10 @@ export function labelClassic(text, groundingText) {
       out.push(f.any ? `${line.replace(/\s+$/, "")} (${nextTag(f.nums)})` : line);
       continue;
     }
-    out.push(splitProtected(p.text).map((sent) => {
-      const f = flagged(p.plain(sent));
+    const sents = splitProtected(p.text);
+    out.push(sents.map((sent, si) => {
+      const nextOnlyIds = si + 1 < sents.length && /^\s*(?:\[[a-z_]+:[A-Za-z0-9_.-]{1,40}\]\s*)+[.!?]*\s*$/.test(p.plain(sents[si + 1])) ? p.plain(sents[si + 1]) : "";
+      const f = flagged(p.plain(sent), `${p.plain(sent)} ${nextOnlyIds}`);
       if (!f.any) return p.restore(sent);
       tagged.numbers.push(...f.nums); tagged.names.push(...f.names);
       return p.restore(tagSentence(sent, nextTag(f.nums)));
@@ -356,17 +364,22 @@ export function appendBasis(main, { labels, confidence }) {
 // The whole text step. `retrievedIds`: ids the prompt showed (a Set, or null for "no filter"). Returns { text, basis, labelled, tagged, usable, unverifiedCites }.
 // `text` ends with a bare `-# Sources: id, id` line when library ids survive (the formatter turns it into links); the labels and the confidence word are appended after formatting (appendBasis).
 // A cited page the prompt never showed is not deleted as a claim: its id leaves the link line, and the answer's confidence is capped at "likely".
-export function researchPrepare(text, { groundingText = "", retrievedIds = null, budget = 1500, allow = [] } = {}) {
+// factIds (GAME_FACTS_READ only; null = off, the default): a Set of the client-table row ids the prompt showed. A bracketed row id that was not shown is removed, the row ids the answer uses come back as factCites, a
+// cited row counts as a library-grade source for the confidence word, and the model's own "client table ..." label is left out (finishAnswerText writes the one compact client table item itself).
+export function researchPrepare(text, { groundingText = "", retrievedIds = null, budget = 1500, allow = [], factIds = null, factGround = "" } = {}) {
   const usable = usableAnswer(text);
   const src = takeSources(stripRefusals(String(text || "").slice(0, MAX_INPUT_CHARS)));
   const outage = !usable || String(text || "").trim() === RESEARCH_DOWN_ANSWER || DEGRADED_ANSWERS.has(String(text || "").trim()); // both code-written outage lines carry no sources/confidence tag
   let body = usable ? src.body : RESEARCH_DOWN_ANSWER; // callers retry or fall back to library facts before this; this keeps the eval and format paths from emitting nothing
-  const lab = labelClassic(body, groundingText);
+  if (factIds) body = dropUnshownRowIds(body, factIds);
+  const lab = labelClassic(body, groundingText, factIds ? { ids: factIds, ground: factGround } : null);
   body = trimToSentences(neutraliseMentions(defuseLinks(lab.text, { allow })), budget);
+  const factCites = factIds && usable ? citedRowIds(body, factIds) : []; // only ids that are in the KEPT text, as whole bracketed tokens
   const ids = retrievedIds ? src.ids.filter((id) => retrievedIds.has(id)) : src.ids;
   const unverifiedCites = src.ids.length > ids.length;
   const pre = ids.length ? `${body}\n-# Sources: ${ids.join(", ")}` : body;
-  const labels = src.labels.map((l) => neutraliseMentions(defuseLinks(l)).replace(/[`\[\]()<>]/g, "")).filter(Boolean);
+  const rawLabels = src.labels.map((l) => neutraliseMentions(defuseLinks(l)).replace(/[`\[\]()<>]/g, "")).filter(Boolean).filter((l) => !factIds || (!/client table/i.test(l) && ![...factIds].some((id) => l.includes(id))));
+  const labels = factCites.length ? [clientTableItem(factCites), ...rawLabels] : rawLabels; // the answer rests on table rows: that is its first source label
   // The outage line is not a researched answer: it carries no sources/confidence tag.
-  return { text: pre, basis: outage ? null : { labels, confidence: chooseConfidence({ found: src.found, hasLibraryIds: ids.length > 0, labelled: lab.labelled, unverifiedCites }) }, labelled: lab.labelled, tagged: lab.tagged, usable, unverifiedCites };
+  return { text: pre, basis: outage ? null : { labels, confidence: chooseConfidence({ found: src.found, hasLibraryIds: ids.length > 0 || factCites.length > 0, labelled: lab.labelled, unverifiedCites }) }, labelled: lab.labelled, tagged: lab.tagged, usable, unverifiedCites, factCites };
 }
