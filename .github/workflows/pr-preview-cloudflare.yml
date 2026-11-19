@@ -169,61 +169,58 @@ jobs:
             exit 1
           fi
 
-          # 1. Verify token status against Cloudflare verify endpoint
-          VERIFY_RES=$(curl -s "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+          # 1. Verify the token. A user-owned token verifies at /user/tokens/verify; an ACCOUNT-owned token verifies at /accounts/{account_id}/tokens/verify
+          # and fails at the user endpoint. Try the user endpoint first, then the account endpoint; accept "active" from either.
+          token_status() { node -e 'try { const j = JSON.parse(process.argv[1]); console.log((j.result && j.result.status) || (j.success ? "active" : "failed")); } catch(e) { console.log("failed"); }' "$1"; }
+          USER_VERIFY_RES=$(curl -s "https://api.cloudflare.com/client/v4/user/tokens/verify" \
             -H "Authorization: Bearer $CLEAN_TOKEN")
-          TOKEN_STATUS=$(node -e 'try { const j = JSON.parse(process.argv[1]); console.log(j.result?.status || (j.success ? "active" : "failed")); } catch(e) { console.log("failed"); }' "$VERIFY_RES")
+          TOKEN_STATUS=$(token_status "$USER_VERIFY_RES")
+          VERIFIED_VIA="/user/tokens/verify"
+          ACCOUNT_VERIFY_RES=""
+          if [ "$TOKEN_STATUS" != "active" ] && [ -n "$CLEAN_ACC" ]; then
+            ACCOUNT_VERIFY_RES=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$CLEAN_ACC/tokens/verify" \
+              -H "Authorization: Bearer $CLEAN_TOKEN")
+            if [ "$(token_status "$ACCOUNT_VERIFY_RES")" = "active" ]; then
+              TOKEN_STATUS="active"
+              VERIFIED_VIA="/accounts/{account_id}/tokens/verify (account-owned token)"
+            fi
+          fi
 
           if [ "$TOKEN_STATUS" != "active" ]; then
-            echo "::error::Cloudflare API Token validation failed. Status: $TOKEN_STATUS"
-            echo "Cloudflare error codes: $(printf '%s' "$VERIFY_RES" | node ../tools/cf-error-codes.mjs)"
+            echo "::error::Cloudflare API Token validation failed (CLOUDFLARE_PREVIEW_API_TOKEN). Endpoints tried: GET /user/tokens/verify (Cloudflare error codes: $(printf '%s' "$USER_VERIFY_RES" | node ../tools/cf-error-codes.mjs))$([ -n "$ACCOUNT_VERIFY_RES" ] && echo ", GET /accounts/{account_id}/tokens/verify (Cloudflare error codes: $(printf '%s' "$ACCOUNT_VERIFY_RES" | node ../tools/cf-error-codes.mjs))" || echo "; the account endpoint was not tried because CLOUDFLARE_ACCOUNT_ID is empty")."
             echo ""
             echo "Action Required:"
             echo "1. Verify CLOUDFLARE_PREVIEW_API_TOKEN is a valid API Token (not a Global API Key)."
-            echo "2. Check that the token is Active in Cloudflare Dashboard -> My Profile -> API Tokens."
+            echo "2. Check that the token is Active and not expired: Cloudflare Dashboard -> My Profile -> API Tokens (user token) or Manage Account -> Account API Tokens (account-owned token)."
             exit 1
           fi
-          echo "✓ Cloudflare API Token is ACTIVE and verified."
+          echo "✓ Cloudflare API Token is ACTIVE and verified via GET $VERIFIED_VIA."
 
-          # 2. Check accounts the token has access to
-          ACCOUNTS_RES=$(curl -s "https://api.cloudflare.com/client/v4/accounts" \
-            -H "Authorization: Bearer $CLEAN_TOKEN")
-          ACC_INFO=$(node -e '
-            try {
-              const j = JSON.parse(process.argv[1]);
-              const accs = j.result || [];
-              const target = process.env.TARGET_ID;
-              const match = accs.find(a => a.id === target);
-              if (match) {
-                console.log("MATCH:" + match.id);
-              } else if (accs.length === 1) {
-                console.log("RESOLVED_SINGLE:" + accs[0].id);
-              } else if (accs.length > 1) {
-                console.log("MULTIPLE:" + accs.length);
-              } else {
-                console.log("NONE");
-              }
-            } catch(e) {
-              console.log("PARSE_ERROR");
-            }
-          ' "$ACCOUNTS_RES")
-
+          # 2. Account: use the explicit account id path. An account-owned token may not be allowed to list /accounts, so the list is used only when no account id is set.
           TARGET_ACCOUNT_ID="$CLEAN_ACC"
-          if [[ "$ACC_INFO" == MATCH:* ]]; then
-            ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            echo "::add-mask::$ACC_ID"
-            echo "✓ Account ID matches the token (account name and id are not printed)."
-          elif [[ "$ACC_INFO" == RESOLVED_SINGLE:* ]]; then
-            ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            echo "::add-mask::$ACC_ID"
-            echo "::notice::Auto-resolved the Cloudflare account from the token (account name and id are not printed)."
-            TARGET_ACCOUNT_ID="$ACC_ID"
-          elif [[ "$ACC_INFO" == MULTIPLE:* ]]; then
-            echo "::error::Provided Account ID '$CLEAN_ACC' does not match any accounts this token can access."
-            echo "The token can access more than one account; names and ids are not printed. Set CLOUDFLARE_ACCOUNT_ID to the intended one."
-            exit 1
+          if [ -n "$CLEAN_ACC" ]; then
+            echo "::add-mask::$CLEAN_ACC"
+            echo "✓ Using the configured account id (account name and id are not printed)."
           else
-            echo "::warning::Could not query /accounts via token. Proceeding with provided Account ID: $CLEAN_ACC"
+            ACCOUNTS_RES=$(curl -s "https://api.cloudflare.com/client/v4/accounts" \
+              -H "Authorization: Bearer $CLEAN_TOKEN")
+            ACC_INFO=$(node -e '
+              try {
+                const j = JSON.parse(process.argv[1]);
+                const accs = j.result || [];
+                if (accs.length === 1) console.log("RESOLVED_SINGLE:" + accs[0].id);
+                else if (accs.length > 1) console.log("MULTIPLE:" + accs.length);
+                else console.log("NONE");
+              } catch(e) { console.log("PARSE_ERROR"); }
+            ' "$ACCOUNTS_RES")
+            if [[ "$ACC_INFO" == RESOLVED_SINGLE:* ]]; then
+              TARGET_ACCOUNT_ID=$(echo "$ACC_INFO" | cut -d: -f2)
+              echo "::add-mask::$TARGET_ACCOUNT_ID"
+              echo "::notice::Auto-resolved the Cloudflare account from the token (account name and id are not printed)."
+            else
+              echo "::error::CLOUDFLARE_ACCOUNT_ID is empty and the account could not be resolved from the token (Cloudflare error codes: $(printf '%s' "$ACCOUNTS_RES" | node ../tools/cf-error-codes.mjs)). Set CLOUDFLARE_ACCOUNT_ID."
+              exit 1
+            fi
           fi
 
           echo "CLOUDFLARE_API_TOKEN=$CLEAN_TOKEN" >> "$GITHUB_ENV"

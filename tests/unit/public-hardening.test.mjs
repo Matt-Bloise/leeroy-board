@@ -38,9 +38,12 @@ test("M1: the two pre-flight steps mask a resolved account id before any echo an
     const step = stepsOf(wf(f)).find((s) => /Verify Cloudflare Credentials/.test(s.name || ""));
     assert.ok(step, `${f}: pre-flight step exists`);
     const run = step.run;
-    const masks = [...run.matchAll(/::add-mask::\$ACC_ID/g)].length;
-    assert.equal(masks, 2, `${f}: ACC_ID is masked in the MATCH and the RESOLVED_SINGLE branch`);
-    assert.equal(/echo[^\n]*\$ACC_ID/.test(run.replace(/echo "::add-mask::\$ACC_ID"/g, "")), false, `${f}: ACC_ID is never echoed`);
+    const idVars = f.startsWith("deploy") ? ["ACC_ID"] : ["CLEAN_ACC", "TARGET_ACCOUNT_ID"];
+    for (const v of idVars) {
+      assert.ok(run.includes("::add-mask::$" + v), `${f}: ${v} is masked`);
+      const unmasked = run.split("\n").filter((l) => !l.includes("::add-mask::") && !l.includes("GITHUB_ENV")).join("\n");
+      assert.equal(new RegExp("echo[^\\n]*\\$" + v + "\\b").test(unmasked), false, `${f}: ${v} is never echoed`);
+    }
     assert.equal(/Raw response from Cloudflare|Cloudflare response: \$/.test(run), false, `${f}: no raw Cloudflare response (it can carry account data)`);
   }
 });
@@ -79,7 +82,7 @@ test("M2: the diagnostics step runs with the preview token and names each missin
   assert.match(job.env.CLOUDFLARE_API_TOKEN, /CLOUDFLARE_PREVIEW_API_TOKEN/);
   for (const label of ["Account > D1 > Edit", "Account > Workers Scripts > Edit", "Account > Cloudflare Pages > Edit"]) assert.ok(step.run.includes(label), `reports ${label}`);
   assert.match(step.run, /CLOUDFLARE_PREVIEW_API_TOKEN is missing permissions:\$MISSING_PERMS/);
-  assert.equal(/echo[^\n]*\$(PERM_RES|D1_CHECK|CLEAN_TOKEN|ACCOUNTS_RES)/.test(step.run.replace(/^.*GITHUB_ENV.*$/gm, "")), false, "no response body or token is echoed");
+  assert.equal(/echo[^\n]*\$(PERM_RES|D1_CHECK|CLEAN_TOKEN|ACCOUNTS_RES)/.test(step.run.replace(/^.*GITHUB_ENV.*$/gm, "").replace(/printf '%s' "\$[A-Z0-9_]+" \| node \.\.\/tools\/cf-error-codes\.mjs/g, "")), false, "no response body or token is echoed");
   assert.equal(/Authorization: Bearer \$CLEAN_TOKEN/.test(step.run), true);
 });
 
@@ -130,10 +133,10 @@ test("the error-code extraction prints the numeric code and nothing else, and ev
       calls++;
       const m = line.match(/printf '%s' "\$([A-Z0-9_]+)" \| node \.\.\/tools\/cf-error-codes\.mjs/);
       assert.ok(m, f + ": the variable's contents are piped in, not its name: " + line.trim().slice(0, 60));
-      assert.ok(["VERIFY_RES", "D1_CHECK", "ZONE_CHECK"].includes(m[1]), f + ": a real response variable");
+      assert.ok(["VERIFY_RES", "D1_CHECK", "ZONE_CHECK", "USER_VERIFY_RES", "ACCOUNT_VERIFY_RES", "ACCOUNTS_RES"].includes(m[1]), f + ": a real response variable");
     }
   }
-  assert.equal(calls, 4, "verify, D1, zone (deploy) and verify (preview)");
+  assert.equal(calls, 5, "lines: verify, D1, zone (deploy); user+account verify, account list (preview)");
 });
 
 // ---- L3/L-extra: untrusted output and the stamped Worker URL (review finding 6) ---------------------------------------------------------
@@ -214,4 +217,52 @@ test("the roster workflow still refuses to run in a public repository", () => {
   const step = stepsOf(wf("roster-upsert.yml"))[0];
   assert.match(step.run, /\[ "\$REPO_PRIVATE" != "true" \]/);
   assert.match(step.run, /runs of a public repository publish their logs/);
+});
+
+// ---- preview pre-flight with an account-owned token ---------------------------------------------------------------------------------------
+// Runs the real step script under bash with a fake `curl` on PATH. Fictional account id and token; nothing leaves the machine.
+import { mkdtempSync, writeFileSync, chmodSync, readFileSync as rf } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const runPreflight = ({ userOk, accountOk }) => {
+  const dir = mkdtempSync(join(tmpdir(), "preflight-"));
+  const fake = [
+    "#!/usr/bin/env bash",
+    'url=""; for a in "$@"; do case "$a" in https://*) url="$a";; esac; done',
+    'case "$url" in',
+    "  */user/tokens/verify) " + (userOk ? "echo '{\"success\":true,\"result\":{\"status\":\"active\"}}'" : "echo '{\"success\":false,\"errors\":[{\"code\":1000,\"message\":\"Invalid API Token for Fictional Holdings\"}]}'") + ";;",
+    "  */tokens/verify) " + (accountOk ? "echo '{\"success\":true,\"result\":{\"status\":\"active\"}}'" : "echo '{\"success\":false,\"errors\":[{\"code\":7003,\"message\":\"Could not route to /accounts/ACC1234, perhaps your object identifier is invalid?\"}]}'") + ";;",
+    "  *) echo '{\"success\":true,\"result\":[]}';;",
+    "esac",
+  ].join("\n");
+  writeFileSync(join(dir, "curl"), fake); chmodSync(join(dir, "curl"), 0o755);
+  const step = stepsOf(wf("pr-preview-cloudflare.yml")).find((s) => /Verify Cloudflare Credentials/.test(s.name || ""));
+  const envFile = join(dir, "env.txt"); writeFileSync(envFile, "");
+  const r = spawnSync("bash", ["-c", step.run], {
+    cwd: ROOT + "infrastructure", encoding: "utf8",
+    env: { ...process.env, PATH: dir + ":" + process.env.PATH, CLOUDFLARE_API_TOKEN: "tok-fictional-0000", CLOUDFLARE_ACCOUNT_ID: "ACC1234", GITHUB_ENV: envFile },
+  });
+  return { code: r.status, out: (r.stdout || "") + (r.stderr || ""), env: rf(envFile, "utf8") };
+};
+
+test("preview pre-flight: a user token verifies at /user, an account-owned token at /accounts/{id}, and a failure names both endpoints with codes only", () => {
+  const user = runPreflight({ userOk: true, accountOk: false });
+  assert.equal(user.code, 0, user.out);
+  assert.match(user.out, /verified via GET \/user\/tokens\/verify/);
+  const acct = runPreflight({ userOk: false, accountOk: true });
+  assert.equal(acct.code, 0, acct.out);
+  assert.match(acct.out, /verified via GET \/accounts\/\{account_id\}\/tokens\/verify \(account-owned token\)/);
+  assert.match(acct.env, /CLOUDFLARE_API_TOKEN=tok-fictional-0000/);
+  const none = runPreflight({ userOk: false, accountOk: false });
+  assert.equal(none.code, 1);
+  assert.ok(none.out.includes("GET /user/tokens/verify (Cloudflare error codes: 1000)"), none.out);
+  assert.ok(none.out.includes("GET /accounts/{account_id}/tokens/verify (Cloudflare error codes: 7003)"), none.out);
+  assert.equal(/Fictional|Invalid API Token|Could not route|ACC1234|tok-fictional/.test(none.out), false, "no message text, account id or token in the log");
+});
+
+test("preview pre-flight: the account list is not needed when the account id is configured", () => {
+  const step = stepsOf(wf("pr-preview-cloudflare.yml")).find((s) => /Verify Cloudflare Credentials/.test(s.name || ""));
+  const listIdx = step.run.indexOf('client/v4/accounts"'), guard = step.run.indexOf('if [ -n "$CLEAN_ACC" ]; then');
+  assert.ok(guard > 0 && listIdx > guard, "listing only in the else branch");
 });
