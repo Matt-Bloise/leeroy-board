@@ -30,8 +30,8 @@ Gate, in order:
 2. Signature (the listener's HMAC, 120 s window): missing or wrong 401. Body over 4 KB: 413.
 3. `ASK_RESEARCH` off: 409 (the research path is what is compared).
 4. The body must be exactly the known keys with `"purpose":"shadow-ask"`: `question` (required), `as`, `channel` (a Discord channel id, so group memory reads that channel as an ask there would), `private` (true runs the member's private path), `local_answer`. Anything else, including a validly signed `/api/listen` event or self-test body, is 400 before any spend. A question that holds a secret-shaped value is refused (400) and never stored.
-5. A signature already accepted: 409. The SHA-256 of the lower-cased signature (never the signature) is kept in the limiter row from acceptance until its verifier expiry (its timestamp plus 120 s), pruned by expiry only. Only accepted calls are recorded: rejected (400) and rate-limited (429) requests never enter or evict the cache, however many arrive. At most 20 accepted calls a day exist, so the list stays small.
-6. Rate limit: 6 an hour and 20 a day: 429 with `Retry-After`. The limiter row is `kv_state` key `shadow_ask_rate`; if it cannot be written: 503 and nothing runs. Refused calls (401, 400, 409) do not use up the allowance.
+5. A signature already accepted: 409. The SHA-256 of the lower-cased signature (never the signature) is kept in the limiter row from acceptance until its verifier expiry (its timestamp plus 120 s), pruned by expiry only. Only accepted calls are recorded: rejected (400) and rate-limited (429) requests never enter or evict the cache, however many arrive. At most `SHADOW_ASK_DAILY` (20 by default) accepted calls a day exist, so the list stays small.
+6. Rate limit: 6 an hour and 20 a day by default (`SHADOW_ASK_HOURLY`, `SHADOW_ASK_DAILY`, see "Limits" below): 429 with `Retry-After`. The limiter row is `kv_state` key `shadow_ask_rate`; if it cannot be written: 503 and nothing runs. Refused calls (401, 400, 409) do not use up the allowance.
 
 Then `answerWithAi` runs with a record-only sink (the `sink` parameter; every other caller passes none and is unchanged, which `tests/unit/shadow-ask.test.mjs` proves with a differential trace recorded on master before the sink existed). With the sink: no Discord message, no interaction followup, no webhook, no socket message, no card, no stats entry, no group-memory write, no `answer_details`, no `ask_turns` row. The only writes are the row in `shadow_answers` (migration `0014_shadow_answers.sql`, also in `schema.sql`), the limiter row and the Claude spend counters. The table is private: no route reads it back; the signed caller gets the answer in the response of the call itself, and the admin export (`GET /api/admin/export`) can read it.
 
@@ -71,7 +71,21 @@ Reason codes (a fixed vocabulary; anything else is `other`):
 
 ## Spend
 
-Same guard as an ask: the monthly counter `claude_tokens_YYYYMM` against `RESEARCH_CLAUDE_MONTHLY_TOKENS`, plus the shadow's own sub-counter capped at 2% of that cap (100,000 tokens at the default 5,000,000: roughly ten full-size composes a month, so the 20-a-day ceiling is a bound, not a target). A reservation the monthly cap refuses is given back to the sub-counter; the counters settle on real usage.
+Same guard as an ask: the monthly counter `claude_tokens_YYYYMM` against `RESEARCH_CLAUDE_MONTHLY_TOKENS`, plus the shadow's own sub-counter capped at `SHADOW_ASK_SUBCAP_PERCENT` (default 2) percent of that cap (100,000 tokens at the default 5,000,000: roughly 25 full-size composes a month, so at the defaults the 20-a-day ceiling is a bound, not a target). A reservation the monthly cap refuses is given back to the sub-counter; the counters settle on real usage.
+
+## Limits (Worker vars)
+
+The limits are Worker `[vars]` in `infrastructure/wrangler.toml`, shipped at the original hard-coded values, so nothing changes until they are edited. Values are numeric strings.
+
+| Var | Default | Range | Effect |
+|---|---|---|---|
+| `SHADOW_ASK_HOURLY` | `"6"` | integer 1 to 120 | accepted calls in any rolling hour; the next is 429 |
+| `SHADOW_ASK_DAILY` | `"20"` | integer 1 to 600 | accepted calls in any rolling day; raised to the hourly value if set below it |
+| `SHADOW_ASK_SUBCAP_PERCENT` | `"2"` | number 0.1 to 20 | the shadow counter's share of `RESEARCH_CLAUDE_MONTHLY_TOKENS`, in percent |
+
+Unset, empty, non-numeric, `NaN`, `Infinity`, zero, negative or exponent-form values use the default, never unlimited. A positive value outside the range is clamped to the nearest edge. Raising them in production is a separate `wrangler.toml` change and deploy; the monthly cap still binds, and a shadow reservation past the sub-cap ends as `claude:subcap`.
+
+Worked cost line (Sonnet 5.5, estimate, not measured here): a full compose is about 3 to 4k tokens in plus out, so 200 composes is about 0.8M tokens. At the default 2% sub-cap (100,000 tokens) that is about 25 composes a month, so a 60 to 200 compose baseline needs the percent raised: 0.8M of a 5,000,000 cap is 16%, so `SHADOW_ASK_SUBCAP_PERCENT = "16"` or more (20 is the maximum), and `SHADOW_ASK_DAILY` and `SHADOW_ASK_HOURLY` raised to match the pace wanted. The shadow tokens also count against the monthly cap, so the real asks have the remaining 4.2M.
 
 ## What it proves
 
@@ -82,7 +96,7 @@ Same guard as an ask: the monthly counter `claude_tokens_YYYYMM` against `RESEAR
 ## What it does not prove
 
 - Delivery: the Discord side (deferred reply, followup, posting, buttons, reactions) is not exercised.
-- Concurrency and load: calls are limited to 6 an hour.
+- Concurrency and load: calls are limited to 6 an hour by default.
 - Group memory writes, the stats feed, answer reuse and the budget wall are skipped on purpose (they are writes); only the group-memory read is exercised.
 - Anything about a friend who is not on the roster (a guest never reaches Claude).
 - A run without `--as` has no build and no member group memory: use `--as` for a parity read.

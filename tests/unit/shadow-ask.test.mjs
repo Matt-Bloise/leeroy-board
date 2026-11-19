@@ -21,7 +21,7 @@ import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { resetResearchClaudeForTests, privacyBudget, counterKey, monthTag } from "../../infrastructure/worker/research/claude.js";
 import { signListen, listenerKey, shadowKey, SHADOW_KEY_LABEL, resetListenerKeyCacheForTests } from "../../infrastructure/worker/listener-config.js";
-import { handleShadowAsk, parseShadowBody, safeReason, shadowSubCounterKey, SHADOW_RATE_KEY, SHADOW_PER_HOUR, SHADOW_PER_DAY, SHADOW_SUBCAP_FRACTION, SHADOW_MAX_BODY } from "../../infrastructure/worker/shadow-ask.js";
+import { handleShadowAsk, parseShadowBody, safeReason, shadowSubCounterKey, SHADOW_RATE_KEY, SHADOW_PER_HOUR, SHADOW_PER_DAY, SHADOW_SUBCAP_FRACTION, SHADOW_MAX_BODY, shadowLimits } from "../../infrastructure/worker/shadow-ask.js";
 import { MAX_QUESTION_CHARS } from "../../infrastructure/worker/limits.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
@@ -579,6 +579,108 @@ test("the sub-cap is 2% of the monthly cap: a cap where an ask fits but 2% does 
   const r3 = (await quiet(() => post(mkEnv(DB3)))).value;
   assert.equal(r3.json.reason, "claude:subcap");
   assert.equal(tokens(DB3, counterKey(now)), null);
+});
+
+// ---- configurable limits: SHADOW_ASK_HOURLY, SHADOW_ASK_DAILY, SHADOW_ASK_SUBCAP_PERCENT ---------------------------------------------------------------
+test("shadowLimits: unset gives the original limits (6 an hour, 20 a day, 2%)", () => {
+  for (const env of [undefined, null, {}, { SHADOW_ASK_HOURLY: undefined }]) assert.deepEqual(shadowLimits(env), { hourly: 6, daily: 20, percent: 2, fraction: 0.02 });
+  assert.equal(shadowLimits({}).fraction, SHADOW_SUBCAP_FRACTION);
+  assert.equal(SHADOW_PER_HOUR, 6);
+  assert.equal(SHADOW_PER_DAY, 20);
+});
+
+test("shadowLimits: each var is honoured, as a string or a number", () => {
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: "40" }).hourly, 40);
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: 40 }).hourly, 40);
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: " 40 " }).hourly, 40);
+  assert.equal(shadowLimits({ SHADOW_ASK_DAILY: "200" }).daily, 200);
+  assert.equal(shadowLimits({ SHADOW_ASK_SUBCAP_PERCENT: "16" }).percent, 16);
+  assert.equal(shadowLimits({ SHADOW_ASK_SUBCAP_PERCENT: "16" }).fraction, 0.16);
+  assert.equal(shadowLimits({ SHADOW_ASK_SUBCAP_PERCENT: "0.5" }).fraction, 0.005);
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: "7.9" }).hourly, 7, "an integer var is floored");
+});
+
+test("shadowLimits: clamping, and hostile values fall back to the default, never to unlimited", () => {
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: "500" }).hourly, 120);
+  assert.equal(shadowLimits({ SHADOW_ASK_DAILY: "99999" }).daily, 600);
+  assert.equal(shadowLimits({ SHADOW_ASK_SUBCAP_PERCENT: "90" }).percent, 20);
+  assert.equal(shadowLimits({ SHADOW_ASK_SUBCAP_PERCENT: "0.01" }).percent, 0.1);
+  for (const bad of ["", " ", "abc", "NaN", "Infinity", "-5", "0", "0.0", "-0", "1e3", "0x10", "+5", "5abc", "5 5", "1,000", "--1", "null", "undefined", NaN, Infinity, -Infinity, -1, 0, null, undefined, true, {}, [], [7], "9".repeat(400)]) {
+    const l = shadowLimits({ SHADOW_ASK_HOURLY: bad, SHADOW_ASK_DAILY: bad, SHADOW_ASK_SUBCAP_PERCENT: bad });
+    assert.equal(l.hourly, 6, `hourly ${JSON.stringify(bad)}`);
+    assert.equal(l.daily, 20, `daily ${JSON.stringify(bad)}`);
+    assert.equal(l.percent, 2, `percent ${JSON.stringify(bad)}`);
+  }
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: "0.5" }).hourly, 6, "an integer var that floors to zero uses the default");
+  const l = shadowLimits({ SHADOW_ASK_HOURLY: "1e999", SHADOW_ASK_DAILY: "9".repeat(400) });
+  assert.ok(l.hourly <= 120 && l.daily <= 600, "no value is ever unlimited");
+});
+
+test("shadowLimits: the daily limit is never below the hourly one", () => {
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: "50", SHADOW_ASK_DAILY: "10" }).daily, 50);
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: "50" }).daily, 50, "the default daily 20 is raised to the hourly 50");
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: "120", SHADOW_ASK_DAILY: "1" }).daily, 120);
+  assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: "5", SHADOW_ASK_DAILY: "30" }).daily, 30);
+});
+
+test("route: SHADOW_ASK_HOURLY changes the hourly ceiling (3 allows 3 then 429; 8 allows 8)", async () => {
+  const T0 = Date.now();
+  const DB = await freshDb();
+  const env = mkEnv(DB, { RESEARCH_CLAUDE_MONTHLY_TOKENS: "900000000", SHADOW_ASK_HOURLY: "3" });
+  for (let i = 0; i < 3; i++) assert.equal((await quiet(() => direct(env, T0 + i * 1000))).value.status, 200, `call ${i + 1}`);
+  const sends = anth.length;
+  assert.equal((await direct(env, T0 + 10_000)).status, 429);
+  assert.equal(anth.length, sends, "no compose on a limited call");
+  const DB2 = await freshDb();
+  const env2 = mkEnv(DB2, { RESEARCH_CLAUDE_MONTHLY_TOKENS: "900000000", SHADOW_ASK_HOURLY: "8", SHADOW_ASK_DAILY: "8" });
+  for (let i = 0; i < 8; i++) assert.equal((await quiet(() => direct(env2, T0 + i * 1000))).value.status, 200, `call ${i + 1}`);
+  assert.equal((await direct(env2, T0 + 10_000)).status, 429);
+});
+
+test("route: SHADOW_ASK_DAILY changes the daily ceiling, and a daily below the hourly is raised to it", async () => {
+  const T0 = Date.now();
+  const DB = await freshDb();
+  const env = mkEnv(DB, { RESEARCH_CLAUDE_MONTHLY_TOKENS: "900000000", SHADOW_ASK_DAILY: "22" });
+  for (let i = 0; i < 22; i++) assert.equal((await quiet(() => direct(env, T0 + i * 11 * 60_000))).value.status, 200, `daily call ${i + 1}`);
+  const over = await direct(env, T0 + 22 * 11 * 60_000);
+  assert.equal(over.status, 429);
+  assert.ok(over.json.retryAfter > 3600);
+  const DB2 = await freshDb();
+  const env2 = mkEnv(DB2, { RESEARCH_CLAUDE_MONTHLY_TOKENS: "900000000", SHADOW_ASK_HOURLY: "4", SHADOW_ASK_DAILY: "1" });
+  for (let i = 0; i < 4; i++) assert.equal((await quiet(() => direct(env2, T0 + i * 1000))).value.status, 200, `call ${i + 1}: daily 1 is raised to the hourly 4`);
+  assert.equal((await direct(env2, T0 + 10_000)).status, 429);
+});
+
+test("route: hostile limit vars keep the defaults (7th call in an hour is 429)", async () => {
+  const T0 = Date.now();
+  const DB = await freshDb();
+  const env = mkEnv(DB, { RESEARCH_CLAUDE_MONTHLY_TOKENS: "900000000", SHADOW_ASK_HOURLY: "NaN", SHADOW_ASK_DAILY: "-1" });
+  for (let i = 0; i < 6; i++) assert.equal((await quiet(() => direct(env, T0 + i * 1000))).value.status, 200, `call ${i + 1}`);
+  assert.equal((await direct(env, T0 + 10_000)).status, 429);
+});
+
+test("route: SHADOW_ASK_SUBCAP_PERCENT sets the reservation fraction (a cap where the default share fits stops at 0.1%, and a cap where it does not fit passes at 20%)", async () => {
+  const now = new Date();
+  const ok = async (cap, pct) => { const DBx = await freshDb(); return (await quiet(() => post(mkEnv(DBx, { RESEARCH_CLAUDE_MONTHLY_TOKENS: cap, ...(pct === undefined ? {} : { SHADOW_ASK_SUBCAP_PERCENT: pct }) })))).value.json; };
+  assert.notEqual((await ok("900000")).reason, "claude:subcap", "default 2% of 900000 fits one compose");
+  const low = await ok("900000", "0.1");
+  assert.equal(low.reason, "claude:subcap", "0.1% of 900000 does not");
+  assert.equal(low.status, "degraded");
+  assert.equal((await ok("100000")).reason, "claude:subcap", "default 2% of 100000 does not fit (the existing pin)");
+  const DB = await freshDb();
+  const r = (await quiet(() => post(mkEnv(DB, { RESEARCH_CLAUDE_MONTHLY_TOKENS: "100000", SHADOW_ASK_SUBCAP_PERCENT: "20" })))).value.json;
+  assert.notEqual(r.reason, "claude:subcap", "20% of 100000 fits");
+  assert.ok(tokens(DB, shadowSubCounterKey(now)) > 0);
+});
+
+test("wrangler.toml pins the three limit vars at the original defaults, and both runbooks document them", () => {
+  const toml = read("infrastructure/wrangler.toml");
+  const vars = toml.slice(toml.indexOf("[vars]"));
+  assert.match(vars, /^SHADOW_ASK_HOURLY = "6"/m);
+  assert.match(vars, /^SHADOW_ASK_DAILY = "20"/m);
+  assert.match(vars, /^SHADOW_ASK_SUBCAP_PERCENT = "2"/m);
+  for (const doc of ["docs/runbooks/flags.md", "docs/runbooks/shadow-ask.md"]) for (const k of ["SHADOW_ASK_HOURLY", "SHADOW_ASK_DAILY", "SHADOW_ASK_SUBCAP_PERCENT"]) assert.ok(read(doc).includes("`" + k + "`"), `${k} in ${doc}`);
+  assert.ok(!read("infrastructure/flagship-flags.txt").includes("SHADOW_ASK_"), "not Flagship keys");
 });
 
 // ---- the default path is unchanged: differential ------------------------------------------------------------------------------------------------
