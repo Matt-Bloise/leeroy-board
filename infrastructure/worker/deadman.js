@@ -3,10 +3,11 @@
 //   POST /api/heartbeat/status   signed read of that row and the open incidents (tools/deadman-status.mjs).
 //   runDeadmanCheck(env)         one more step of the existing one-minute cron: a source silent for DEADMAN_STALE_SECONDS gets one open incidents row; its next heartbeat closes it.
 // Flag DEADMAN ("off" default; only the exact value "on" turns it on). Off: both routes answer 404, the cron step returns at once and nothing is read or written. Never in a PR preview.
-// Key: its own, derived from the bot token with the label "leeroy-heartbeat-v1" (listener-config.js heartbeatKeyFor). A listener, self-test or shadow signature never verifies here.
+// Keys: one independent key per source ("leeroy-heartbeat-v1:<source>") and a separate read-only key for the status route ("leeroy-heartbeat-status-v1"), all derived from the bot token (listener-config.js).
+// A listener, self-test or shadow signature, another source's key, or the status key never verifies on a heartbeat; a heartbeat key never opens the status route.
 // Signature and headers are the listener's: X-Listen-Timestamp / X-Listen-Signature, 120 s window. No friend data in a body, a row or a response. NO outbound message of any kind: alerting is NOT built (notifyIncident below is a stub).
 import { isPrPreviewEnv } from "./ai-models.js";
-import { heartbeatKeyFor, verifyListen, LISTEN_MAX_AGE_SECONDS } from "./listener-config.js";
+import { heartbeatKeyFor, heartbeatStatusKeyFor, verifyListen } from "./listener-config.js";
 import { updateKvJson } from "./kv-cas.js";
 import { readBounded } from "./listener.js";
 
@@ -19,16 +20,12 @@ export const HEARTBEAT_SOURCES = Object.freeze(["pc-bot", "pc-session"]);
 export const HEARTBEAT_PURPOSE = "heartbeat";
 export const STATUS_PURPOSE = "heartbeat-status";
 export const HEARTBEAT_MIN_WRITE_MS = 20 * 1000; // at most one write per source per 20 s; extra calls answer 200 recorded:false
-export const REPLAY_WINDOW_MS = LISTEN_MAX_AGE_SECONDS * 1000;
-const MAX_SEEN = 32;
 export const STALE_DEFAULT_S = 300;
 export const STALE_MIN_S = 120;
 export const STALE_MAX_S = 3600;
-const SEEN_KEY = "_seen"; // reserved key in the row: SHA-256 of recent accepted signatures. A source name never starts with an underscore.
 const MAX_OPEN_LISTED = 20;
 
 const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...extra } });
-const sha256Hex = async (text) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 // DEADMAN_STALE_SECONDS: a number clamped to 120..3600; unset or anything else is 300.
 export function staleSeconds(env) {
@@ -53,70 +50,83 @@ export function parseHeartbeatBody(v) {
 }
 export const isStatusBody = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 1 && v.purpose === STATUS_PURPOSE;
 
-// Shared front of both routes. -> { res } to answer now, or { raw, parsed } once the signature has been verified.
-async function gate(req, env, validate) {
+// Shared front of both routes. -> { res } to answer now, or { checked, source } once the signature has been verified with the key that route and source own.
+//   "heartbeat": the key is the claimed source's own, chosen from the (still unverified) body; a body without a listed source cannot be signed by anyone, so it is 401.
+//   "status":    the one read-only status key.
+async function gate(req, env, kind, validate) {
   if (!deadmanOn(env) || isPrPreviewEnv(env)) return { res: json({ error: "not found" }, 404) };
-  const key = await heartbeatKeyFor(env);
-  if (!key) return { res: json({ error: "not found" }, 404) };
+  if (!(await heartbeatStatusKeyFor(env))) return { res: json({ error: "not found" }, 404) }; // no usable bot token
   const raw = await readBounded(req, HEARTBEAT_MAX_BODY);
   if (raw === null) return { res: json({ error: "too large" }, 413) };
-  const ok = await verifyListen(key, req.headers.get("X-Listen-Timestamp"), raw, req.headers.get("X-Listen-Signature"), Math.floor(Date.now() / 1000));
-  if (!ok) return { res: json({ error: "unauthorized" }, 401) };
   let parsed;
-  try { parsed = JSON.parse(raw); } catch { return { res: json({ error: "bad json" }, 400) }; }
-  const checked = validate(parsed); // after the signature: a validly signed body of another purpose is refused before anything is stored
+  try { parsed = JSON.parse(raw); } catch { parsed = undefined; }
+  let source = null;
+  let key = null;
+  if (kind === "heartbeat") {
+    source = parsed && typeof parsed === "object" && !Array.isArray(parsed) && HEARTBEAT_SOURCES.includes(parsed.source) ? parsed.source : null;
+    key = source ? await heartbeatKeyFor(env, source) : null;
+  } else key = await heartbeatStatusKeyFor(env);
+  const ok = key ? await verifyListen(key, req.headers.get("X-Listen-Timestamp"), raw, req.headers.get("X-Listen-Signature"), Math.floor(Date.now() / 1000)) : false;
+  if (!ok) return { res: json({ error: "unauthorized" }, 401) };
+  const checked = validate(parsed); // after the signature: a validly signed body of another shape is refused before anything is stored
   if (!checked) return { res: json({ error: "bad body" }, 400) };
-  return { raw, checked };
+  return { checked, source };
+}
+
+// Closes the source's open incident, if any. A no-match UPDATE writes no row. -> true when nothing is left open (or the table does not exist yet: deploy before migration 0015), false when D1 failed.
+async function closeOpenIncident(env, source, nowMs) {
+  try {
+    const at = new Date(nowMs).toISOString();
+    await env.DB.prepare("UPDATE incidents SET closed_at = ?, last_seen_at = ? WHERE source = ? AND closed_at IS NULL").bind(at, at, source).run();
+    return true;
+  } catch (e) {
+    return /no such table/i.test(String((e && e.message) || e));
+  }
 }
 
 // deps.now: a clock returning a Date.
+//   Replay: the signed timestamp must be strictly greater than the last accepted one for the source (stored in the row), so a captured request, throttled or not, is refused once a later one was accepted,
+//   and liveness is never moved past the time the PC actually signed: lastAt = max(previous, min(now, signed time)).
 export async function handleHeartbeat(req, env, deps = {}) {
-  const g = await gate(req, env, parseHeartbeatBody);
+  const g = await gate(req, env, "heartbeat", parseHeartbeatBody);
   if (g.res) return g.res;
   const { source, seq } = g.checked;
   const nowMs = (deps.now || (() => new Date()))().getTime();
-  const sigHash = await sha256Hex(String(req.headers.get("X-Listen-Signature") || "").toLowerCase());
+  const signedS = Number(req.headers.get("X-Listen-Timestamp")); // an integer: verifyListen refused anything else
   let replay = false;
   let throttled = false;
   try {
     await updateKvJson(env, HEARTBEAT_ROW, (cur) => {
       replay = false; throttled = false; // a lost compare-and-set race recomputes from the fresh row
       const doc = cur && typeof cur === "object" && !Array.isArray(cur) ? cur : {};
-      const seen = (Array.isArray(doc[SEEN_KEY]) ? doc[SEEN_KEY] : []).filter((e) => e && typeof e.h === "string" && Number.isFinite(e.t) && nowMs - e.t <= REPLAY_WINDOW_MS);
-      if (seen.some((e) => e.h === sigHash)) { replay = true; return { skip: true }; }
       const prev = doc[source] && typeof doc[source] === "object" ? doc[source] : {};
+      if (signedS <= (Number.isFinite(prev.ts) ? prev.ts : 0)) { replay = true; return { skip: true }; }
       const lastAt = Number.isFinite(prev.lastAt) ? prev.lastAt : 0;
       if (nowMs - lastAt < HEARTBEAT_MIN_WRITE_MS) { throttled = true; return { skip: true }; }
-      return { doc: { ...doc, [SEEN_KEY]: [...seen, { h: sigHash, t: nowMs }].slice(-MAX_SEEN), [source]: { lastAt: nowMs, seq: seq ?? (Number.isSafeInteger(prev.seq) ? prev.seq : null), count: (Number.isSafeInteger(prev.count) ? prev.count : 0) + 1 } } };
+      return { doc: { ...doc, [source]: { lastAt: Math.max(lastAt, Math.min(nowMs, signedS * 1000)), ts: signedS, seq: seq ?? (Number.isSafeInteger(prev.seq) ? prev.seq : null), count: (Number.isSafeInteger(prev.count) ? prev.count : 0) + 1 } } };
     }, { tries: 3, now: () => new Date(nowMs).toISOString() });
   } catch {
     return json({ error: "unavailable" }, 503);
   }
   if (replay) return json({ error: "replay" }, 409);
-  if (throttled) return json({ ok: true, recorded: false });
-  // The source is alive again: close its open incident, if any. A no-match UPDATE writes no row. A missing table (deploy before migration 0015) must not fail the heartbeat.
-  try {
-    const at = new Date(nowMs).toISOString();
-    await env.DB.prepare("UPDATE incidents SET closed_at = ?, last_seen_at = ? WHERE source = ? AND closed_at IS NULL").bind(at, at, source).run();
-  } catch {}
-  return json({ ok: true, recorded: true });
+  // The source is alive: close its open incident. Also on a throttled call, so a sender that retries after a failed close gets it closed. A failed close is NOT success: 503 makes the sender retry.
+  if (!(await closeOpenIncident(env, source, nowMs))) return json({ error: "unavailable" }, 503);
+  return json({ ok: true, recorded: !throttled });
 }
 
 export async function handleHeartbeatStatus(req, env, deps = {}) {
-  const g = await gate(req, env, (v) => (isStatusBody(v) ? true : null));
+  const g = await gate(req, env, "status", (v) => (isStatusBody(v) ? true : null));
   if (g.res) return g.res;
   const nowMs = (deps.now || (() => new Date()))().getTime();
   let doc = null;
+  let incidents = [];
   try {
     const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(HEARTBEAT_ROW).first();
     doc = row ? JSON.parse(row.json) : null;
-  } catch { return json({ error: "unavailable" }, 503); }
-  const sources = HEARTBEAT_SOURCES.filter((s) => doc && doc[s] && Number.isFinite(doc[s].lastAt)).map((s) => ({ source: s, ageSeconds: Math.max(0, Math.floor((nowMs - doc[s].lastAt) / 1000)), seq: Number.isSafeInteger(doc[s].seq) ? doc[s].seq : null, count: Number.isSafeInteger(doc[s].count) ? doc[s].count : 0 }));
-  let incidents = [];
-  try {
     const { results } = await env.DB.prepare("SELECT id, source, kind, opened_at, last_seen_at FROM incidents WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT ?").bind(MAX_OPEN_LISTED).all();
     incidents = (results || []).map((r) => ({ id: r.id, source: r.source, kind: r.kind, openedAt: r.opened_at, lastSeenAt: r.last_seen_at || null }));
-  } catch { /* table not migrated yet: no incidents to show */ }
+  } catch { return json({ error: "unavailable" }, 503); } // never an empty list that could be read as "no incident"
+  const sources = HEARTBEAT_SOURCES.filter((s) => doc && doc[s] && Number.isFinite(doc[s].lastAt)).map((s) => ({ source: s, ageSeconds: Math.max(0, Math.floor((nowMs - doc[s].lastAt) / 1000)), seq: Number.isSafeInteger(doc[s].seq) ? doc[s].seq : null, count: Number.isSafeInteger(doc[s].count) ? doc[s].count : 0 }));
   return json({ ok: true, staleSeconds: staleSeconds(env), sources, openIncidents: incidents });
 }
 
@@ -129,7 +139,7 @@ export function notifyIncident(env, incident) { // eslint-disable-line no-unused
 // The cron step. One kv_state read; when a source is stale, at most one D1 batch (an insert per stale source that has no open incident). Idempotent across runs.
 // Never throws: the caller also wraps it. opts.now: a clock returning a Date.
 export async function runDeadmanCheck(env, opts = {}) {
-  if (!deadmanOn(env)) return { ran: false };
+  if (!deadmanOn(env) || isPrPreviewEnv(env)) return { ran: false };
   try {
     const nowMs = (opts.now || (() => new Date()))().getTime();
     const limitMs = staleSeconds(env) * 1000;
@@ -151,10 +161,13 @@ export async function runDeadmanCheck(env, opts = {}) {
       last_seen_at: x.lastAt === null ? null : new Date(x.lastAt).toISOString(),
       detail: x.kind === "never_seen" ? `expected, no heartbeat ever received (limit ${limitMs / 1000}s)` : `no heartbeat for ${x.silentS}s (limit ${limitMs / 1000}s)`,
     }));
-    // The unique partial index idx_incidents_open and the NOT EXISTS guard both keep it to one open incident per source: a repeat run inserts nothing.
+    // ATOMIC with the freshness check. The snapshot above can be stale by the time this runs (a heartbeat may land in between, or another cron run may have opened and a heartbeat closed an incident), so each insert
+    // re-checks, inside the one statement: no open incident for the source AND the heartbeat row's CURRENT lastAt for it is still older than the cutoff (or absent). A heartbeat that landed first wins.
+    // The unique partial index idx_incidents_open is the last backstop for one open incident per source.
+    const cutoff = nowMs - limitMs;
     const stmts = incidents.map((i) => env.DB.prepare(
-      "INSERT OR IGNORE INTO incidents (id, source, kind, opened_at, last_seen_at, closed_at, detail) SELECT ?, ?, ?, ?, ?, NULL, ? WHERE NOT EXISTS (SELECT 1 FROM incidents WHERE source = ? AND closed_at IS NULL)"
-    ).bind(i.id, i.source, i.kind, i.opened_at, i.last_seen_at, i.detail, i.source));
+      "INSERT OR IGNORE INTO incidents (id, source, kind, opened_at, last_seen_at, closed_at, detail) SELECT ?, ?, ?, ?, ?, NULL, ? WHERE NOT EXISTS (SELECT 1 FROM incidents WHERE source = ? AND closed_at IS NULL) AND COALESCE((SELECT CAST(json_extract(json, ?) AS INTEGER) FROM kv_state WHERE key = '" + HEARTBEAT_ROW + "'), 0) < ?"
+    ).bind(i.id, i.source, i.kind, i.opened_at, i.last_seen_at, i.detail, i.source, `$."${i.source}"."lastAt"`, cutoff));
     const res = await env.DB.batch(stmts);
     let opened = 0;
     incidents.forEach((inc, idx) => {

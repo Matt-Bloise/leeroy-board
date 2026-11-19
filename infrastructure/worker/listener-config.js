@@ -125,23 +125,30 @@ export function parseListenEvent(obj) {
   return { ok: true, ev: { id: obj.id, guild_id: obj.guild_id, channel_id: obj.channel_id, parent_id: isSnow(obj.parent_id) ? obj.parent_id : "", author_id: obj.author_id, kind: obj.kind, content, ref_text: ref } };
 }
 
-// HEARTBEAT KEY (POST /api/heartbeat, deadman.js). Appended after everything else on purpose, so it does not collide with the other derived keys:
-//   key = HMAC-SHA256(key = the bot token as UTF-8 bytes, message = the ASCII string "leeroy-heartbeat-v1")   -> 32 raw bytes
-// Signature and headers are exactly the listener's (signListen / verifyListen). A signature made with the listener key (the self-test uses it too) or any other derived key never verifies under this one.
+// HEARTBEAT KEYS (POST /api/heartbeat and /api/heartbeat/status, deadman.js). Appended after everything else on purpose, so it does not collide with the other derived keys.
+// One independent key per source, and a separate read-only key for the status route, so holding one never grants another:
+//   sender key  = HMAC-SHA256(key = the bot token as UTF-8 bytes, message = "leeroy-heartbeat-v1:<source>")   -> 32 raw bytes, source one of the fixed list ("pc-bot", "pc-session")
+//   status key  = HMAC-SHA256(key = the bot token as UTF-8 bytes, message = "leeroy-heartbeat-status-v1")     -> 32 raw bytes
+// Signature and headers are exactly the listener's (signListen / verifyListen). A signature made with the listener key (the self-test uses it too), the shadow key, another source's key or the status key never verifies.
 export const HEARTBEAT_KEY_LABEL = "leeroy-heartbeat-v1";
-export async function heartbeatKey(botToken) {
+export const HEARTBEAT_STATUS_KEY_LABEL = "leeroy-heartbeat-status-v1";
+export const heartbeatLabel = (source) => `${HEARTBEAT_KEY_LABEL}:${source}`;
+async function deriveLabeled(botToken, label) {
   if (typeof botToken !== "string" || botToken.length < LISTEN_MIN_TOKEN_CHARS) return null;
   const enc = new TextEncoder();
   const k = await crypto.subtle.importKey("raw", enc.encode(botToken), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(HEARTBEAT_KEY_LABEL)));
+  return new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(label)));
 }
-let heartbeatKeyCache = { token: null, key: null };
-export async function heartbeatKeyFor(env) {
+export const heartbeatKey = (botToken, source) => (typeof source === "string" && source ? deriveLabeled(botToken, heartbeatLabel(source)) : null);
+export const heartbeatStatusKey = (botToken) => deriveLabeled(botToken, HEARTBEAT_STATUS_KEY_LABEL);
+let heartbeatKeyCache = { token: null, keys: new Map() };
+async function cachedLabeled(env, label) {
   const token = env && env.DISCORD_BOT_TOKEN;
   if (typeof token !== "string" || token.length < LISTEN_MIN_TOKEN_CHARS) return null;
-  if (heartbeatKeyCache.token === token && heartbeatKeyCache.key) return heartbeatKeyCache.key;
-  const key = await heartbeatKey(token);
-  heartbeatKeyCache = { token, key };
-  return key;
+  if (heartbeatKeyCache.token !== token) heartbeatKeyCache = { token, keys: new Map() };
+  if (!heartbeatKeyCache.keys.has(label)) heartbeatKeyCache.keys.set(label, await deriveLabeled(token, label));
+  return heartbeatKeyCache.keys.get(label);
 }
-export function resetHeartbeatKeyCacheForTests() { heartbeatKeyCache = { token: null, key: null }; }
+export const heartbeatKeyFor = (env, source) => (typeof source === "string" && source ? cachedLabeled(env, heartbeatLabel(source)) : null);
+export const heartbeatStatusKeyFor = (env) => cachedLabeled(env, HEARTBEAT_STATUS_KEY_LABEL);
+export function resetHeartbeatKeyCacheForTests() { heartbeatKeyCache = { token: null, keys: new Map() }; }

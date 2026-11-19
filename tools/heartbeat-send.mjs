@@ -1,6 +1,6 @@
 // Sends one signed dead-man heartbeat (POST /api/heartbeat), or one every N seconds. docs/runbooks/deadman.md.
 //   node tools/heartbeat-send.mjs <token-file> [--source pc-bot|pc-session] [--base https://api.leeroy.party] [--loop N] [--seq START]
-// <token-file>: a file holding the Discord bot token (the same one the Worker holds). It is read, used to derive the heartbeat key and never printed.
+// <token-file>: a file holding the Discord bot token (the same one the Worker holds). It is read, used to derive this source's heartbeat key and never printed.
 // --loop N: repeat every N seconds (20..3600; the Worker records at most one heartbeat per source per 20 s) until stopped. Without it: one send, exit 0 only on HTTP 200.
 // Prints one status line per send (HTTP status and whether it was recorded) and nothing else. https only (http for localhost / 127.0.0.1), no redirects followed, no credentials in the URL.
 import { readFileSync } from "node:fs";
@@ -25,7 +25,7 @@ if (!Number.isSafeInteger(seq) || seq < 0) die("--seq must be a non-negative int
 
 let token = "";
 try { token = readFileSync(tokenFile, "utf8").trim(); } catch { die("cannot read the token file"); }
-const key = await heartbeatKey(token);
+const key = await heartbeatKey(token, opt.source); // this source's own key (label leeroy-heartbeat-v1:<source>)
 if (!key) die("the token file does not hold a usable token");
 let target;
 try { target = new URL(opt.base); } catch { die("refusing: the base URL is not a URL"); }

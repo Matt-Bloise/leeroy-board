@@ -13,12 +13,14 @@ import { fileURLToPath } from "node:url";
 import { spawnSync, spawn } from "node:child_process";
 import http from "node:http";
 import worker from "../../infrastructure/worker/index.js";
-import { signListen, listenerKey, heartbeatKey, shadowKey, resetListenerKeyCacheForTests, resetHeartbeatKeyCacheForTests, HEARTBEAT_KEY_LABEL } from "../../infrastructure/worker/listener-config.js";
+import { signListen, listenerKey, heartbeatKey, heartbeatStatusKey, shadowKey, resetListenerKeyCacheForTests, resetHeartbeatKeyCacheForTests, heartbeatLabel, HEARTBEAT_STATUS_KEY_LABEL } from "../../infrastructure/worker/listener-config.js";
 import { handleHeartbeat, handleHeartbeatStatus, runDeadmanCheck, staleSeconds, expectedSources, parseHeartbeatBody, notifyIncident, HEARTBEAT_ROW, HEARTBEAT_MIN_WRITE_MS } from "../../infrastructure/worker/deadman.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const BOT = ["bot", "token", "for", "deadman", "0123456789"].join("-");
-const KEY = await heartbeatKey(BOT);
+const KEYS = { "pc-bot": await heartbeatKey(BOT, "pc-bot"), "pc-session": await heartbeatKey(BOT, "pc-session") };
+const KEY = KEYS["pc-bot"];
+const STATUS_KEY = await heartbeatStatusKey(BOT);
 const LISTEN_KEY = await listenerKey(BOT);
 const hmac = async (token, label) => { const enc = new TextEncoder(); const k = await crypto.subtle.importKey("raw", enc.encode(token), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(label))); };
 const SHADOW_KEY = await shadowKey(BOT);
@@ -27,12 +29,14 @@ const realFetch = globalThis.fetch;
 let fetchCalls = [];
 globalThis.fetch = async (url) => { fetchCalls.push(String(url)); return new Response("{}", { status: 599 }); };
 test.after(() => { globalThis.fetch = realFetch; });
-test.beforeEach(() => { resetListenerKeyCacheForTests(); resetHeartbeatKeyCacheForTests(); fetchCalls = []; });
+let tsn = 0; // signed timestamps rise by one second per call inside a test (the Worker refuses a timestamp that is not newer than the last accepted one), all inside the 120 s window
+const nextTs = () => Math.floor(Date.now() / 1000) - 110 + tsn++;
+test.beforeEach(() => { resetListenerKeyCacheForTests(); resetHeartbeatKeyCacheForTests(); fetchCalls = []; tsn = 0; });
 
 const mkEnv = (DB, extra = {}) => ({ DB, DISCORD_BOT_TOKEN: BOT, DEADMAN: "on", ...extra });
 const HB = { purpose: "heartbeat", source: "pc-bot" };
 let seq = 0;
-async function post(env, path = "/api/heartbeat", obj = HB, { key = KEY, ts = Math.floor(Date.now() / 1000) - (seq++ % 100), sig = null, raw = null, headers = true } = {}) {
+async function post(env, path = "/api/heartbeat", obj = HB, { key = path.endsWith("/status") ? STATUS_KEY : (obj && typeof obj.source === "string" && Object.hasOwn(KEYS, obj.source) ? KEYS[obj.source] : KEY), ts = nextTs(), sig = null, raw = null, headers = true } = {}) {
   const body = raw ?? JSON.stringify(obj);
   const h = { "Content-Type": "application/json" };
   if (headers) { h["X-Listen-Timestamp"] = String(ts); h["X-Listen-Signature"] = sig ?? (await signListen(key, String(ts), body)); }
@@ -66,18 +70,18 @@ test("no usable bot token, or a PR preview: 404 (the route does not exist)", asy
   assert.equal((await post(mkEnv(DB, { IS_PR_PREVIEW: "1" }))).status, 404);
 });
 
-test("a signed heartbeat is accepted and recorded: lastAt, seq, count; the row holds nothing else but the replay hashes", async () => {
+test("a signed heartbeat is accepted and recorded: lastAt, signed ts, seq, count; the row holds nothing else", async () => {
   const DB = await schemaDb();
-  const r = await post(mkEnv(DB), "/api/heartbeat", { ...HB, seq: 7 });
+  const ts = nextTs();
+  const r = await post(mkEnv(DB), "/api/heartbeat", { ...HB, seq: 7 }, { ts });
   assert.equal(r.status, 200);
   assert.deepEqual(r.json, { ok: true, recorded: true });
   const doc = row(DB);
-  assert.deepEqual(Object.keys(doc).sort(), ["_seen", "pc-bot"]);
-  assert.deepEqual(Object.keys(doc["pc-bot"]).sort(), ["count", "lastAt", "seq"]);
-  assert.equal(doc["pc-bot"].seq, 7); assert.equal(doc["pc-bot"].count, 1);
-  assert.ok(Math.abs(doc["pc-bot"].lastAt - Date.now()) < 5000);
+  assert.deepEqual(Object.keys(doc), ["pc-bot"]);
+  assert.deepEqual(Object.keys(doc["pc-bot"]).sort(), ["count", "lastAt", "seq", "ts"]);
+  assert.equal(doc["pc-bot"].seq, 7); assert.equal(doc["pc-bot"].count, 1); assert.equal(doc["pc-bot"].ts, ts);
+  assert.equal(doc["pc-bot"].lastAt, ts * 1000, "liveness is the time the PC signed, never later");
   assert.ok(!JSON.stringify(doc).includes(BOT));
-  assert.match(doc._seen[0].h, /^[0-9a-f]{64}$/);
 });
 
 test("signature gates: missing headers, wrong, stale, future and tampered all 401 and write nothing", async () => {
@@ -93,33 +97,49 @@ test("signature gates: missing headers, wrong, stale, future and tampered all 40
   assert.equal(row(DB), null);
 });
 
-test("cross-key refusal: the listener key, the self-test key (the listener key) and the shadow key are all 401", async () => {
+test("cross-key refusal: listener/self-test, shadow, the other source's key and the status key are all 401 on a heartbeat; a heartbeat key is 401 on status", async () => {
   const DB = await schemaDb(), env = mkEnv(DB);
-  for (const [name, k] of [["listener/self-test", LISTEN_KEY], ["shadow", SHADOW_KEY]]) {
-    assert.equal((await post(env, "/api/heartbeat", HB, { key: k })).status, 401, name);
-    assert.equal((await post(env, "/api/heartbeat/status", { purpose: "heartbeat-status" }, { key: k })).status, 401, name);
+  const status = { purpose: "heartbeat-status" };
+  for (const [name, k] of [["listener/self-test", LISTEN_KEY], ["shadow", SHADOW_KEY], ["status key", STATUS_KEY], ["pc-session key", KEYS["pc-session"]]]) {
+    assert.equal((await post(env, "/api/heartbeat", HB, { key: k })).status, 401, "pc-bot heartbeat signed with " + name);
   }
-  assert.notDeepEqual([...KEY], [...LISTEN_KEY]); assert.notDeepEqual([...KEY], [...SHADOW_KEY]);
-  assert.equal(HEARTBEAT_KEY_LABEL, "leeroy-heartbeat-v1");
-  assert.deepEqual([...KEY], [...(await hmac(BOT, "leeroy-heartbeat-v1"))]);
+  assert.equal((await post(env, "/api/heartbeat", { ...HB, source: "pc-session" }, { key: KEYS["pc-bot"] })).status, 401, "pc-bot key on a pc-session heartbeat");
+  assert.equal((await post(env, "/api/heartbeat", { ...HB, source: "pc-session" }, { key: STATUS_KEY })).status, 401);
+  for (const [name, k] of [["listener/self-test", LISTEN_KEY], ["shadow", SHADOW_KEY], ["pc-bot", KEYS["pc-bot"]], ["pc-session", KEYS["pc-session"]]]) {
+    assert.equal((await post(env, "/api/heartbeat/status", status, { key: k })).status, 401, "status signed with " + name);
+  }
+  // all keys differ, and each is the documented derivation
+  const all = [LISTEN_KEY, SHADOW_KEY, STATUS_KEY, KEYS["pc-bot"], KEYS["pc-session"]].map((k) => Buffer.from(k).toString("hex"));
+  assert.equal(new Set(all).size, 5);
+  assert.equal(heartbeatLabel("pc-bot"), "leeroy-heartbeat-v1:pc-bot");
+  assert.equal(HEARTBEAT_STATUS_KEY_LABEL, "leeroy-heartbeat-status-v1");
+  assert.deepEqual([...KEYS["pc-session"]], [...(await hmac(BOT, "leeroy-heartbeat-v1:pc-session"))]);
+  assert.deepEqual([...STATUS_KEY], [...(await hmac(BOT, "leeroy-heartbeat-status-v1"))]);
+  assert.equal(await heartbeatKey(BOT, ""), null);
   assert.equal(row(DB), null);
-  // the heartbeat key does not open the other routes either: a heartbeat-signed self-test call is refused
+  // and the right keys work
+  assert.equal((await post(env, "/api/heartbeat", { ...HB, source: "pc-session" })).status, 200);
+  assert.equal((await post(env, "/api/heartbeat/status", status)).status, 200);
+  // a heartbeat key does not open the other routes either: a heartbeat-signed self-test call is refused
   const body = JSON.stringify({ purpose: "claude-selftest" }), ts = String(Math.floor(Date.now() / 1000));
   const res = await worker.fetch(new Request("https://worker.test/api/selftest/claude", { method: "POST", headers: { "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(KEY, ts, body) }, body }), mkEnv(DB, { ANTHROPIC_API_KEY: "x" }), { waitUntil() {} });
   assert.equal(res.status, 401);
 });
 
-test("body gates: only the fixed shape passes (purpose, source from the list, optional integer seq); a signed listener-style body is refused", async () => {
+test("body gates: a signed body of the wrong shape is 400; a body without a listed source cannot be signed by anyone and is 401", async () => {
   const DB = await schemaDb(), env = mkEnv(DB);
-  const bad = [
-    { purpose: "claude-selftest" }, { purpose: "heartbeat" }, { purpose: "heartbeat", source: "pc-bot", extra: 1 }, { purpose: "heartbeat", source: "someone" },
-    { purpose: "heartbeat", source: "__proto__" }, { purpose: "heartbeat", source: "pc-bot", seq: -1 }, { purpose: "heartbeat", source: "pc-bot", seq: 1.5 },
-    { purpose: "heartbeat", source: "pc-bot", seq: "1" }, { purpose: "heartbeat", source: "pc-bot", name: "Red Fox" }, { purpose: "heartbeat-status" },
+  const shapeBad = [
+    { purpose: "claude-selftest", source: "pc-bot" }, { purpose: "heartbeat", source: "pc-bot", extra: 1 }, { purpose: "heartbeat", source: "pc-bot", seq: -1 }, { purpose: "heartbeat", source: "pc-bot", seq: 1.5 },
+    { purpose: "heartbeat", source: "pc-bot", seq: "1" }, { purpose: "heartbeat", source: "pc-bot", name: "Red Fox" }, { purpose: "heartbeat-status", source: "pc-bot" },
+  ];
+  for (const b of shapeBad) assert.equal((await post(env, "/api/heartbeat", b)).status, 400, JSON.stringify(b));
+  const unsignable = [
+    { purpose: "claude-selftest" }, { purpose: "heartbeat" }, { purpose: "heartbeat", source: "someone" }, { purpose: "heartbeat", source: "__proto__" }, { purpose: "heartbeat-status" },
     ["heartbeat"], "heartbeat", null, 7,
     { id: "100000000000000001", guild_id: "100000000000000002", channel_id: "100000000000000003", author_id: "100000000000000004", kind: "mention", content: "hi" },
   ];
-  for (const b of bad) assert.equal((await post(env, "/api/heartbeat", b)).status, 400, JSON.stringify(b));
-  assert.equal((await post(env, "/api/heartbeat", null, { raw: "{not json" })).status, 400);
+  for (const b of unsignable) assert.equal((await post(env, "/api/heartbeat", b)).status, 401, JSON.stringify(b));
+  assert.equal((await post(env, "/api/heartbeat", null, { raw: "{not json" })).status, 401);
   assert.equal(row(DB), null);
   assert.equal(parseHeartbeatBody({ purpose: "heartbeat", source: "pc-session", seq: 0 }).seq, 0);
   assert.equal((await post(env, "/api/heartbeat", { purpose: "heartbeat", source: "pc-session" })).status, 200);
@@ -137,7 +157,7 @@ test("body over 1 KB: 413 before anything is read, by Content-Length and by stre
 
 test("replay: the same signed request twice is 409 the second time, and only the first wrote", async () => {
   const DB = await schemaDb(), env = mkEnv(DB);
-  const ts = Math.floor(Date.now() / 1000), sig = await signListen(KEY, String(ts), JSON.stringify(HB));
+  const ts = nextTs(), sig = await signListen(KEY, String(ts), JSON.stringify(HB));
   assert.equal((await post(env, "/api/heartbeat", HB, { ts, sig })).status, 200);
   const before = JSON.stringify(row(DB));
   const again = await post(env, "/api/heartbeat", HB, { ts, sig: sig.toUpperCase() }); // case does not make it new
@@ -146,9 +166,38 @@ test("replay: the same signed request twice is 409 the second time, and only the
   assert.equal(row(DB)["pc-bot"].count, 1);
 });
 
+test("monotonic signed timestamp per source: an equal or older timestamp is 409 and writes nothing; the other source has its own clock", async () => {
+  const DB = await schemaDb(), env = mkEnv(DB);
+  const t = nextTs();
+  assert.equal((await post(env, "/api/heartbeat", HB, { ts: t + 5 })).status, 200);
+  const before = JSON.stringify(row(DB));
+  for (const old of [t + 5, t + 4, t, t - 5]) assert.equal((await post(env, "/api/heartbeat", HB, { ts: old })).status, 409, String(old - t));
+  assert.equal(JSON.stringify(row(DB)), before);
+  assert.equal((await post(env, "/api/heartbeat", { ...HB, source: "pc-session" }, { ts: t })).status, 200, "pc-session is not held back by pc-bot's timestamp");
+});
+
+test("a captured throttled request cannot advance liveness later: it is 409 once a newer heartbeat was accepted, and a late replay never moves lastAt past the time that was signed", async () => {
+  const DB = await schemaDb(), env = mkEnv(DB);
+  const send = async (ts, nowMs) => { const body = JSON.stringify(HB); return handleHeartbeat(new Request("https://worker.test/api/heartbeat", { method: "POST", headers: { "X-Listen-Timestamp": String(ts), "X-Listen-Signature": await signListen(KEY, String(ts), body) }, body }), env, { now: at(nowMs) }); };
+  const base = Math.floor(Date.now() / 1000) - 100;
+  const nowA = base * 1000;
+  assert.equal((await (await send(base, nowA)).json()).recorded, true);
+  assert.equal((await (await send(base + 5, nowA + 5000)).json()).recorded, false); // throttled: this signed request is "captured"
+  assert.equal((await (await send(base + 30, nowA + 30000)).json()).recorded, true);
+  assert.equal((await send(base + 5, nowA + 60000)).status, 409, "the captured throttled request, replayed after a newer one, is refused");
+  assert.equal(row(DB)["pc-bot"].ts, base + 30);
+  // and a late replay of a request nobody accepted before (captured, never delivered) can only record the time it was signed
+  const DB2 = await schemaDb();
+  const late = base + 40; // signed 60 s ago in real time, delivered now
+  const r = await post(mkEnv(DB2), "/api/heartbeat", HB, { ts: late });
+  assert.equal(r.status, 200);
+  assert.equal(row(DB2)["pc-bot"].lastAt, late * 1000);
+  assert.ok(Date.now() - row(DB2)["pc-bot"].lastAt >= 59000, "lastAt is the signed time, not the delivery time");
+});
+
 test("throttle: a second heartbeat for the same source inside 20 s is 200 recorded:false and writes nothing; another source records; after 20 s it records", async () => {
   const DB = await schemaDb(), env = mkEnv(DB);
-  const send = async (src, nowMs) => { const body = JSON.stringify({ purpose: "heartbeat", source: src }), ts = String(Math.floor(Date.now() / 1000) - (seq++ % 50)); return handleHeartbeat(new Request("https://worker.test/api/heartbeat", { method: "POST", headers: { "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(KEY, ts, body) }, body }), env, { now: at(nowMs) }); };
+  const send = async (src, nowMs) => { const body = JSON.stringify({ purpose: "heartbeat", source: src }), ts = String(nextTs()); return handleHeartbeat(new Request("https://worker.test/api/heartbeat", { method: "POST", headers: { "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(KEYS[src], ts, body) }, body }), env, { now: at(nowMs) }); };
   assert.deepEqual(await (await send("pc-bot", T0)).json(), { ok: true, recorded: true });
   const after1 = JSON.stringify(row(DB));
   const t = await send("pc-bot", T0 + HEARTBEAT_MIN_WRITE_MS - 1);
@@ -161,14 +210,14 @@ test("throttle: a second heartbeat for the same source inside 20 s is 200 record
   assert.equal(HEARTBEAT_MIN_WRITE_MS, 20000);
 });
 
-test("the row stays small: the replay list is bounded and old hashes expire", async () => {
+test("the row stays small: two sources, four fields each, no replay list", async () => {
   const DB = await schemaDb(), env = mkEnv(DB);
-  for (let i = 0; i < 80; i++) {
-    const src = i % 2 ? "pc-bot" : "pc-session", body = JSON.stringify({ purpose: "heartbeat", source: src, seq: i }), ts = String(Math.floor(Date.now() / 1000));
-    await handleHeartbeat(new Request("https://worker.test/api/heartbeat", { method: "POST", headers: { "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(KEY, ts, body) }, body }), env, { now: at(T0 + i * 21000) });
+  for (let i = 0; i < 40; i++) {
+    const src = i % 2 ? "pc-bot" : "pc-session", body = JSON.stringify({ purpose: "heartbeat", source: src, seq: i }), ts = String(nextTs());
+    await handleHeartbeat(new Request("https://worker.test/api/heartbeat", { method: "POST", headers: { "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(KEYS[src], ts, body) }, body }), env, { now: at(T0 + i * 21000) });
   }
-  assert.ok(row(DB)._seen.length <= 32);
-  assert.ok(JSON.stringify(row(DB)).length < 6000);
+  assert.deepEqual(Object.keys(row(DB)).sort(), ["pc-bot", "pc-session"]);
+  assert.ok(JSON.stringify(row(DB)).length < 400);
 });
 
 // ---- cron: staleness and incidents --------------------------------------------------------------------------------------------------------
@@ -209,7 +258,7 @@ test("a heartbeat for the source closes its open incident; a new silence opens a
   seed(DB, { "pc-bot": { lastAt: T0 - 400000, seq: 9, count: 30 } });
   await quiet(() => runDeadmanCheck(env, { now: at(T0) }));
   assert.equal(incidents(DB).filter((r) => r.closed_at === null).length, 1);
-  const hb = async (src, nowMs) => { const body = JSON.stringify({ purpose: "heartbeat", source: src }), ts = String(Math.floor(Date.now() / 1000) - (seq++ % 50)); return handleHeartbeat(new Request("https://worker.test/api/heartbeat", { method: "POST", headers: { "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(KEY, ts, body) }, body }), env, { now: at(nowMs) }); };
+  const hb = async (src, nowMs) => { const body = JSON.stringify({ purpose: "heartbeat", source: src }), ts = String(nextTs()); return handleHeartbeat(new Request("https://worker.test/api/heartbeat", { method: "POST", headers: { "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(KEYS[src], ts, body) }, body }), env, { now: at(nowMs) }); };
   assert.equal((await hb("pc-session", T0 + 1000)).status, 200);
   assert.equal(incidents(DB).filter((r) => r.closed_at === null).length, 1, "another source's heartbeat closes nothing");
   assert.equal((await hb("pc-bot", T0 + 2000)).status, 200);
@@ -290,7 +339,7 @@ test("before migration 0015 (no incidents table): the check does not throw, and 
   assert.equal((await post(env)).status, 200);
   assert.equal(row(DB)["pc-bot"].count, 2);
   const st = await post(env, "/api/heartbeat/status", { purpose: "heartbeat-status" });
-  assert.equal(st.status, 200); assert.deepEqual(st.json.openIncidents, []);
+  assert.equal(st.status, 503, "no incidents table: the status route says unavailable, never an empty list"); assert.equal(st.json.openIncidents, undefined);
 });
 
 // ---- cron wiring ---------------------------------------------------------------------------------------------------------------------------
@@ -337,7 +386,7 @@ test("a failing check does not break the other cron work: the other steps still 
 // ---- status route --------------------------------------------------------------------------------------------------------------------------
 test("status: signed read returns only sources, ages in seconds, seq/count and incident ids and timestamps", async () => {
   const DB = await schemaDb(), env = mkEnv(DB);
-  assert.equal((await post(env, "/api/heartbeat", { ...HB, seq: 4 })).status, 200);
+  assert.equal((await post(env, "/api/heartbeat", { ...HB, seq: 4 }, { ts: Math.floor(Date.now() / 1000) - 1 })).status, 200);
   seed(DB, { ...row(DB), "pc-session": { lastAt: Date.now() - 400000, seq: 2, count: 9 } });
   await quiet(() => runDeadmanCheck(env, { now: () => new Date() }));
   const r = await post(env, "/api/heartbeat/status", { purpose: "heartbeat-status" });
@@ -430,7 +479,7 @@ test("heartbeat-send sends exactly the heartbeat body, signed so the Worker acce
     assert.equal(out.code, 0);
     assert.equal(seen[0].method, "POST"); assert.equal(seen[0].url, "/api/heartbeat");
     assert.equal(seen[0].body, JSON.stringify({ purpose: "heartbeat", source: "pc-session", seq: 41 }));
-    assert.equal(seen[0].sig, await signListen(KEY, seen[0].ts, seen[0].body));
+    assert.equal(seen[0].sig, await signListen(KEYS["pc-session"], seen[0].ts, seen[0].body));
     assert.match(out.o, /heartbeat pc-session status=200 recorded=yes/);
     assert.ok(!(out.o + out.e).includes(BOT));
     const DB = await schemaDb();
@@ -467,11 +516,104 @@ test("deadman-status prints the Worker's answer, signed with the status purpose"
     assert.equal(out.code, 0);
     assert.equal(seen.url, "/api/heartbeat/status");
     assert.equal(seen.body, JSON.stringify({ purpose: "heartbeat-status" }));
-    assert.equal(seen.sig, await signListen(KEY, seen.ts, seen.body));
+    assert.equal(seen.sig, await signListen(STATUS_KEY, seen.ts, seen.body));
     assert.equal(JSON.parse(out.o).openIncidents.length, 0);
     assert.ok(!(out.o + out.e).includes(BOT));
     const DB = await schemaDb();
     const res = await handleHeartbeatStatus(new Request("https://worker.test/api/heartbeat/status", { method: "POST", headers: { "X-Listen-Timestamp": seen.ts, "X-Listen-Signature": seen.sig }, body: seen.body }), mkEnv(DB));
     assert.equal(res.status, 200);
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---- review fixes: atomic open, close failures, status failures, preview gate ------------------------------------------------------------------
+// A D1 wrapper: beforeBatch runs once, after the cron has READ its snapshot and just before its insert (the interleaving the review found); failOn makes matching statements throw (times: how often, default always).
+function wrapDB(DB, { beforeBatch = null, failOn = null, times = Infinity } = {}) {
+  let hook = beforeBatch, left = times;
+  return {
+    ...DB,
+    prepare: (sql) => {
+      if (failOn && failOn.test(sql) && left > 0) { left--; const boom = async () => { throw new Error("D1 is having a bad day"); }; return { bind: () => ({ run: boom, all: boom, first: boom }), run: boom, all: boom, first: boom }; }
+      return DB.prepare(sql);
+    },
+    batch: async (l) => { if (hook) { const h = hook; hook = null; await h(); } return DB.batch(l); },
+  };
+}
+const sendHb = async (env, src, nowMs, ts = nextTs()) => { const body = JSON.stringify({ purpose: "heartbeat", source: src }); return handleHeartbeat(new Request("https://worker.test/api/heartbeat", { method: "POST", headers: { "X-Listen-Timestamp": String(ts), "X-Listen-Signature": await signListen(KEYS[src], String(ts), body) }, body }), env, { now: at(nowMs) }); };
+
+test("RACE: a heartbeat committed between the cron's read and its insert wins; no incident opens", async () => {
+  const DB = await schemaDb(), env = mkEnv(DB);
+  seed(DB, { "pc-bot": { lastAt: T0 - 400000, ts: 1, seq: 1, count: 1 } });
+  const racing = mkEnv(wrapDB(DB, { beforeBatch: async () => { assert.equal((await sendHb(env, "pc-bot", T0 - 500)).status, 200); } }));
+  const r = await quiet(() => runDeadmanCheck(racing, { now: at(T0) }));
+  assert.equal(r.opened, 0);
+  assert.equal(incidents(DB).length, 0);
+  assert.ok(row(DB)["pc-bot"].lastAt >= T0 - 500);
+});
+
+test("RACE: a never_seen snapshot loses to a first heartbeat that lands before the insert", async () => {
+  const DB = await schemaDb(), env = mkEnv(DB, { DEADMAN_EXPECT: "pc-session" });
+  const racing = { ...env, DB: wrapDB(DB, { beforeBatch: async () => { assert.equal((await sendHb(env, "pc-session", T0 - 100)).status, 200); } }) };
+  assert.equal((await quiet(() => runDeadmanCheck(racing, { now: at(T0) }))).opened, 0);
+  assert.equal(incidents(DB).length, 0);
+});
+
+test("RACE: an overlapping cron run with an old snapshot must not reopen an incident that a heartbeat just closed", async () => {
+  const DB = await schemaDb(), env = mkEnv(DB);
+  seed(DB, { "pc-bot": { lastAt: T0 - 400000, ts: 1, seq: 1, count: 1 } });
+  assert.equal((await quiet(() => runDeadmanCheck(env, { now: at(T0) }))).opened, 1); // run A opens it
+  const overlapping = mkEnv(wrapDB(DB, { beforeBatch: async () => { assert.equal((await sendHb(env, "pc-bot", T0 + 1000)).status, 200); } })); // run B read the stale row; now the heartbeat lands and closes A's incident
+  assert.equal((await quiet(() => runDeadmanCheck(overlapping, { now: at(T0 + 500) }))).opened, 0);
+  const rows = incidents(DB);
+  assert.equal(rows.length, 1);
+  assert.notEqual(rows[0].closed_at, null, "closed by the heartbeat and not reopened");
+  assert.equal(rows.filter((r) => r.closed_at === null).length, 0);
+});
+
+test("the insert itself carries the freshness check: with a fresh heartbeat row and a stale snapshot passed in, nothing is inserted (statement-level, no cron read needed)", async () => {
+  const DB = await schemaDb();
+  seed(DB, { "pc-bot": { lastAt: T0 - 1000, ts: 1, seq: 1, count: 1 } });
+  const captured = [];
+  const spy = { ...DB, prepare: (sql) => { const st = DB.prepare(sql); if (/INSERT OR IGNORE INTO incidents/.test(sql)) captured.push(sql); return st; } };
+  seed(DB, { "pc-bot": { lastAt: T0 - 999000, ts: 1, seq: 1, count: 1 } });
+  await quiet(() => runDeadmanCheck(mkEnv(spy), { now: at(T0) }));
+  assert.equal(captured.length, 1);
+  assert.match(captured[0], /json_extract\(json, \?\)/);
+  assert.match(captured[0], /NOT EXISTS \(SELECT 1 FROM incidents WHERE source = \? AND closed_at IS NULL\)/);
+});
+
+test("closing the open incident fails: the heartbeat answers 503 (not success), and the sender's next call closes it", async () => {
+  const DB = await schemaDb(), env = mkEnv(DB);
+  DB.raw.prepare("INSERT INTO incidents (id, source, kind, opened_at, last_seen_at) VALUES ('i1', 'pc-bot', 'stale', 'x', 'y')").run();
+  const broken = mkEnv(wrapDB(DB, { failOn: /UPDATE incidents/, times: 1 }));
+  const first = await sendHb(broken, "pc-bot", T0);
+  assert.equal(first.status, 503);
+  assert.equal(DB.raw.prepare("SELECT closed_at FROM incidents WHERE id = 'i1'").get().closed_at, null, "still open");
+  const retry = await sendHb(broken, "pc-bot", T0 + 2000); // a new signature a few seconds later: inside the 20 s write throttle, and it still closes
+  assert.equal(retry.status, 200);
+  assert.deepEqual(await retry.json(), { ok: true, recorded: false });
+  assert.notEqual(DB.raw.prepare("SELECT closed_at FROM incidents WHERE id = 'i1'").get().closed_at, null, "closed by the retry");
+  assert.ok(env);
+});
+
+test("status: an incident query failure is 503, never an empty list; a heartbeat-row read failure is 503 too", async () => {
+  const DB = await schemaDb();
+  DB.raw.prepare("INSERT INTO incidents (id, source, kind, opened_at) VALUES ('i1', 'pc-bot', 'stale', 'x')").run();
+  const ok = await post(mkEnv(DB), "/api/heartbeat/status", { purpose: "heartbeat-status" });
+  assert.equal(ok.status, 200); assert.equal(ok.json.openIncidents.length, 1);
+  for (const failOn of [/FROM incidents/, /FROM kv_state/]) {
+    const r = await post(mkEnv(wrapDB(DB, { failOn })), "/api/heartbeat/status", { purpose: "heartbeat-status" });
+    assert.equal(r.status, 503, String(failOn));
+    assert.equal(r.json.openIncidents, undefined);
+  }
+});
+
+test("the cron helper has the same preview gate as the routes: in a PR preview it does nothing and touches nothing", async () => {
+  const DB = await schemaDb();
+  seed(DB, { "pc-bot": { lastAt: T0 - 999000, ts: 1, seq: 1, count: 1 } });
+  let touched = 0;
+  const spy = { ...DB, prepare: (...a) => { touched++; return DB.prepare(...a); }, batch: (...a) => { touched++; return DB.batch(...a); } };
+  assert.deepEqual(await runDeadmanCheck({ DB: spy, DISCORD_BOT_TOKEN: BOT, DEADMAN: "on", IS_PR_PREVIEW: "1" }, { now: at(T0) }), { ran: false });
+  assert.equal(touched, 0);
+  assert.equal(incidents(DB).length, 0);
+  assert.equal((await quiet(() => runDeadmanCheck(mkEnv(DB), { now: at(T0) }))).opened, 1, "the same env outside a preview does open it");
 });
