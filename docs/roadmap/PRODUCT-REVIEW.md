@@ -1,5 +1,7 @@
 # Leeroy: from a five-friend beta to a sellable product. Senior advisor review, 2026-11-02
 
+> Note, 2026-11-19: the repository was made public on 2026-11-19 on the owner's decision. The recommendations in this review to make it private (0.15, D8 and the related lines) are historical and no longer current.
+
 Read-only. No repo changed, no Discord call, no secret read. Labels: **confirmed** = read in code or observed live this session; **likely** = strong inference; **unverified** = needs a live look or counsel.
 
 Evidence base and citation form:

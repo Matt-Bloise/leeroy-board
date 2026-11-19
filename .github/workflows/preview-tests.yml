@@ -1,7 +1,7 @@
 name: Preview Tests
 
 # Runs on draft and ready PRs from branches of this repository. Fork PRs get no job here, so they can never earn the gate phrase.
-# LIGHT by default (GitHub minutes are metered, see docs/runbooks/ci-minutes.md): every push runs only scope, unit, stamps and report.
+# LIGHT by default (the full suite is slow and holds a preview slot, see docs/runbooks/ci-minutes.md): every push runs only scope, unit, stamps and report.
 # The preview, api, browser and layout jobs run only when the PR carries the label `ci-full`; adding the label starts the full run (event `labeled`).
 # The comment `### Preview tests: passed (<sha7>)` is the merge gate; a light run posts `### Light checks: ...` instead, which never matches the gate.
 # A PR that changes only docs (tools/docs-only.mjs) gets no preview, so only unit and stamps run and the comment says `passed (docs only)`.
@@ -167,8 +167,8 @@ jobs:
           set -u
           SHORT="${HEAD_SHA:0:7}"
           for i in $(seq 1 48); do
-            BODY=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments --jq '[.comments[] | select(.body | contains("<!-- cloudflare-pr-preview -->"))] | last | .body // ""' || true)
-            # The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
+            BODY=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" | jq -r -s '[.[][] | select(.user.type == "Bot" and .user.login == "github-actions[bot]" and (.body | contains("<!-- cloudflare-pr-preview -->")))] | last | .body // ""' || true)
+            # Only the Actions bot (user.type Bot, login github-actions[bot]) counts. The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
             if echo "$BODY" | grep -q "$SHORT" && ! echo "$BODY" | grep -q "Torn Down"; then
               PAGES=$(echo "$BODY" | grep -oE "https://pr-${PR_NUMBER}\.leeroy-board\.pages\.dev" | head -n 1 || true)
               WORKER=$(echo "$BODY" | grep -oE "https://leeroy-brain-pr-${PR_NUMBER}\.[a-z0-9-]+\.workers\.dev" | head -n 1 || true)

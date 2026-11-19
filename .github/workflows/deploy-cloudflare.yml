@@ -104,7 +104,7 @@ jobs:
 
           if [ "$TOKEN_STATUS" != "active" ]; then
             echo "::error::Cloudflare API Token validation failed. Status: $TOKEN_STATUS"
-            echo "Raw response from Cloudflare: $VERIFY_RES"
+            echo "Cloudflare error codes: $(printf '%s' "$VERIFY_RES" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required:"
             echo "1. Verify CLOUDFLARE_API_TOKEN is a valid API Token (not a Global API Key)."
@@ -123,11 +123,11 @@ jobs:
               const target = process.env.TARGET_ID;
               const match = accs.find(a => a.id === target);
               if (match) {
-                console.log("MATCH:" + match.id + ":" + match.name);
+                console.log("MATCH:" + match.id);
               } else if (accs.length === 1) {
-                console.log("RESOLVED_SINGLE:" + accs[0].id + ":" + accs[0].name);
+                console.log("RESOLVED_SINGLE:" + accs[0].id);
               } else if (accs.length > 1) {
-                console.log("MULTIPLE:" + accs.map(a => `${a.name} (${a.id})`).join(", "));
+                console.log("MULTIPLE:" + accs.length);
               } else {
                 console.log("NONE");
               }
@@ -139,16 +139,16 @@ jobs:
           TARGET_ACCOUNT_ID="$CLEAN_ACC"
           if [[ "$ACC_INFO" == MATCH:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "✓ Account ID matches token: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "✓ Account ID matches the token (account name and id are not printed)."
           elif [[ "$ACC_INFO" == RESOLVED_SINGLE:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "::notice::Auto-resolved Cloudflare Account ID: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "::notice::Auto-resolved the Cloudflare account from the token (account name and id are not printed)."
             TARGET_ACCOUNT_ID="$ACC_ID"
           elif [[ "$ACC_INFO" == MULTIPLE:* ]]; then
             echo "::error::Provided Account ID '$CLEAN_ACC' does not match any accounts this token can access."
-            echo "Available accounts for this token: ${ACC_INFO#MULTIPLE:}"
+            echo "The token can access more than one account; names and ids are not printed. Set CLOUDFLARE_ACCOUNT_ID to the intended one."
             exit 1
           else
             echo "::warning::Could not query /accounts via token. Proceeding with provided Account ID: $CLEAN_ACC"
@@ -165,7 +165,7 @@ jobs:
 
           if [ "$D1_SUCCESS" != "true" ]; then
             echo "::error::Token lacks D1 permissions for account '$TARGET_ACCOUNT_ID'."
-            echo "Cloudflare response: $D1_CHECK"
+            echo "Cloudflare error codes: $(printf '%s' "$D1_CHECK" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required to Fix (Authentication error 10000 on D1):"
             echo "In Cloudflare Dashboard -> My Profile (top-right avatar) -> API Tokens:"
@@ -199,7 +199,7 @@ jobs:
 
           if [ "$ZONE_SUCCESS" != "true" ]; then
             echo "::error::Token lacks Zone Read permissions for leeroy.party."
-            echo "Cloudflare response: $ZONE_CHECK"
+            echo "Cloudflare error codes: $(printf '%s' "$ZONE_CHECK" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required to Fix:"
             echo "In Cloudflare Dashboard -> My Profile -> API Tokens:"
@@ -393,19 +393,26 @@ jobs:
           done
 
       - name: Stage Static Site Bundle & Deploy to Cloudflare Pages Production
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.worker_url }}
         run: |
           set -e
           # The bundle is staged by tools/pages-bundle.mjs (shared by the production deploy and the PR preview). It leaves out the member data files
           # (the Worker serves those through its privacy projection) and fails this step when one is present. docs/runbooks/member-data-worker-only.md
           node tools/pages-bundle.mjs .cloudflare-dist
 
+          # The Worker URL is stamped into JavaScript: accept only https://api.leeroy.party or https://<name>[.<subdomain>].workers.dev, refuse anything else.
+          if ! printf '%s' "$WORKER_URL" | grep -qE '^(https://api\.leeroy\.party|https://[a-z0-9-]+(\.[a-z0-9-]+)?\.workers\.dev)$'; then
+            echo "::error::The Worker URL does not have the shape https://<name>[.<subdomain>].workers.dev (or the production API origin); refusing to stamp it into the site bundle."
+            exit 1
+          fi
           # Stamp the resolved production Worker URL into .cloudflare-dist/js/brain.js
           node -e '
             const fs = require("fs");
             const p = ".cloudflare-dist/js/brain.js";
             const s = fs.readFileSync(p, "utf8");
-            fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, `const WORKER = "${process.argv[1]}";`), "utf8");
-          ' "${{ steps.worker.outputs.worker_url }}"
+            const url = process.argv[1]; fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, () => `const WORKER = "${url}";`), "utf8");
+          ' "$WORKER_URL"
 
           cd infrastructure
           npx wrangler pages project create "$PAGES_PROJECT_NAME" --production-branch=master >/dev/null 2>&1 || true

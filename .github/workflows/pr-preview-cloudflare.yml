@@ -1,6 +1,6 @@
 name: PR Ephemeral Preview Environment (Cloudflare Free Tier)
 
-# The preview exists only while the PR carries the label `ci-full` (GitHub minutes are metered, docs/runbooks/ci-minutes.md):
+# The preview exists only while the PR carries the label `ci-full` (the full suite takes runner time and a preview slot, docs/runbooks/ci-minutes.md):
 #   opened / synchronize / reopened / labeled ci-full, with the label present -> prep, then deploy (spin up or refresh the preview)
 #   closed, or unlabeled ci-full                                           -> teardown (one job; exits early when no preview D1 exists), frees a D1 slot
 # A PR without the label costs nothing here: every job is skipped. Label events other than ci-full skip every job and never cancel a running spin-up.
@@ -40,11 +40,15 @@ jobs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
     steps:
       - name: Enforce the fork PR policy
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
-          IS_FORK="${{ github.event.pull_request.head.repo.full_name != github.repository }}"
-          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
-          echo "Head repository: ${{ github.event.pull_request.head.repo.full_name }}"
-          echo "Base repository: ${{ github.repository }}"
+          IS_FORK="false"
+          [ "$HEAD_REPO" = "$BASE_REPO" ] || IS_FORK="true"
+          echo "Head repository: $HEAD_REPO"
+          echo "Base repository: $BASE_REPO"
           echo "Base branch: $BASE_BRANCH"
           echo "Is fork PR: $IS_FORK"
           if [ "$IS_FORK" = "true" ] && [ "$BASE_BRANCH" = "master" ]; then
@@ -67,10 +71,12 @@ jobs:
         if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -eu -o pipefail
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
-          cat "$RUNNER_TEMP/paths.txt"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
+          # File names are attacker-controlled: prefix every line so none can start a workflow command (::...) in the log.
+          sed 's/^/| /' "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
       - name: Say that tests run without a preview
@@ -170,7 +176,7 @@ jobs:
 
           if [ "$TOKEN_STATUS" != "active" ]; then
             echo "::error::Cloudflare API Token validation failed. Status: $TOKEN_STATUS"
-            echo "Raw response from Cloudflare: $VERIFY_RES"
+            echo "Cloudflare error codes: $(printf '%s' "$VERIFY_RES" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required:"
             echo "1. Verify CLOUDFLARE_API_TOKEN is a valid API Token (not a Global API Key)."
@@ -189,11 +195,11 @@ jobs:
               const target = process.env.TARGET_ID;
               const match = accs.find(a => a.id === target);
               if (match) {
-                console.log("MATCH:" + match.id + ":" + match.name);
+                console.log("MATCH:" + match.id);
               } else if (accs.length === 1) {
-                console.log("RESOLVED_SINGLE:" + accs[0].id + ":" + accs[0].name);
+                console.log("RESOLVED_SINGLE:" + accs[0].id);
               } else if (accs.length > 1) {
-                console.log("MULTIPLE:" + accs.map(a => `${a.name} (${a.id})`).join(", "));
+                console.log("MULTIPLE:" + accs.length);
               } else {
                 console.log("NONE");
               }
@@ -205,16 +211,16 @@ jobs:
           TARGET_ACCOUNT_ID="$CLEAN_ACC"
           if [[ "$ACC_INFO" == MATCH:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "✓ Account ID matches token: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "✓ Account ID matches the token (account name and id are not printed)."
           elif [[ "$ACC_INFO" == RESOLVED_SINGLE:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "::notice::Auto-resolved Cloudflare Account ID: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "::notice::Auto-resolved the Cloudflare account from the token (account name and id are not printed)."
             TARGET_ACCOUNT_ID="$ACC_ID"
           elif [[ "$ACC_INFO" == MULTIPLE:* ]]; then
             echo "::error::Provided Account ID '$CLEAN_ACC' does not match any accounts this token can access."
-            echo "Available accounts for this token: ${ACC_INFO#MULTIPLE:}"
+            echo "The token can access more than one account; names and ids are not printed. Set CLOUDFLARE_ACCOUNT_ID to the intended one."
             exit 1
           else
             echo "::warning::Could not query /accounts via token. Proceeding with provided Account ID: $CLEAN_ACC"
@@ -230,7 +236,7 @@ jobs:
 
           if [ "$D1_SUCCESS" != "true" ]; then
             echo "::error::Token lacks D1 permissions for account '$TARGET_ACCOUNT_ID'."
-            echo "Cloudflare response: $D1_CHECK"
+            echo "Cloudflare error codes: $(printf '%s' "$D1_CHECK" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required to Fix (Authentication error 10000 on D1):"
             echo "In Cloudflare Dashboard -> My Profile (top-right avatar) -> API Tokens:"
@@ -395,20 +401,27 @@ jobs:
 
       - name: Stage Static Site (Wired to PR Worker) & Deploy to Cloudflare Pages Preview
         id: pages
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.worker_url }}
         run: |
           set -e
           # The bundle is staged by tools/pages-bundle.mjs (shared by the production deploy and the PR preview). It leaves out the member data files
           # (the Worker serves those through its privacy projection) and fails this step when one is present. docs/runbooks/member-data-worker-only.md
           node tools/pages-bundle.mjs .cloudflare-dist
 
+          # The Worker URL is stamped into JavaScript: accept only https://<name>[.<subdomain>].workers.dev, refuse anything else.
+          if ! printf '%s' "$WORKER_URL" | grep -qE '^https://[a-z0-9-]+(\.[a-z0-9-]+)?\.workers\.dev$'; then
+            echo "::error::The Worker URL does not have the shape https://<name>[.<subdomain>].workers.dev; refusing to stamp it into the site bundle."
+            exit 1
+          fi
           # Stamp the exact PR Worker URL into .cloudflare-dist/js/brain.js so both the branch alias URL
           # and the per-commit hash URL talk directly to this PR's isolated Worker + D1.
           node -e '
             const fs = require("fs");
             const p = ".cloudflare-dist/js/brain.js";
             const s = fs.readFileSync(p, "utf8");
-            fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, `const WORKER = "${process.argv[1]}";`), "utf8");
-          ' "${{ steps.worker.outputs.worker_url }}"
+            const url = process.argv[1]; fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, () => `const WORKER = "${url}";`), "utf8");
+          ' "$WORKER_URL"
 
           cd infrastructure
           npx wrangler pages project create "$PAGES_PROJECT_NAME" --production-branch=master >/dev/null 2>&1 || true

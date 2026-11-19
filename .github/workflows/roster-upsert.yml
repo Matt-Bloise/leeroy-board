@@ -44,9 +44,9 @@ jobs:
         env:
           REPO_PRIVATE: ${{ github.event.repository.private }}
         run: |
-          # The run log prints the roster (names and Discord ids). In a public repository that log is public.
+          # The run log prints the roster (names and Discord ids). The runs of a public repository publish their logs, so this workflow cannot run while the repository is public.
           if [ "$REPO_PRIVATE" != "true" ]; then
-            echo "::error::This repository is not private, so this run's log would publish the roster. Nothing was read or written. See docs/runbooks/roster-upsert.md."
+            echo "::error::This repository is public and the runs of a public repository publish their logs, so this run would publish the roster. Nothing was read or written. See docs/runbooks/roster-upsert.md."
             exit 1
           fi
 

@@ -106,7 +106,7 @@ export async function startFixtureServer({ mode = "green", crossOrigin = false }
         if (mode === "state-redirect" && !req.headers["sec-fetch-site"] && !u.searchParams.has("r")) { res.writeHead(302, { location: "/api/state?r=1", "cache-control": "no-store" }); return res.end(); }
         if (mode === "state-fail" && !req.headers["sec-fetch-site"]) return json(res, '{"error":"fixture: state is down"}', 500);
         const s = state(); if (staleFor(req)) { s.party = fiveRows; s.partyDoc = five; }
-        if (mode === "wrong-count" && !req.headers["sec-fetch-site"]) s.partyDoc = { ...party, members: [...party.members, { ...party.members[0], name: "Extra Member" }] };
+        if (mode === "wrong-count" && !req.headers["sec-fetch-site"]) s.partyDoc = { ...party, members: [...party.members, { ...party.members[0], name: "Zephyrine Quax" }] };
         return json(res, JSON.stringify(s));
       }
       if (key === "/bootstrap" && mode === "redirect-api" && !!(req.headers["sec-fetch-site"] || req.headers.referer) && !u.searchParams.has("r")) { res.writeHead(302, { location: "/api/bootstrap?r=1", "cache-control": "no-store" }); return res.end(); }

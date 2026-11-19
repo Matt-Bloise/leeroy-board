@@ -23,6 +23,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 import { startFixtureServer } from "../helpers/probe-fixture-server.mjs";
 import { createBudget, guardContext } from "../helpers/probe-budget.mjs";
 import { DEFAULT_CLOCK } from "../helpers/clock-arg.mjs";
@@ -63,7 +64,7 @@ const ENGINES = argv.includes("--engines") ? argv[argv.indexOf("--engines") + 1]
 const L = ["--viewports", "laptop"];
 const CASES = [
   ["green", 0, null, []],
-  ["wrong-count", 1, /the board shows 6 members but \/api\/state partyDoc lists 7/, L, null, [["says what it counted in the DOM", /\[DOM: selector "\.tn-name": \d+ elements, \d+ with a box; names: [^\]]+\(wanted 7\)\]/]]],
+  ["wrong-count", 1, /the board shows 6 members but \/api\/state partyDoc lists 7/, L, null, [["says what it counted in the DOM", /\[DOM: selector "\.tn-name": \d+ elements, \d+ with a box; \d+ with text \(counts only, no member names\) \(wanted 7\)\]/]]],
   ["typed-five", 1, /copy states the wrong party size: .*five/i, L],
   ["junk", 1, /junk text, .*undefined/i, L],
   ["no-panel", 1, /scene #ledger did not open: there is no #panel-ledger in the page/, L],
@@ -113,7 +114,10 @@ async function runCase([mode, want, re, extra, label, musts, env, opts]) {
 }
 const results = [];
 for (let i = 0; i < CASES.length; i += 3) results.push(...(await Promise.all(CASES.slice(i, i + 3).map(runCase))));
+// Every roster token (full name, slug, each word of the name, each component of a compound slug, 3+ characters, any case) the fixture serves. The extra member is the one wrong-count adds.
+const ROSTER_TOKENS = [...new Set([...JSON.parse(fs.readFileSync(path.join(here, "..", "fixtures", "six-members", "party.json"), "utf8")).members.map((x) => x.name), "Zephyrine Quax"].flatMap((n) => [n, n.toLowerCase().replace(/[^a-z0-9]+/g, "-"), ...n.split(/[^A-Za-z0-9]+/), ...n.toLowerCase().split(/[^a-z0-9]+/)]).filter((t) => t.length >= 3))];
 for (const { mode, want, re, code, out, lines, m, srv, musts } of results) {
+  { const lo = out.toLowerCase(), leaked = ROSTER_TOKENS.filter((t) => lo.includes(t.toLowerCase())); ok(`[${mode}] no fixture roster name, slug or word appears anywhere in the output`, leaked.length === 0, `${leaked.length} roster token(s) leaked (not printed here)`); }
   ok(`[${mode}] probe exits ${want}`, code === want, `exit ${code}; ${lines.filter((l) => /^FAIL|Worker requests/.test(l)).slice(0, 4).join(" | ")}`);
   if (re) ok(`[${mode}] the failure names the problem`, re.test(out), lines.filter((l) => /^FAIL|Aborting/.test(l)).slice(0, 3).join(" | "));
   for (const [what, rx] of musts || []) ok(`[${mode}] ${what}`, rx.test(out), lines.filter((l) => /^INFO|^  - /.test(l)).slice(0, 5).join(" | "));

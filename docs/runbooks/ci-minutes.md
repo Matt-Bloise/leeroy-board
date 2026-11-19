@@ -4,8 +4,8 @@ Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `secu
 
 ## Cost model
 
-- This repo is private, so GitHub Actions is metered: **$0.006 per Linux minute**. The owner set a **$20 hard-stop budget**, which is about 3,300 minutes. Any free minutes included in the plan are used first and are not counted on here.
-- **Every job is rounded up to a whole minute.** A 10-second job bills 1 minute; a job that is skipped bills 0; a workflow run whose jobs are all skipped bills 0. Many small jobs cost more than one job doing the same work, which is why the former tiny jobs were folded.
+- This repository is public (since 2026-11-19), so standard GitHub-hosted Linux runners are free for it and nothing here is billed. The numbers below were measured when the repository was private and metered (about $0.006 per Linux minute); they are kept as a measure of runner time, not as money. The cost that remains is time: a full run is slow, holds a preview environment (the account has 9 D1 slots) and spends Worker requests (see the end of this page), so the light-by-default rules below still apply.
+- **Every job was rounded up to a whole minute when billing applied.** A 10-second job counted 1 minute; a job that is skipped bills 0; a workflow run whose jobs are all skipped bills 0. Many small jobs cost more than one job doing the same work, which is why the former tiny jobs were folded.
 - Every push to a PR starts runs. Measured on 2 November 2026 (validated against GitHub's meter within 4 percent): Preview Tests 8.3 min per run, PR Ephemeral Preview 3.2 min per run over 275 runs, Security Scan 6.2, Lighthouse 3.4 (Lighthouse has since moved to the nightly run against production; the total below is the figure measured at the time), about 21 minutes per push in total. Of 97 Preview Tests runs only 42 ended green, 28 were cancelled mid-run and 21 failed, 18 of them in the browser job (timing-sensitive degraded-modes checks such as "API held 12 s" on a slow preview).
 
 ## Light by default, heavy on request
@@ -78,7 +78,7 @@ Facts the gate relies on:
 - Issue rule: the first failed night opens nothing and writes nothing; the previous finished run of the workflow is the memory. After two consecutive failed runs, `notify` searches for an open issue labelled `nightly`; it comments there if one exists, otherwise opens exactly one. It never closes the issue. Close it by hand when the nightly is green again.
 - GitHub runs scheduled workflows **only on the default branch** and **disables them after 60 days without repository activity**. If the nightly goes quiet, open the Actions tab, select "Nightly Production Checks" and re-enable it, then run it once. A merged PR counts as activity.
 
-## Expected billable minutes
+## Expected runner minutes (measured under the former metering)
 
 Estimates from the job list with each job rounded up to a whole minute. Durations are assumptions where marked; the measured averages above are the only hard numbers. Compare with the measured baseline of about 21 minutes per push.
 
@@ -97,15 +97,9 @@ Estimates from the job list with each job rounded up to a whole minute. Duration
 
 Typical PR: five light pushes (about 35), one full run (about 38), one teardown (about 2) is about 75 minutes, about $0.45, against about 127 minutes for six pushes at the measured baseline. The saving comes from fewer heavy runs and from not cancelling or failing them mid-way, not from a cheaper heavy run.
 
-## Budget policy
+## Budget policy (historical)
 
-The $20 budget is about 3,333 minutes. Alerts at 75, 90 and 100 percent:
-
-| Spend | Minutes (about) | Action |
-| :--- | ---: | :--- |
-| 75 percent ($15) | 2,500 | Freeze heavy CI: no new `ci-full` labels except for a fix to production, disable the nightly in the Actions tab. Light checks and deploys continue. |
-| 90 percent ($18) | 3,000 | Deploys only: merge only what must ship, and the owner checks such a PR by hand against the CONTRIBUTING.md list; disable PR workflows from the Actions tab if needed. `deploy-cloudflare.yml` keeps running (1 minute per merge). |
-| 100 percent ($20) | 3,333 | GitHub stops all runs, deploys included. Deploy by hand from the owner's machine with the same `wrangler` commands as `deploy-cloudflare.yml` (rollback commands: `rollback.md`) until the budget is raised or the month resets. |
+While the repository was private there was a $20 hard-stop budget (about 3,333 minutes) with alerts at 75, 90 and 100 percent. That policy no longer applies: the repository is public and standard runners are free. If the repository is made private again, restore it from git history of this file before relying on GitHub Actions.
 
 ## What to look at when these workflows first run
 
