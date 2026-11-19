@@ -23,6 +23,8 @@ const SESSION = [M]; // per-user Discord session token (account.js): neither ano
 const TABLE = {
   "POST /discord": PUBLIC, // Discord signs the request; the signature is checked inside the handler, not a board key
   "POST /listen": PUBLIC, // the PC forwarder signs the event (HMAC with a key derived from the bot token, checked inside the handler, not a board key); 404 while LISTENER is off
+  "POST /heartbeat": PUBLIC, // signed with its own derived key (checked inside the handler); 404 while DEADMAN is off; posts nothing
+  "POST /heartbeat/status": PUBLIC, // same key; read only; 404 while DEADMAN is off
   "POST /selftest/claude": PUBLIC, // signed with the same key as /listen (checked inside the handler); 404 without a usable bot token; one call per 60 s
   "GET /discord/commands": PUBLIC,
   "GET /votes": PUBLIC,
@@ -175,6 +177,8 @@ const CALLS = {
   "POST /discord": ["POST", "/api/discord", "{}"],
   "POST /listen": ["POST", "/api/listen", "{}"],
   "POST /selftest/claude": ["POST", "/api/selftest/claude", "{}"],
+  "POST /heartbeat": ["POST", "/api/heartbeat", "{}"],
+  "POST /heartbeat/status": ["POST", "/api/heartbeat/status", "{}"],
   "GET /discord/commands": ["GET", "/api/discord/commands"],
   "GET /votes": ["GET", "/api/votes"],
   "GET /me": ["GET", "/api/me"],

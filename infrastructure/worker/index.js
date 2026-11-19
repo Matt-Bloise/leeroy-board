@@ -26,6 +26,7 @@ import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { handleListen, latestTurn } from "./listener.js";
 import { handleSelftestClaude } from "./selftest.js";
+import { handleHeartbeat, handleHeartbeatStatus, runDeadmanCheck, deadmanOn } from "./deadman.js";
 import { manifestFor } from "./setup-command.js";
 import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
@@ -520,7 +521,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 export function projectionTag(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); }
 
 export const ROUTES = [
-  "POST /discord", "POST /listen", "POST /selftest/claude", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
+  "POST /discord", "POST /listen", "POST /selftest/claude", "POST /heartbeat", "POST /heartbeat/status", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
@@ -557,6 +558,13 @@ const worker = {
       // Production self-test of the Claude path (signed like the listener; no bot token means no route). See selftest.js.
       if (req.method === "POST" && path === "/selftest/claude") {
         return await handleSelftestClaude(req, env);
+      }
+      // Dead-man check (flag DEADMAN, off: 404; signed with its own derived key; posts nothing). See deadman.js.
+      if (req.method === "POST" && path === "/heartbeat") {
+        return await handleHeartbeat(req, env);
+      }
+      if (req.method === "POST" && path === "/heartbeat/status") {
+        return await handleHeartbeatStatus(req, env);
       }
       if (req.method === "GET" && path === "/discord/commands") {
         return jsonResp({ commands: manifestFor(env, DISCORD_SLASH_COMMANDS_MANIFEST) }, 200, cors);
@@ -2084,6 +2092,8 @@ const worker = {
       ctx.waitUntil(
         runMoments(env, { loadSchedule: () => loadConfigKey(env, "moments") }).catch((err) => console.error("moments run failed:", String((err && err.message) || err)))
       );
+      // DEADMAN: one more step on this tick (one kv read, at most one write). Its own try/catch and .catch: it can never stop the work around it. A no-op while the flag is off.
+      try { if (deadmanOn(env)) ctx.waitUntil(runDeadmanCheck(env).catch(() => {})); } catch {}
       // CARDS_ENABLED: the every-minute tick also flushes a due board line and retries an unfinished card edit (no D1 read while the flag is off).
       if (cardsEnabled(env)) ctx.waitUntil(Promise.all([flushBoardLines(env), requestCardEdit(env, { dirty: false })]).catch(() => {}));
       return;

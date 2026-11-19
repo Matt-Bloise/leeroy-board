@@ -103,3 +103,24 @@ export function parseListenEvent(obj) {
   const ref = obj.ref_text == null ? "" : strip(obj.ref_text, LISTEN_REF_CHARS);
   return { ok: true, ev: { id: obj.id, guild_id: obj.guild_id, channel_id: obj.channel_id, parent_id: isSnow(obj.parent_id) ? obj.parent_id : "", author_id: obj.author_id, kind: obj.kind, content, ref_text: ref } };
 }
+
+// HEARTBEAT KEY (POST /api/heartbeat, deadman.js). Appended after everything else on purpose, so it does not collide with the other derived keys:
+//   key = HMAC-SHA256(key = the bot token as UTF-8 bytes, message = the ASCII string "leeroy-heartbeat-v1")   -> 32 raw bytes
+// Signature and headers are exactly the listener's (signListen / verifyListen). A signature made with the listener key (the self-test uses it too) or any other derived key never verifies under this one.
+export const HEARTBEAT_KEY_LABEL = "leeroy-heartbeat-v1";
+export async function heartbeatKey(botToken) {
+  if (typeof botToken !== "string" || botToken.length < LISTEN_MIN_TOKEN_CHARS) return null;
+  const enc = new TextEncoder();
+  const k = await crypto.subtle.importKey("raw", enc.encode(botToken), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(HEARTBEAT_KEY_LABEL)));
+}
+let heartbeatKeyCache = { token: null, key: null };
+export async function heartbeatKeyFor(env) {
+  const token = env && env.DISCORD_BOT_TOKEN;
+  if (typeof token !== "string" || token.length < LISTEN_MIN_TOKEN_CHARS) return null;
+  if (heartbeatKeyCache.token === token && heartbeatKeyCache.key) return heartbeatKeyCache.key;
+  const key = await heartbeatKey(token);
+  heartbeatKeyCache = { token, key };
+  return key;
+}
+export function resetHeartbeatKeyCacheForTests() { heartbeatKeyCache = { token: null, key: null }; }
