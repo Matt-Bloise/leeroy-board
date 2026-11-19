@@ -59,7 +59,7 @@ test("every flag key the Worker reads through flagOn is listed in the runbook, s
   for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "flags.js" && n !== "moments.js")) {
     for (const m of fs.readFileSync(path.join(dir, f), "utf8").matchAll(/\bflagOn\(\s*env\s*,\s*"([^"]+)"/g)) keys.add(m[1]);
   }
-  assert.deepEqual([...keys].sort(), ["D1_FEED", "INTEREST_NUDGES"]);
+  assert.deepEqual([...keys].sort(), ["D1_FEED", "INTEREST_NUDGES", "ROSTER_FROM_D1"]);
   // B51: the deploy creates missing Flagship flags from ONE committed list (infrastructure/flagship-flags.txt): every key the Worker reads must be in it
   const listed = read("infrastructure/flagship-flags.txt").split(/\r?\n/).map((l) => l.replace(/#.*$/, "").trim()).filter(Boolean);
   for (const k of keys) assert.ok(listed.includes(k), `${k} is passed to flagOn() but missing from infrastructure/flagship-flags.txt, so the deploy would not create it`);
