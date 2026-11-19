@@ -698,15 +698,18 @@ test("route: SHADOW_ASK_SUBCAP_PERCENT sets the reservation fraction (a cap wher
   assert.ok(tokens(DB, shadowSubCounterKey(now)) > 0);
 });
 
-test("wrangler.toml sets the three limit vars to valid in-range values (the code defaults are pinned by the shadowLimits tests), and both runbooks document them", () => {
+test("wrangler.toml carries ONE limits var, SHADOW_ASK_LIMITS, with in-range parts (the code defaults are pinned by the shadowLimits tests), and both runbooks document the limits", () => {
   const toml = read("infrastructure/wrangler.toml");
   const vars = toml.slice(toml.indexOf("[vars]"));
-  const num = (k) => Number((vars.match(new RegExp("^" + k + " = \"([0-9.]+)\"", "m")) || [])[1]);
-  const h = num("SHADOW_ASK_HOURLY"), d = num("SHADOW_ASK_DAILY"), p = num("SHADOW_ASK_SUBCAP_PERCENT");
+  assert.ok(!/^SHADOW_ASK_(HOURLY|DAILY|SUBCAP_PERCENT) =/m.test(vars), "the three separate vars are gone: the Workers Free plan allows 64 variables in all");
+  const m = vars.match(/^SHADOW_ASK_LIMITS = "([0-9.]+)\/([0-9.]+)\/([0-9.]+)"/m);
+  assert.ok(m, "SHADOW_ASK_LIMITS = hourly/daily/percent");
+  const [h, d, p] = [Number(m[1]), Number(m[2]), Number(m[3])];
   assert.ok(Number.isInteger(h) && h >= 1 && h <= 120, "hourly in range");
   assert.ok(Number.isInteger(d) && d >= h && d <= 600, "daily in range and not below hourly");
   assert.ok(p >= 0.1 && p <= 20, "sub-cap percent in range");
-  for (const doc of ["docs/runbooks/flags.md", "docs/runbooks/shadow-ask.md"]) for (const k of ["SHADOW_ASK_HOURLY", "SHADOW_ASK_DAILY", "SHADOW_ASK_SUBCAP_PERCENT"]) assert.ok(read(doc).includes("`" + k + "`"), `${k} in ${doc}`);
+  assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: `${h}/${d}/${p}` }).hourly, h);
+  for (const doc of ["docs/runbooks/flags.md", "docs/runbooks/shadow-ask.md"]) for (const k of ["SHADOW_ASK_LIMITS"]) assert.ok(read(doc).includes("`" + k + "`"), `${k} in ${doc}`);
   assert.ok(!read("infrastructure/flagship-flags.txt").includes("SHADOW_ASK_"), "not Flagship keys");
 });
 
@@ -882,4 +885,17 @@ test("tools/shadow-ask.mjs refuses a non-https base (except localhost), credenti
     assert.equal(runTool([tokenFile, "--question", "q".repeat(MAX_QUESTION_CHARS + 1)]).status, 2);
     assert.equal(runTool([]).status, 2);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("SHADOW_ASK_LIMITS: one var, three parts, each clamped on its own; absent, empty or malformed gives the defaults", () => {
+  assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: "60/100/5" }), { hourly: 60, daily: 100, percent: 5, fraction: 0.05 });
+  assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: "" }), shadowLimits({}));
+  assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: "x/y/z" }), shadowLimits({}));
+  assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: "500/99999/90" }), { hourly: 120, daily: 600, percent: 20, fraction: 0.2 });
+  assert.equal(shadowLimits({ SHADOW_ASK_LIMITS: "40" }).hourly, 40, "a missing part takes its default");
+  assert.equal(shadowLimits({ SHADOW_ASK_LIMITS: "40" }).daily, 40, "the default daily 20 is raised to the hourly 40");
+  assert.equal(shadowLimits({ SHADOW_ASK_LIMITS: "60/100/5/9" }).percent, 2, "too many parts: the percent falls back to the default");
+  assert.equal(shadowLimits({ SHADOW_ASK_LIMITS: "//" }).hourly, 6);
+  assert.equal(shadowLimits({ SHADOW_ASK_LIMITS: "60/10/5" }).daily, 60, "daily never below hourly");
+  assert.equal(shadowLimits({ SHADOW_ASK_LIMITS: "1e3/-1/NaN" }).hourly, 6, "exponent form and junk never mean unlimited");
 });

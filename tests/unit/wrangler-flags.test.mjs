@@ -15,7 +15,7 @@ const DOCUMENTED = {
   bindings: ["DB", "AI", "BOARD_ROOM", "FLAGS", "ANTHROPIC_KEY_STORE"],
   secrets: ["ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "GITHUB_MODELS_TOKEN", "AI_GATEWAY_TOKEN", "CLOUDFLARE_AIG_TOKEN",
     "BOARD_ADMIN_TOKEN", "KEY_SALT", "USER_SALT", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_PUBLIC_KEY", "DISCORD_WEBHOOK_URL"],
-  optional: ["CARD_CLASS_EMOJI", "ANSWER_FORMAT", "AI_DAILY_NEURON_CAP", "ASK_DEADLINE_MS", "ACCOUNT_ID", "CF_ACCOUNT_ID"], // the code has a default when unset (ANSWER_FORMAT defaults ON)
+  optional: ["CARD_CLASS_EMOJI", "ANSWER_FORMAT", "AI_DAILY_NEURON_CAP", "ASK_DEADLINE_MS", "ACCOUNT_ID", "CF_ACCOUNT_ID", "SHADOW_ASK_HOURLY", "SHADOW_ASK_DAILY", "SHADOW_ASK_SUBCAP_PERCENT", "DEADMAN_STALE_SECONDS", "DEADMAN_EXPECT"], // the code has a default when unset (ANSWER_FORMAT defaults ON). The SHADOW_ASK_* and DEADMAN_* tuning vars are optional overrides with in-code defaults: they are NOT in wrangler.toml because the Workers Free plan allows only 64 variables in all (SHADOW_ASK_LIMITS carries the shadow trio)
   preview: ["IS_PR_PREVIEW", "PR_NUMBER", "WORKER_NAME"], // set by the PR preview deploy / the platform
 };
 const documented = new Set(Object.values(DOCUMENTED).flat());

@@ -5,8 +5,8 @@
 // Gate, in order: flag SHADOW_ASK "on" (anything else, a PR preview or no usable bot token: 404, nothing read), then an HMAC with the SHADOW key (listener-config.js shadowKey: derived from the bot token with its own label, so
 // the listener key the PC forwarder holds cannot call this route; same headers X-Listen-Timestamp / X-Listen-Signature, 120 s window,
 // 401), body up to 4 KB (413), ASK_RESEARCH on (409), a body that carries "purpose":"shadow-ask" and only the keys below (400: a signed /api/listen event or self-test body can never start a paid compose), then the
-// replay refusal (409, the signature hash is kept for the window) and the rate limit, 6 an hour and 20 a day by default (429; Worker vars SHADOW_ASK_HOURLY and SHADOW_ASK_DAILY, see shadowLimits). Spend goes through the normal Claude spend guard (the monthly token cap, with its pause and alert) and
-// a sub-counter of its own capped at SHADOW_ASK_SUBCAP_PERCENT (default 2) percent of that cap, so shadow runs can never starve the real asks.
+// replay refusal (409, the signature hash is kept for the window) and the rate limit, 6 an hour and 20 a day by default (429; Worker var SHADOW_ASK_LIMITS, see shadowLimits). Spend goes through the normal Claude spend guard (the monthly token cap, with its pause and alert) and
+// a sub-counter of its own capped at the third part of SHADOW_ASK_LIMITS (default 2) percent of that cap, so shadow runs can never starve the real asks.
 // The caller is the key holder, so the response carries the answer text; it still passes the outbound protections (secrets, hex tokens, long ids) first, and what the table stores is what the caller is shown.
 import { answerWithAi, isPrPreviewEnv, resolveAiProvider, askDeadlineMs } from "./ai-models.js";
 import { monthTag } from "./research/claude.js";
@@ -30,7 +30,7 @@ export const SHADOW_SUBCAP_FRACTION = SHADOW_SUBCAP_PERCENT / 100; // 2% of the 
 export const shadowSubCounterKey = (now) => `claude_tokens_shadow_${monthTag(now)}`;
 export const SHADOW_LOCAL_CHARS = 1500; // the local answer kept for the comparison (the whole body is 4 KB)
 export const REPLAY_WINDOW_MS = 120 * 1000; // LISTEN_MAX_AGE_SECONDS: how long a signature stays valid, so how long its hash is kept
-// Worker vars SHADOW_ASK_HOURLY, SHADOW_ASK_DAILY, SHADOW_ASK_SUBCAP_PERCENT. The defaults are the original hard-coded limits. A value is read only if it is a plain positive decimal (a string like "40" or a number);
+// Worker var SHADOW_ASK_LIMITS (hourly/daily/percent). The defaults are the original hard-coded limits. A value is read only if it is a plain positive decimal (a string like "40" or a number);
 // unset, empty, non-numeric, NaN, Infinity, zero, negative or "1e3"-style text gives the DEFAULT, never "unlimited". A positive value past the range is clamped to the range edge. The daily limit is never below the hourly one.
 const parsePositive = (v) => {
   if (typeof v === "number") return Number.isFinite(v) && v > 0 ? v : null;
@@ -39,11 +39,15 @@ const parsePositive = (v) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 const clampedInt = (v, def, lo, hi) => { const n = parsePositive(v); const i = n === null ? 0 : Math.floor(n); return i < 1 ? def : Math.min(hi, Math.max(lo, i)); };
+// ONE Worker var, SHADOW_ASK_LIMITS = "hourly/daily/percent" (for example "60/100/5"): three separate vars pushed the Worker past the Workers Free cap of 64 variables (the deploy failed, see
+// tests/unit/var-budget.test.mjs). Absent, empty or malformed gives the defaults 6/20/2; each part is parsed and clamped on its own (a bad part takes its own default, never unlimited).
 export function shadowLimits(env) {
-  const e = env || {};
-  const hourly = clampedInt(e.SHADOW_ASK_HOURLY, SHADOW_PER_HOUR, 1, 120);
-  const daily = Math.max(hourly, clampedInt(e.SHADOW_ASK_DAILY, SHADOW_PER_DAY, 1, 600));
-  const pct = parsePositive(e.SHADOW_ASK_SUBCAP_PERCENT);
+  const raw = String(((env || {}).SHADOW_ASK_LIMITS) ?? "").trim();
+  const parts = raw === "" ? [] : raw.split("/");
+  const part = (i, legacy) => (parts[i] !== undefined && String(parts[i]).trim() !== "" ? parts[i] : legacy); // a part that is missing falls back to the older separate var (tests and any manual override), then the default
+  const hourly = clampedInt(part(0, (env || {}).SHADOW_ASK_HOURLY), SHADOW_PER_HOUR, 1, 120);
+  const daily = Math.max(hourly, clampedInt(part(1, (env || {}).SHADOW_ASK_DAILY), SHADOW_PER_DAY, 1, 600));
+  const pct = parts.length > 3 ? null : parsePositive(part(2, (env || {}).SHADOW_ASK_SUBCAP_PERCENT));
   const percent = pct === null ? SHADOW_SUBCAP_PERCENT : Math.min(20, Math.max(0.1, pct));
   return { hourly, daily, percent, fraction: percent / 100 };
 }
