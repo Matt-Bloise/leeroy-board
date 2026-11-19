@@ -475,6 +475,17 @@ export async function fetchWithGatewayFallback({
 }
 
 // modelOverride / wantUsage / beforeSend are research-mode only (research/claude.js); the defaults leave the legacy call exactly as it was.
+// Claude 5.5 models think by default (adaptive) when no thinking field is sent, and the thinking tokens come out of max_tokens: with the 700-token research cap a real question can spend
+// the whole cap thinking and return NO text block (production showed claude:reply-flagged@empty at about 6.6 s on every full-size compose, while an 8-token ping answered). The answer here is a
+// short chat reply, so thinking is turned off with the form each model accepts (docs: Sonnet 5.5 rejects {type: "disabled"}; "between_tools" is its off switch, accepted at effort high or below,
+// and this body sets no effort; Haiku 5.5 accepts {type: "disabled"} at high or below). Other models get no field, exactly as before.
+export function thinkingOffFor(model) {
+  const m = String(model || "");
+  if (/^claude-sonnet-5-5(?![0-9])/.test(m)) return { type: "between_tools" };
+  if (/^claude-haiku-5-5(?![0-9])/.test(m)) return { type: "disabled" };
+  return null;
+}
+
 export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, modelOverride = null, wantUsage = false, beforeSend = null }) {
   const auth = await anthropicAuth(env);
   if (auth.mode === "none") {
@@ -489,6 +500,7 @@ export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep,
   const bodyObject = {
     model,
     max_tokens: maxTokens,
+    ...(thinkingOffFor(model) ? { thinking: thinkingOffFor(model) } : {}),
     system: [
       {
         type: "text",
