@@ -261,3 +261,15 @@ test("7. web path: the stored reply is the defanged text (the web page shows sto
   const dc = readFileSync(new URL("../../infrastructure/worker/discord.js", import.meta.url), "utf8");
   assert.ok(/allowed_mentions: ALLOWED_MENTIONS_NONE/.test(dc));
 });
+
+test("replyFlagKind names why a reply was dropped, with a fixed word and never a value", async () => {
+  const { replyFlagKind } = await import("../../infrastructure/worker/research/real-names.js");
+  assert.equal(replyFlagKind("", {}), "empty");
+  assert.equal(replyFlagKind("   \n", {}), "empty");
+  const key = ["sk", "ant", "x".repeat(12)].join("-");
+  assert.equal(replyFlagKind(`here is ${key}`, {}), "anthropic-key");
+  assert.equal(replyFlagKind("a normal answer", {}), "other");
+  const envVal = "v".repeat(12);
+  assert.equal(replyFlagKind(`has ${envVal} inside`, { SOME_SECRET: envVal }), "env-secret");
+  for (const out of [replyFlagKind(`here is ${key}`, {}), replyFlagKind("", {})]) assert.ok(!out.includes(key) && /^[a-z-]{1,24}$/.test(out));
+});

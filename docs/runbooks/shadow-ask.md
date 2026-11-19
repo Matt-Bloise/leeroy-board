@@ -64,7 +64,7 @@ Reason codes (a fixed vocabulary; anything else is `other`):
 | `claude:http-NNN` | the provider answered with that status (401/403 key, 400/404 model id, 429 rate limit, 5xx overload). |
 | `claude:timeout@compose-Ns` | the compose send hit its deadline after N seconds; the Haiku-class retry follows when time allows. |
 | `claude:no-time` | under 2.5 s of the ask deadline was left for the Claude hop. |
-| `claude:reply-flagged` | the reply held a secret or a name the guard refuses and was dropped. |
+| `claude:reply-flagged@<kind>` (kind: `empty`, `env-secret`, `hex-token`, a named secret pattern, or `name`; the bare `claude:reply-flagged` is the older form) | the reply held a secret or a name the guard refuses and was dropped. |
 | `guard:secret` / `guard:host` / `guard:config` / `cpu:budget` | an outbound guard or the prompt-size guard stopped the send. |
 | `guard:outbound` | the answer was withheld whole by the shadow's last outbound scan. |
 | `ask:error` | the answer path threw. |
