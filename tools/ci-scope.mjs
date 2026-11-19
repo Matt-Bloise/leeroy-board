@@ -1,5 +1,5 @@
 // Decides whether a pull request can change what a visitor sees in a browser, or how CI itself behaves, so the full suite (api, browser, layout)
-// is required for it. GitHub minutes on a private repo are metered, so Worker-only, test-only and docs-only changes skip the browser and layout jobs.
+// is required for it. The full suite is slow and each full run holds a preview environment, so Worker-only, test-only and docs-only changes skip the browser and layout jobs.
 // A scope bug is a silent gate bypass, so every doubt resolves to "true" (run everything).
 // Forces a full run: the site paths below, anything under .github/ (every workflow), tools/ (the CI tools themselves), infrastructure/wrangler*
 // (deploy config) and any package*.json at any depth (dependencies), plus any path of an unknown shape.

@@ -4,7 +4,7 @@ Workflow: `.github/workflows/roster-upsert.yml` (manual only). Script: `tools/ro
 
 ## When to use it
 
-This is the **stopgap for when `/member` is unreachable** (docs/runbooks/member.md, PR 379) and the Cloudflare D1 console is read-only for the person who needs the edit. It writes the same row the Worker does, `kv_state` key `discord_members`, with the Worker's own functions (`upsertMember` from `infrastructure/worker/members.js` and `validateConfigValue('discord_members', ...)` from `infrastructure/worker/config.js`), so the rules are the same as `POST /api/admin/members`: slug rules, name 1 to 40 characters, match tokens lowercase, id 17 to 20 digits, an id may belong to one slug only. An update of an existing slug keeps its id and match list when the entry does not carry them.
+This is the **stopgap for when `/member` is unreachable and the repository is private** (it is public now, see below) (docs/runbooks/member.md, PR 379) and the Cloudflare D1 console is read-only for the person who needs the edit. It writes the same row the Worker does, `kv_state` key `discord_members`, with the Worker's own functions (`upsertMember` from `infrastructure/worker/members.js` and `validateConfigValue('discord_members', ...)` from `infrastructure/worker/config.js`), so the rules are the same as `POST /api/admin/members`: slug rules, name 1 to 40 characters, match tokens lowercase, id 17 to 20 digits, an id may belong to one slug only. An update of an existing slug keeps its id and match list when the entry does not carry them.
 
 Real data is never stored in the repository. The entries are typed into the dispatch form, and they are visible on that run's page and in its log.
 
@@ -12,7 +12,9 @@ Real data is never stored in the repository. The entries are typed into the disp
 
 The same secrets as the production deploy: repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (docs/runbooks/ci-secrets.md). Nothing new. The token needs D1 edit permission, as the deploy does. The job runs only from `master`, in the environment `production`.
 
-**The repository must be private.** The log prints the roster (slug, name, Discord id, match count) before and after, and the first step of the job fails the run when `github.event.repository.private` is not `true`. In a public repository the log would be public.
+**This workflow cannot run while the repository is public.** The log prints the roster (slug, name, Discord id, match count) before and after, and the runs of a public repository publish their logs to everyone. The first step of the job fails the run when `github.event.repository.private` is not `true`, before anything is read or written. The repository has been public since 2026-11-19, so the workflow is disabled in effect: a dispatch fails at that first step with nothing read or written.
+
+What to do instead (no new mechanism is introduced here): use `/member add` and `/member list` (docs/runbooks/member.md) when the command is reachable; otherwise the roster edit needs the repository private again, or a manual edit of the `kv_state` row `discord_members` in the Cloudflare D1 console by the account owner (the SQL under "Rollback" shows the statement shape).
 
 ## How to run it
 

@@ -17,14 +17,15 @@ const workflows = files.map(load);
 // Triggers that run code from a pull request (or its fork). `workflow_run` is included: it can be started by a PR workflow and read secrets with the PR's artifacts.
 const PR_TRIGGERS = ["pull_request", "pull_request_target", "pull_request_review", "pull_request_review_comment", "workflow_run"];
 // The only secrets a PR-triggered workflow may name. GITHUB_TOKEN is per run; CLOUDFLARE_ACCOUNT_ID is an identifier, not a credential.
-// CLOUDFLARE_API_TOKEN (the production Cloudflare token) is allowed ONLY in the jobs listed in TOKEN_JOBS, one occurrence each, by decision of the Cloudflare
-// account owner (previews share the production Cloudflare token; there is no CLOUDFLARE_PREVIEW_API_TOKEN). BOARD_ADMIN_TOKEN and every other production secret stay forbidden.
-const PR_ALLOWED = new Set(["GITHUB_TOKEN", "CLOUDFLARE_API_TOKEN", "BOARD_PREVIEW_ADMIN_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]);
+// The production Cloudflare token (CLOUDFLARE_API_TOKEN) is not allowed in any PR-triggered workflow: previews use the preview-scoped CLOUDFLARE_PREVIEW_API_TOKEN, which
+// is allowed ONLY in the jobs listed in TOKEN_JOBS, one occurrence each. BOARD_ADMIN_TOKEN and every other production secret stay forbidden.
+const PR_ALLOWED = new Set(["GITHUB_TOKEN", "CLOUDFLARE_PREVIEW_API_TOKEN", "BOARD_PREVIEW_ADMIN_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]);
 const TOKEN_JOBS = {
   "pr-preview-cloudflare.yml": { "preview-guard": 1, "deploy-pr-preview": 1, "teardown-pr-preview": 1 },
   "preview-tests.yml": { "preview-secrets": 1 },
 };
-const TOKEN_RE = /(?<![\w.\/-])secrets\.CLOUDFLARE_API_TOKEN\b/g;
+const TOKEN_RE = /(?<![\w.\/-])secrets\.CLOUDFLARE_PREVIEW_API_TOKEN\b/g;
+const PROD_TOKEN_RE = /(?<![\w.\/-])secrets\.CLOUDFLARE_API_TOKEN\b/g;
 // Production secrets: deploy-cloudflare.yml reads these from the environment `production` only.
 const PRODUCTION = ["BOARD_ADMIN_TOKEN", "USER_SALT", "KEY_SALT", "AI_GATEWAY_TOKEN", "CLOUDFLARE_AIG_TOKEN", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
   "GROQ_API_KEY", "CEREBRAS_API_KEY", "GITHUB_MODELS_TOKEN", "OPENROUTER_API_KEY", "DISCORD_WEBHOOK_URL", "DISCORD_PUBLIC_KEY", "DISCORD_CLIENT_SECRET", "DISCORD_BOT_TOKEN"];
@@ -96,7 +97,7 @@ for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.
     assert.deepEqual([...new Set(bad)], [], `${w.f} references secrets a pull request must not read`);
     const c = scanText(w);
     for (const n of PRODUCTION) assert.equal(new RegExp(`(?<![\\w./-])secrets\\.${n}\\b`).test(c), false, `${w.f} reads production secret ${n}`);
-    assert.equal(/CLOUDFLARE_PREVIEW_API_TOKEN/.test(c), false, `${w.f}: CLOUDFLARE_PREVIEW_API_TOKEN is not part of the design (previews use CLOUDFLARE_API_TOKEN)`);
+    assert.equal((c.match(PROD_TOKEN_RE) || []).length, 0, `${w.f}: a PR-triggered workflow must not read the production Cloudflare token (previews use CLOUDFLARE_PREVIEW_API_TOKEN)`);
     assert.equal(/\benvironment\s*:\s*production\b/.test(c), false, "a PR-triggered workflow must not use the production environment");
   });
 }
@@ -269,7 +270,7 @@ const tokenViolations = (w, allowed) => {
   const bad = [];
   for (const [name, job] of Object.entries(w.doc.jobs || {})) {
     const n = (JSON.stringify(job).match(TOKEN_RE) || []).length;
-    if (n !== (allowed[name] || 0)) bad.push(`${w.f} job ${name}: expected ${allowed[name] || 0} reference(s) to secrets.CLOUDFLARE_API_TOKEN, found ${n}`);
+    if (n !== (allowed[name] || 0)) bad.push(`${w.f} job ${name}: expected ${allowed[name] || 0} reference(s) to secrets.CLOUDFLARE_PREVIEW_API_TOKEN, found ${n}`);
   }
   const total = Object.values(allowed).reduce((a, b) => a + b, 0);
   if ((w.text.match(TOKEN_RE) || []).length !== total) bad.push(`${w.f}: total references in the raw text`);
@@ -277,22 +278,22 @@ const tokenViolations = (w, allowed) => {
   return bad;
 };
 
-test("CLOUDFLARE_API_TOKEN is read only in the preview, teardown and preview-secrets jobs of the two preview workflows, once each", () => {
+test("CLOUDFLARE_PREVIEW_API_TOKEN is read only in the preview, teardown and preview-secrets jobs of the two preview workflows, once each", () => {
   const prFiles = workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)));
   for (const w of prFiles) assert.deepEqual(tokenViolations(w, TOKEN_JOBS[w.f] || {}), []);
   for (const f of Object.keys(TOKEN_JOBS)) assert.ok(prFiles.some((w) => w.f === f), `${f} must be PR-triggered and checked`);
 });
 
 // B60: revert-failing. Each fixture keeps every per-job count right, so ONLY the total check can see the extra reference; removing the raw-text or the parsed-string total fails here.
-test("the CLOUDFLARE_API_TOKEN total check catches a reference outside the allowed jobs (comment, top-level env, folded string)", () => {
+test("the CLOUDFLARE_PREVIEW_API_TOKEN total check catches a reference outside the allowed jobs (comment, top-level env, folded string)", () => {
   const ALLOWED = { deploy: 1 };
-  const job = "jobs:\n  deploy:\n    steps:\n      - run: echo §{{ secrets.CLOUDFLARE_API_TOKEN }}\n";
+  const job = "jobs:\n  deploy:\n    steps:\n      - run: echo §{{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}\n";
   assert.deepEqual(tokenViolations(fx("ok.yml", job), ALLOWED), [], "the budget itself passes");
-  const comment = tokenViolations(fx("c.yml", "# uses §{{ secrets.CLOUDFLARE_API_TOKEN }}\n" + job), ALLOWED);
+  const comment = tokenViolations(fx("c.yml", "# uses §{{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}\n" + job), ALLOWED);
   assert.deepEqual(comment, ["c.yml: total references in the raw text"], "a comment outside any job");
-  const topEnv = tokenViolations(fx("e.yml", "env:\n  T: §{{ secrets.CLOUDFLARE_API_TOKEN }}\n" + job), ALLOWED);
+  const topEnv = tokenViolations(fx("e.yml", "env:\n  T: §{{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}\n" + job), ALLOWED);
   assert.deepEqual(topEnv, ["e.yml: total references in the raw text", "e.yml: total references in the parsed strings"], "a workflow-level env");
-  const folded = fx("f.yml", String.raw`name: "x §{{ secrets.CLOUDFLARE_API_\
+  const folded = fx("f.yml", String.raw`name: "x §{{ secrets.CLOUDFLARE_PREVIEW_API_\
   TOKEN }}"
 ` + job);
   assert.deepEqual(tokenViolations(folded, ALLOWED), ["f.yml: total references in the parsed strings"], "a folded reference outside the jobs is invisible to the raw text");
@@ -480,11 +481,11 @@ test("a secret hidden by YAML folding or escaping in a double-quoted scalar is s
   const token = fx("t.yml", String.raw`jobs:
   a:
     steps:
-      - run: "echo §{{ secrets.CLOUDFLARE_API_\
+      - run: "echo §{{ secrets.CLOUDFLARE_PREVIEW_API_\
           TOKEN }}"
 `);
   assert.equal((token.text.match(TOKEN_RE) || []).length, 0);
-  assert.equal((parsedText(token).match(TOKEN_RE) || []).length, 1, "the CLOUDFLARE_API_TOKEN count sees a folded reference in the parsed strings");
+  assert.equal((parsedText(token).match(TOKEN_RE) || []).length, 1, "the CLOUDFLARE_PREVIEW_API_TOKEN count sees a folded reference in the parsed strings");
 });
 
 test("a comment never satisfies a REQUIRED command: only the parsed run: strings do", () => {

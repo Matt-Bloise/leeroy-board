@@ -72,7 +72,7 @@ async function visit(browser, engine, size, opts, setup) {
     ok(`${tag} first visit: Guided is the default journey`, s.journey === "guided", `data-journey: ${s.journey || "-"}`);
     ok(`${tag} first visit: nothing stored, so no journey reads as pressed in the head`, !s.headPressed.length, `pressed: ${s.headPressed.join(",") || "-"}`);
     ok(`${tag} first visit: a name picker with at least 4 chips`, s.chips.length >= 4, `visible chips: ${s.chips.length}`);
-    ok(`${tag} first visit: every name chip label is readable`, s.chips.length >= 4 && s.chips.every((c) => c.readable), s.chips.filter((c) => !c.readable).map((c) => `${c.name} (lum ${c.lum.toFixed(2)}, shadow ${c.shadow})`).join("; ") || "no chips");
+    ok(`${tag} first visit: every name chip label is readable`, s.chips.length >= 4 && s.chips.every((c) => c.readable), `${s.chips.filter((c) => !c.readable).length} of ${s.chips.length} chip labels not readable (counts only, no member names)`);
     const t0 = await page.evaluate(visibleText), b0 = bad(t0);
     ok(`${tag} no "null" or "undefined" in visible text (first view)`, !b0, b0 && `found ${b0} near: ${t0.slice(Math.max(0, t0.search(new RegExp(`\b${b0}\b`)) - 40), t0.search(new RegExp(`\b${b0}\b`)) + 40).replace(/\s+/g, " ")}`);
     /* the three journeys through the head toggle: on a phone the plate opens on the first tap, then the others show */

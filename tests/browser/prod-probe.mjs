@@ -66,7 +66,9 @@ const budget = createBudget(BUDGET);
 const API_ROUTE = process.env.PROBE_API_ROUTE === "fetch" ? "fetch" : "browser";
 if (API_ROUTE === "fetch") console.log("WARN PROBE_API_ROUTE=fetch: the probe sends /api requests itself and fulfils the page with the answer (the older mode, known to change what Firefox shows); comparison only");
 const problems = [], notes = [], hiddenCopy = new Set(), advisories = new Set();
-const fail = (where, what) => { problems.push(`${where}: ${what}`); console.log(`FAIL ${where}: ${what}`); };
+// The live party is real people: any member name or slug in a printed line (copy snippets, DOM facts) is replaced before it reaches a log or step summary.
+let scrub = (t) => String(t);
+const fail = (where, what) => { const w = scrub(what); problems.push(`${where}: ${w}`); console.log(`FAIL ${where}: ${w}`); };
 const pass = (what) => console.log(`PASS ${what}`);
 
 // 0. Member data is Worker-only: no private data path (tools/pages-bundle.mjs list, pages-worker/private-paths.mjs) may answer 2xx on a SITE hostname, the bare URL and a cache-busted one,
@@ -99,6 +101,10 @@ if (!party) {
   process.exit(1);
 }
 const MEMBER_SLUGS = new Set(party.members.map((m) => slugOf(m.name)));
+{
+  const tokens = [...new Set(party.members.flatMap((m) => [String(m.name || "").trim(), slugOf(m.name)]).filter((t) => t.length >= 3))].sort((a, b) => b.length - a.length);
+  if (tokens.length) { const re = new RegExp(tokens.map((t) => t.split("").map((ch) => (/[A-Za-z0-9 _-]/.test(ch) ? ch : "\\" + ch)).join("")).join("|"), "gi"); scrub = (t) => String(t).replace(re, "<member>"); }
+}
 if (party) console.log(`INFO the real party has ${N} members (${WORDS[N] || N}) per ${API}/api/state`);
 const SCENES = [...TOP.slice(0, 3), ...party.members.map((m) => `five.${slugOf(m.name)}`), ...TOP.slice(3)];
 
@@ -150,7 +156,7 @@ async function openScene(page, hash, state = {}) {
     if (!landed && allCards) { await page.evaluate(() => { location.hash = ""; }); await page.waitForTimeout(500); await page.evaluate((h) => { location.hash = h; }, hash); landed = await landedNow(6000); }
     if (!landed) {
       const have = await page.evaluate(([k, sl]) => { const p = document.querySelector(`#panel-${k}`); return { card: !!document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`), n: document.querySelectorAll(`#panel-${k} .card[data-slug]`).length, cards: document.querySelectorAll(`#panel-${k} .card`).length, named: p ? p.innerText.toLowerCase().includes(sl.split("-")[0]) : false, slugs: Array.from(document.querySelectorAll(`#panel-${k} .card[data-slug]`)).map((c) => c.getAttribute("data-slug")).join(",") }; }, [top, sub]).catch(() => ({ card: false, n: 0, cards: 0, named: false, slugs: "" }));
-      const facts = `selector \`${SEL}\`: ${have.n} of ${MEMBER_SLUGS.size} found (slugs: ${have.slugs || "none"}); \`#panel-${top} .card\`: ${have.cards}; "${sub.split("-")[0]}" appears in the panel text: ${have.named}`;
+      const facts = `selector \`${SEL}\`: ${have.n} of ${MEMBER_SLUGS.size} found (slugs not printed); \`#panel-${top} .card\`: ${have.cards}; "${sub.split("-")[0]}" appears in the panel text: ${have.named}`;
       return { ok: false, why: have.card ? `the route did not land on ${sub}'s card (no "landed" mark) [${facts}]` : `${sub} has no card in #panel-${top} [${facts}]` };
     }
   }
@@ -182,7 +188,7 @@ const explainStrings = (page, wanted) => page.evaluate((wanted) => {
   }
   return out;
 }, wanted);
-const chipFacts = (page, n) => page.evaluate((n) => { const all = Array.from(document.querySelectorAll(".tn-name")); return `selector ".tn-name": ${all.length} elements, ${all.filter((b) => b.getClientRects().length).length} with a box; names: ${all.map((b) => b.textContent.trim()).filter(Boolean).slice(0, 12).join(", ") || "none"} (wanted ${n})`; }, n).catch(() => "no DOM facts");
+const chipFacts = (page, n) => page.evaluate((n) => { const all = Array.from(document.querySelectorAll(".tn-name")); return `selector ".tn-name": ${all.length} elements, ${all.filter((b) => b.getClientRects().length).length} with a box; ${all.filter((b) => b.textContent.trim()).length} with text (counts only, no member names) (wanted ${n})`; }, n).catch(() => "no DOM facts");
 
 // The copy that counts the party ("The five", "Open the five") is re-rendered by the board a moment after the chips, and in some engines later than in others. Before the first
 // party-size judgement of a scene, poll the DOM (visible text only, no API request) until no visible string states the wrong count; bounded. If a wait ever runs out the copy is
@@ -278,7 +284,7 @@ async function probeOne(browser, engine, vp) {
   // for a later copy-fix PR: reported as information, never a failure.
   const wc = wrongCountCopy(vt, N);
   for (const w of wc) fail(tag, `copy states the wrong party size: ${w}`);
-  if (wc.length) for (const line of (await explainStrings(page, wc.map((w) => (w.match(/^"(.*)" \(the party has/) || [])[1] || w)).catch(() => [])).slice(0, 8)) console.log(`DIAG ${tag}: ${line}`);
+  if (wc.length) for (const line of (await explainStrings(page, wc.map((w) => (w.match(/^"(.*)" \(the party has/) || [])[1] || w)).catch(() => [])).slice(0, 8)) console.log(`DIAG ${tag}: ${scrub(line)}`);
   if (!wc.length) pass(`${tag} no visible copy states a wrong party size (${vt.length} visible strings, party ${N})`);
   const seenVisible = new Set(wc);
   for (const h of wrongCountCopy(uniq(everything.map((p) => p[1])), N)) if (!seenVisible.has(h)) hiddenCopy.add(h);
@@ -309,11 +315,11 @@ for (const engine of ENGINES) {
   finally { await browser.close().catch(() => {}); }
   notes.push(ranAny ? `${engine} ran` : `${engine} not run (budget spent)`);
 }
-if (hiddenCopy.size) console.log(`INFO hidden copy that still says the wrong party size (not visible to a visitor, NOT a failure; for a later copy-fix PR), ${hiddenCopy.size}:\n${[...hiddenCopy].slice(0, 40).map((h) => `  - ${h}`).join("\n")}`);
-if (advisories.size) console.log(`INFO exempted report-only CSP advisories (they flag real eval use in site code, ticket B61), ${advisories.size}:\n${[...advisories].slice(0, 20).map((h) => `  - ${h}`).join("\n")}`);
+if (hiddenCopy.size) console.log(`INFO hidden copy that still says the wrong party size (not visible to a visitor, NOT a failure; for a later copy-fix PR), ${hiddenCopy.size}:\n${[...hiddenCopy].slice(0, 40).map((h) => `  - ${scrub(h)}`).join("\n")}`);
+if (advisories.size) console.log(`INFO exempted report-only CSP advisories (they flag real eval use in site code, ticket B61), ${advisories.size}:\n${[...advisories].slice(0, 20).map((h) => `  - ${scrub(h)}`).join("\n")}`);
 if (budget.exceeded) fail("budget", `more than ${BUDGET} Worker requests were needed; the rest were refused`);
 console.log(`\nWorker requests this run: ${budget.used} of ${BUDGET}. Engines: ${notes.join(", ")}. Party: ${N}. ${problems.length ? `${problems.length} problem(s)` : "all checks passed"}.`);
 if (process.env.GITHUB_STEP_SUMMARY) {
-  try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Production probe (${SITE})\n\nWorker requests this run: **${budget.used} of ${BUDGET}**. Engines: ${notes.join(", ")}. Party: ${N}.\n\n${problems.length ? problems.map((p) => `- ${p}`).join("\n") : "All checks passed."}\n${hiddenCopy.size ? `\nHidden copy that still says the wrong party size (information, not a failure; for a later copy-fix PR):\n${[...hiddenCopy].slice(0, 40).map((h) => `- ${h}`).join("\n")}\n` : ""}${advisories.size ? `\nExempted report-only CSP advisories (real eval use in site code, ticket B61):\n${[...advisories].slice(0, 20).map((h) => `- ${h}`).join("\n")}\n` : ""}`); } catch (e) {}
+  try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Production probe (${SITE})\n\nWorker requests this run: **${budget.used} of ${BUDGET}**. Engines: ${notes.join(", ")}. Party: ${N}.\n\n${problems.length ? problems.map((p) => `- ${p}`).join("\n") : "All checks passed."}\n${hiddenCopy.size ? `\nHidden copy that still says the wrong party size (information, not a failure; for a later copy-fix PR):\n${[...hiddenCopy].slice(0, 40).map((h) => `- ${scrub(h)}`).join("\n")}\n` : ""}${advisories.size ? `\nExempted report-only CSP advisories (real eval use in site code, ticket B61):\n${[...advisories].slice(0, 20).map((h) => `- ${scrub(h)}`).join("\n")}\n` : ""}`); } catch (e) {}
 }
 process.exit(problems.length ? 1 : 0);

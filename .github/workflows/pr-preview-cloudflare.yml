@@ -1,6 +1,6 @@
 name: PR Ephemeral Preview Environment (Cloudflare Free Tier)
 
-# The preview exists only while the PR carries the label `ci-full` (GitHub minutes are metered, docs/runbooks/ci-minutes.md):
+# The preview exists only while the PR carries the label `ci-full` (the full suite takes runner time and a preview slot, docs/runbooks/ci-minutes.md):
 #   opened / synchronize / reopened / labeled ci-full, with the label present -> prep, then deploy (spin up or refresh the preview)
 #   closed, or unlabeled ci-full                                           -> teardown (one job; exits early when no preview D1 exists), frees a D1 slot
 # A PR without the label costs nothing here: every job is skipped. Label events other than ci-full skip every job and never cancel a running spin-up.
@@ -40,11 +40,15 @@ jobs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
     steps:
       - name: Enforce the fork PR policy
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
-          IS_FORK="${{ github.event.pull_request.head.repo.full_name != github.repository }}"
-          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
-          echo "Head repository: ${{ github.event.pull_request.head.repo.full_name }}"
-          echo "Base repository: ${{ github.repository }}"
+          IS_FORK="false"
+          [ "$HEAD_REPO" = "$BASE_REPO" ] || IS_FORK="true"
+          echo "Head repository: $HEAD_REPO"
+          echo "Base repository: $BASE_REPO"
           echo "Base branch: $BASE_BRANCH"
           echo "Is fork PR: $IS_FORK"
           if [ "$IS_FORK" = "true" ] && [ "$BASE_BRANCH" = "master" ]; then
@@ -67,9 +71,10 @@ jobs:
         if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -eu -o pipefail
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
           cat "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
@@ -88,7 +93,7 @@ jobs:
             else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, body });
 
   # Preview secrets are optional. This job only reads whether both exist and never uses them. If either is missing the preview jobs are skipped with a notice:
-  # no failure. Previews use CLOUDFLARE_API_TOKEN by decision of the Cloudflare account owner (no second token); the preview admin token never falls back to a production secret.
+  # no failure. Previews use the preview-scoped CLOUDFLARE_PREVIEW_API_TOKEN, never the production CLOUDFLARE_API_TOKEN; the preview admin token never falls back to a production secret.
   # See docs/runbooks/ci-secrets.md.
   preview-guard:
     name: Check preview secrets
@@ -101,15 +106,15 @@ jobs:
     outputs:
       enabled: ${{ steps.check.outputs.enabled }}
     env:
-      PREVIEW_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PREVIEW_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
       PREVIEW_ADMIN_TOKEN: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
       PREVIEW_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Check CLOUDFLARE_API_TOKEN, BOARD_PREVIEW_ADMIN_TOKEN and CLOUDFLARE_ACCOUNT_ID
+      - name: Check CLOUDFLARE_PREVIEW_API_TOKEN, BOARD_PREVIEW_ADMIN_TOKEN and CLOUDFLARE_ACCOUNT_ID
         id: check
         run: |
           MISSING=""
-          [ -n "$PREVIEW_API_TOKEN" ] || MISSING="$MISSING CLOUDFLARE_API_TOKEN"
+          [ -n "$PREVIEW_API_TOKEN" ] || MISSING="$MISSING CLOUDFLARE_PREVIEW_API_TOKEN"
           [ -n "$PREVIEW_ADMIN_TOKEN" ] || MISSING="$MISSING BOARD_PREVIEW_ADMIN_TOKEN"
           [ -n "$PREVIEW_ACCOUNT_ID" ] || MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
           if [ -n "$MISSING" ]; then
@@ -127,7 +132,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository && needs.prep.outputs.docs_only != 'true' && needs.preview-guard.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       WORKER_NAME: leeroy-brain-pr-${{ github.event.pull_request.number }}
@@ -159,7 +164,7 @@ jobs:
           CLEAN_ACC=$(echo "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\r\n ' | sed -e 's/^["\x27]//' -e 's/["\x27]$//')
 
           if [ -z "$CLEAN_TOKEN" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN is empty or missing (previews share the production Cloudflare token by decision of the account owner; docs/runbooks/ci-secrets.md)."
+            echo "::error::CLOUDFLARE_PREVIEW_API_TOKEN is empty or missing (previews use the preview-scoped token, a repository secret of that name; docs/runbooks/ci-secrets.md)."
             exit 1
           fi
 
@@ -170,10 +175,10 @@ jobs:
 
           if [ "$TOKEN_STATUS" != "active" ]; then
             echo "::error::Cloudflare API Token validation failed. Status: $TOKEN_STATUS"
-            echo "Raw response from Cloudflare: $VERIFY_RES"
+            echo "Cloudflare error codes: $(node -e 'try { const j = JSON.parse(process.argv[1]); console.log((j.errors || []).map(e => e.code).join(",") || "none"); } catch(e) { console.log("unparseable"); }' "$VERIFY_RES")"
             echo ""
             echo "Action Required:"
-            echo "1. Verify CLOUDFLARE_API_TOKEN is a valid API Token (not a Global API Key)."
+            echo "1. Verify CLOUDFLARE_PREVIEW_API_TOKEN is a valid API Token (not a Global API Key)."
             echo "2. Check that the token is Active in Cloudflare Dashboard -> My Profile -> API Tokens."
             exit 1
           fi
@@ -189,11 +194,11 @@ jobs:
               const target = process.env.TARGET_ID;
               const match = accs.find(a => a.id === target);
               if (match) {
-                console.log("MATCH:" + match.id + ":" + match.name);
+                console.log("MATCH:" + match.id);
               } else if (accs.length === 1) {
-                console.log("RESOLVED_SINGLE:" + accs[0].id + ":" + accs[0].name);
+                console.log("RESOLVED_SINGLE:" + accs[0].id);
               } else if (accs.length > 1) {
-                console.log("MULTIPLE:" + accs.map(a => `${a.name} (${a.id})`).join(", "));
+                console.log("MULTIPLE:" + accs.length);
               } else {
                 console.log("NONE");
               }
@@ -205,16 +210,16 @@ jobs:
           TARGET_ACCOUNT_ID="$CLEAN_ACC"
           if [[ "$ACC_INFO" == MATCH:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "✓ Account ID matches token: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "✓ Account ID matches the token (account name and id are not printed)."
           elif [[ "$ACC_INFO" == RESOLVED_SINGLE:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "::notice::Auto-resolved Cloudflare Account ID: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "::notice::Auto-resolved the Cloudflare account from the token (account name and id are not printed)."
             TARGET_ACCOUNT_ID="$ACC_ID"
           elif [[ "$ACC_INFO" == MULTIPLE:* ]]; then
             echo "::error::Provided Account ID '$CLEAN_ACC' does not match any accounts this token can access."
-            echo "Available accounts for this token: ${ACC_INFO#MULTIPLE:}"
+            echo "The token can access more than one account; names and ids are not printed. Set CLOUDFLARE_ACCOUNT_ID to the intended one."
             exit 1
           else
             echo "::warning::Could not query /accounts via token. Proceeding with provided Account ID: $CLEAN_ACC"
@@ -223,24 +228,32 @@ jobs:
           echo "CLOUDFLARE_API_TOKEN=$CLEAN_TOKEN" >> "$GITHUB_ENV"
           echo "CLOUDFLARE_ACCOUNT_ID=$TARGET_ACCOUNT_ID" >> "$GITHUB_ENV"
 
-          # 3. Test D1 permissions specifically
-          D1_CHECK=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$TARGET_ACCOUNT_ID/d1/database" \
-            -H "Authorization: Bearer $CLEAN_TOKEN")
-          D1_SUCCESS=$(node -e 'try { const j = JSON.parse(process.argv[1]); console.log(j.success ? "true" : "false"); } catch(e) { console.log("false"); }' "$D1_CHECK")
+          # 3. Probe each permission the preview deploy needs; report which one is missing by name only (no token, account name or response body is printed)
+          MISSING_PERMS=""
+          probe_permission() {
+            PERM_LABEL="$1"; PERM_PATH="$2"
+            PERM_RES=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$TARGET_ACCOUNT_ID/$PERM_PATH"               -H "Authorization: Bearer $CLEAN_TOKEN")
+            PERM_OK=$(node -e 'try { const j = JSON.parse(process.argv[1]); console.log(j.success ? "true" : "false"); } catch(e) { console.log("false"); }' "$PERM_RES")
+            if [ "$PERM_OK" = "true" ]; then
+              echo "✓ $PERM_LABEL permission verified."
+            else
+              echo "::warning::Preview token cannot read: $PERM_LABEL"
+              MISSING_PERMS="$MISSING_PERMS [$PERM_LABEL]"
+            fi
+          }
+          probe_permission "Account > D1 > Edit" "d1/database"
+          probe_permission "Account > Workers Scripts > Edit" "workers/scripts"
+          probe_permission "Account > Cloudflare Pages > Edit" "pages/projects"
 
-          if [ "$D1_SUCCESS" != "true" ]; then
-            echo "::error::Token lacks D1 permissions for account '$TARGET_ACCOUNT_ID'."
-            echo "Cloudflare response: $D1_CHECK"
+          if [ -n "$MISSING_PERMS" ]; then
+            echo "::error::CLOUDFLARE_PREVIEW_API_TOKEN is missing permissions:$MISSING_PERMS (secret named CLOUDFLARE_PREVIEW_API_TOKEN; account and token values are not printed)."
             echo ""
-            echo "Action Required to Fix (Authentication error 10000 on D1):"
-            echo "In Cloudflare Dashboard -> My Profile (top-right avatar) -> API Tokens:"
-            echo "1. Edit the token used for CLOUDFLARE_API_TOKEN."
-            echo "2. Under 'Permissions', click '+ Add more' and add: 'Account' -> 'D1' -> 'Edit'."
-            echo "3. Also ensure 'Account' -> 'Cloudflare Pages' -> 'Edit' is present."
-            echo "4. Save token and re-run workflow."
+            echo "Action Required to Fix (the account owner does this in Cloudflare Dashboard -> My Profile -> API Tokens):"
+            echo "1. Edit the token stored as CLOUDFLARE_PREVIEW_API_TOKEN."
+            echo "2. Under 'Permissions', add each missing permission listed above (Edit level)."
+            echo "3. Save the token and re-run the workflow."
             exit 1
           fi
-          echo "✓ Cloudflare D1 permissions verified."
 
       - name: Provision Ephemeral D1 Database & Configure PR `wrangler.toml`
         id: d1
@@ -389,6 +402,8 @@ jobs:
 
       - name: Stage Static Site (Wired to PR Worker) & Deploy to Cloudflare Pages Preview
         id: pages
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.worker_url }}
         run: |
           set -e
           # The bundle is staged by tools/pages-bundle.mjs (shared by the production deploy and the PR preview). It leaves out the member data files
@@ -402,7 +417,7 @@ jobs:
             const p = ".cloudflare-dist/js/brain.js";
             const s = fs.readFileSync(p, "utf8");
             fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, `const WORKER = "${process.argv[1]}";`), "utf8");
-          ' "${{ steps.worker.outputs.worker_url }}"
+          ' "$WORKER_URL"
 
           cd infrastructure
           npx wrangler pages project create "$PAGES_PROJECT_NAME" --production-branch=master >/dev/null 2>&1 || true
@@ -476,7 +491,7 @@ jobs:
       issues: write
       actions: write
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       WORKER_NAME: leeroy-brain-pr-${{ github.event.pull_request.number }}
@@ -495,7 +510,7 @@ jobs:
           if [ -z "$TOKEN" ] || [ -z "$ACC" ]; then
             # No preview token (or account id): no preview could have been created by this workflow, and the production token is never used here. Skip, do not fail.
             ANSWER=no
-            echo "::notice title=Teardown skipped::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so there is no preview to tear down. See docs/runbooks/ci-secrets.md."
+            echo "::notice title=Teardown skipped::CLOUDFLARE_PREVIEW_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so there is no preview to tear down. See docs/runbooks/ci-secrets.md."
           else
             RES=$(curl -sS --max-time 30 "https://api.cloudflare.com/client/v4/accounts/$ACC/d1/database?name=$D1_DATABASE_NAME&per_page=100" -H "Authorization: Bearer $TOKEN" || true)
             ANSWER=$(node -e '
