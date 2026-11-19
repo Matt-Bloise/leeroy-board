@@ -360,6 +360,23 @@ test("traits: the CLI refuses an output path in the repo with a traits file, a m
   assert.equal(JSON.parse(readFileSync(join(d, "ok.jsonl"), "utf8").split("\n")[0]).traits.sha256, sha256(readFileSync(tp)));
   rmSync(d, { recursive: true, force: true });
 });
+test("traits: with no trait flag the CLI reads no file outside the tables dir and generates no trait kinds", async () => {
+  const d = fixtureDir();
+  const log = join(d, "reads.log");
+  const hook = join(d, "hook.cjs");
+  writeFileSync(hook, `const fs=require("fs");const L=${JSON.stringify(log)};const rec=(p)=>{try{fs.appendFileSync(L,String(p)+String.fromCharCode(10))}catch{}};for(const n of ["readFileSync","openSync","existsSync","statSync"]){const o=fs[n];fs[n]=function(p,...r){if(typeof p==="string"&&p!==L)rec(p);return o.call(this,p,...r)}}`);
+  const out = join(d, "o.jsonl");
+  const p = spawn(process.execPath, ["--require", hook, TOOLS("truth-gen.mjs"), "--tables", d, "--out", out], { stdio: ["ignore", "pipe", "pipe"] });
+  const code = await new Promise((r) => p.on("close", r));
+  assert.equal(code, 0);
+  const seen = readFileSync(log, "utf8").split(String.fromCharCode(10)).filter(Boolean).map((x) => x.split(String.fromCharCode(92)).join("/").toLowerCase());
+  assert.ok(seen.length > 0 && seen.some((x) => x.endsWith("manifest.json")), "the hook saw the tables reads");
+  assert.ok(!seen.some((x) => /traits|leeroy-ops|private/.test(x)), "a trait or private path was touched");
+  const head = JSON.parse(readFileSync(out, "utf8").split(String.fromCharCode(10))[0]);
+  assert.equal("traits" in head, false);
+  assert.ok(!readFileSync(out, "utf8").includes('"kind":"trait_'));
+  rmSync(d, { recursive: true, force: true });
+});
 test("traits score: rank phrasing", () => {
   const R = { value: 3, unit: "ranks" };
   for (const t of ["It has 3 ranks.", "3 rank", "Three ranks.", "You can put up to three ranks into it", "Max rank 3", "maximum ranks of 3", "Ranks: 3", "It has 3."]) assert.equal(exact_match(t, R), true, t);

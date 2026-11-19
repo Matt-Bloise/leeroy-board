@@ -1,5 +1,5 @@
 // Builds a deterministic (seeded) question set from the Forever client's exported data tables. docs/runbooks/replay-harness.md.
-//   node tools/replay/truth-gen.mjs --tables <dir> [--out <file.jsonl>] [--seed 1] [--per-kind 40] [--manifest-sha256 <hex>] [--traits <traits.json> | --no-traits]
+//   node tools/replay/truth-gen.mjs --tables <dir> [--out <file.jsonl>] [--seed 1] [--per-kind 40] [--manifest-sha256 <hex>] [--traits <traits.json>]
 // --tables: directory of CSV exports (header row) plus MANIFEST.json {build, files:{name:{sha256,bytes,rows}}}. Every table used is checked against the manifest first; a mismatch refuses the run.
 // --out: default <os tmp>/leeroy-replay/truth-<build>-s<seed>.jsonl. Writing inside this repo checkout is refused: neither the tables nor a generated set may ever enter the repo.
 // Output line 1 is a header {type:"header", ...build, seed, per-kind, table hashes, columns chosen}; then one record per question:
@@ -32,7 +32,6 @@ export const KINDS = Object.freeze(["spell_level", "item_level_req", "spell_cool
 export const TRAIT_KINDS = Object.freeze(["trait_max_ranks", "trait_points_required", "trait_prereq"]);
 // treeId -> class. Source: the README beside traits.json. Trees not listed there are never used.
 export const TRAIT_CLASSES = Object.freeze({ 1112: "Mage", 1100: "Paladin", 1114: "Priest", 1116: "Warlock", 1083: "Druid", 1111: "Rogue", 1117: "Warrior", 1091: "Hunter" });
-export const DEFAULT_TRAITS = "C:\\projects\\leeroy-ops\\notes\\private\\truth\\traits.json";
 const NAME_OK =(n) => typeof n === "string" && n.length >= 3 && n.length <= 60 && /^[\p{L}\p{N} '\-:,.!]+$/u.test(n) && n.trim() === n;
 const numCell = (v) => (v !== "" && v !== undefined && Number.isFinite(Number(v)) ? Number(v) : null);
 const key = (n) => n.toLowerCase();
@@ -289,7 +288,7 @@ async function main() {
   if (!Number.isInteger(seed) || !Number.isInteger(perKind) || perKind < 1) die("--seed and --per-kind must be integers (per-kind >= 1)");
   if (a.traits && a["no-traits"]) die("--traits and --no-traits together");
   if (a.traits && !existsSync(a.traits)) die("refusing: --traits file not found");
-  const traitsPath = a["no-traits"] ? null : a.traits || (existsSync(DEFAULT_TRAITS) ? DEFAULT_TRAITS : null);
+  const traitsPath = a["no-traits"] ? null : a.traits || null; // no flag: no trait kinds, and no file outside --tables is read
   let res;
   try { res = generate({ dir: a.tables, seed, perKind, manifestSha256: a["manifest-sha256"], traitsPath }); } catch (e) { die(`refusing: ${e.message}`); }
   const out = a.out || path.join(DEFAULT_OUT_DIR, `truth-${res.header.build || "unknown"}-s${seed}.jsonl`);
