@@ -18,7 +18,7 @@ Fixed list: `pc-bot`, `pc-session`. A source is expected only after it has sent 
 
 ## The stale threshold
 
-`DEADMAN_STALE_SECONDS`, default `300`, clamped to 120..3600; unset or not a number reads as 300. With a heartbeat every minute, 300 s is five missed beats. Do not go below 120: the Worker records at most one heartbeat per source per 20 s and the cron runs once a minute.
+`DEADMAN_STALE_SECONDS` (an optional override, deliberately NOT declared in wrangler.toml: the Workers Free plan allows 64 variables in all; add it only if the budget in `tests/unit/var-budget.test.mjs` has room), default `300`, clamped to 120..3600; unset or not a number reads as 300. With a heartbeat every minute, 300 s is five missed beats. Do not go below 120: the Worker records at most one heartbeat per source per 20 s and the cron runs once a minute.
 
 ## The request
 

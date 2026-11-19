@@ -138,15 +138,15 @@ Limits: library-grounded research asks still carry the old "Inform, never instru
 - **On:** a roster member's answered ask is filed in `group_log` (one INSERT); the member's research prompt gets one fenced `GROUP_MEMORY` block (wiki pages about the asker and the people named, plus the last 12 rows of the channel, at most about 3,500 characters) when `RESEARCH_NAMES` is `real`; the 6-hour cron runs the wiki refresher (one Haiku-class call, at most 60 rows, when 10 new rows or 24 hours have gathered).
 - **Token cap and cost.** The monthly cap is 5,000,000 tokens (`RESEARCH_CLAUDE_MONTHLY_TOKENS`). The refresher reserves and settles in the same `claude_tokens_YYYYMM` counter as compose, and ALSO in its own counter `claude_tokens_group_YYYYMM` against a sub-cap of 10% of the monthly cap (500,000 tokens), so asks always have room. At most 2 runs a day (a per-day counter in the `group_wiki_state` row), one lock row so two runs never both call, and after a failure no second try until the next UTC day. Worst case for one run: at most 6 pages of 2,000 characters plus 60 rows of 400 characters plus the instructions, roughly 40,000 characters or about 13,000 tokens at the reservation's 3 characters per token, plus the 5,000-token reply allowance: about 18,000 tokens reserved, settled to the real usage. Two runs a day is about 36,000 tokens a day and about 1.1 million a month at the worst size, so the 500,000 sub-cap is the binding bound: at most about 27 worst-size runs a month, then the refresher skips (`claude:subcap`) until the month rolls over. Prices read at source on 2026-11-15 (https://platform.claude.com/docs/en/about-claude/pricing, prompts up to 100,000 tokens): Sonnet 5.5 costs $2 per million input tokens and $10 per million output tokens; Haiku 5.5 costs $0.10 per million input tokens and $0.50 per million output tokens. Worst case if all 5,000,000 tokens of the monthly cap were Sonnet output: about $50 (all input: about $10). Haiku at most about $2.50. All of it sits inside the owner's $200 monthly credit. The model ids (`claude-sonnet-5-5`, `claude-haiku-5-5`) are still unverified with a live key. At the Haiku rates the whole 500,000-token sub-cap costs at most about $0.25 even if all of it were output.
 
-### SHADOW_ASK limits: SHADOW_ASK_HOURLY, SHADOW_ASK_DAILY, SHADOW_ASK_SUBCAP_PERCENT
+### SHADOW_ASK limits: `SHADOW_ASK_LIMITS`
 
-Three numeric `[vars]` values bound the shadow route (`shadow-ask.md`). They are not flags (no Flagship key, no on/off); a change is a `wrangler.toml` edit and a deploy.
+ONE `[vars]` value, `SHADOW_ASK_LIMITS = "hourly/daily/percent"` (for example `"60/100/5"`), bounds the shadow route (`shadow-ask.md`). It is one variable because the Workers Free plan allows only 64 variables in all (text plus secrets): the three separate vars pushed the Worker to 65 and every deploy failed; `tests/unit/var-budget.test.mjs` now fails in the PR when the budget is exceeded. Absent means the defaults 6/20/2. They are not flags (no Flagship key, no on/off); a change is a `wrangler.toml` edit and a deploy.
 
-| Var | Default | Range | Meaning |
+| Part of `SHADOW_ASK_LIMITS` | Default | Range | Meaning |
 |---|---|---|---|
-| `SHADOW_ASK_HOURLY` | `"6"` | integer 1 to 120 | accepted calls per rolling hour |
-| `SHADOW_ASK_DAILY` | `"20"` | integer 1 to 600 | accepted calls per rolling day; never below the hourly value |
-| `SHADOW_ASK_SUBCAP_PERCENT` | `"2"` | number 0.1 to 20 | the shadow's own share of `RESEARCH_CLAUDE_MONTHLY_TOKENS`, in percent |
+| part 1 (hourly) | `6` | integer 1 to 120 | accepted calls per rolling hour |
+| part 2 (daily) | `20` | integer 1 to 600 | accepted calls per rolling day; never below the hourly value |
+| part 3 (percent) | `2` | number 0.1 to 20 | the shadow's own share of `RESEARCH_CLAUDE_MONTHLY_TOKENS`, in percent |
 
 Unset, empty, non-numeric, `NaN`, `Infinity`, zero, negative or exponent-form (`1e3`) values fall back to the default, never to unlimited. A positive value outside the range is clamped to the nearest edge. The monthly cap and the always-on guards apply regardless.
 
