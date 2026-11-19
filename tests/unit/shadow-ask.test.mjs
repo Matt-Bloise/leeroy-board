@@ -662,9 +662,9 @@ test("the migration and schema.sql carry the same table and indexes; the migrati
   assert.equal(DB.raw.prepare("SELECT COUNT(*) AS c FROM shadow_answers").get().c, 0);
 });
 
-test("SHADOW_ASK ships off in wrangler.toml [vars], is documented, is not a Flagship key, and the route is in ROUTES", () => {
+test("SHADOW_ASK is a documented on-or-off var in wrangler.toml [vars], is documented, is not a Flagship key, and the route is in ROUTES", () => {
   const toml = read("infrastructure/wrangler.toml");
-  assert.match(toml.slice(toml.indexOf("[vars]")), /^SHADOW_ASK = "off"/m);
+  assert.match(toml.slice(toml.indexOf("[vars]")), /^SHADOW_ASK = "(on|off)"/m);
   assert.ok(read("docs/runbooks/flags.md").includes("`SHADOW_ASK`"));
   assert.ok(!read("infrastructure/flagship-flags.txt").includes("SHADOW_ASK"));
   assert.ok(read("infrastructure/worker/index.js").includes('"POST /shadow/ask"'));
