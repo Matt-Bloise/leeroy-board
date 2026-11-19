@@ -41,6 +41,8 @@ Stale text found: `infrastructure/README.md:62` says `GET /data/:name` has no al
 | Secret values | No | The repo does not and must not store them. Keep the originals in the owner's password manager. Whether Cloudflare can show a Worker secret back is unverified; assume not. |
 | Anything older than the Time Travel window with no export | No | Not recoverable |
 
+**Virtual tables block `wrangler d1 export`.** Since migration 0016 the database holds the FTS5 virtual table `game_facts_fts`, and the D1 docs say export is not supported for databases with virtual tables. Before a raw export: `DROP TABLE game_facts_fts;`, export, then re-run `infrastructure/migrations/0016_game_facts.sql` and `INSERT INTO game_facts_fts(game_facts_fts) VALUES('rebuild');`. `GET /api/admin/export` and Time Travel are not affected (the index is derived and skipped). See `docs/runbooks/game-facts.md`.
+
 Recommended gap fill (still not scheduled): a weekly export to private storage outside the repository, stored encrypted. `GET /api/admin/export` plus `tools/pull-export.mjs` (below) leaves out member key hashes and session tokens; a raw `wrangler d1 export` contains them.
 
 ## Restore drill (scratch database)

@@ -291,7 +291,7 @@ test("the shadow sends the SAME Anthropic request a roster member's /ask turn se
 test("nothing is posted or written anywhere: no Discord call, no webhook, no socket message, no ask_turns, group_log, answer_details or stats; only shadow_answers, the limiter and the counters", async () => {
   const DB = await freshDb();
   const snap = (tables) => Object.fromEntries(tables.map((t) => [t, JSON.stringify(DB.raw.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all())]));
-  const all = DB.raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all().map((r) => r.name);
+  const all = DB.raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'game_facts_fts%'").all().map((r) => r.name); // the FTS5 index of game_facts and its shadow tables have no rowid to order by and are not Worker data tables
   const watched = all.filter((t) => !["shadow_answers", "kv_state"].includes(t));
   const before = snap(watched);
   const statsBefore = DB.raw.prepare("SELECT json, updated_at FROM kv_state WHERE key = 'stats'").get();

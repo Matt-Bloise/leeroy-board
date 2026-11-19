@@ -36,7 +36,7 @@ export const ROW_FILTERS = Object.freeze({
   kv_state: "key NOT LIKE 'secret%' AND key NOT LIKE 'feed_cache:%'",
 });
 export const PAGE = Object.freeze({ default: 200, max: 1000 });
-const SYSTEM_TABLE = /^(sqlite_|_cf_|d1_)/;
+const SYSTEM_TABLE = /^(sqlite_|_cf_|d1_|game_facts_fts)/; // game_facts_fts and its shadow tables (_data, _idx, _docsize, _config) are the derived FTS5 index of game_facts: rebuilt by the triggers, never exported
 const IDENT = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
