@@ -51,6 +51,8 @@ export function fixtureSql() {
   out.push(`INSERT INTO ask_turns (id, by_name, question, status, created_at) VALUES ('a1', 'Tester', 'Where is the bank?', 'error', 'now');`);
   out.push(`INSERT INTO request_gauge (day, n) VALUES ('2026-11-02', 15600), ('2026-11-03', 4210);`);
   out.push(`INSERT INTO noise_ledger (day, channel, n) VALUES ('2026-11-03', 'chan-1', 2);`);
+  out.push(`INSERT INTO game_fact_loads (id, build, manifest_sha256, files_json, kind, status, counts_json, started_at, finished_at) VALUES ('load-1', '9.9.9.1', '${'a'.repeat(64)}', '{}', 'client', 'done', '{"total":2}', 'now', 'now');`);
+  out.push(`INSERT INTO game_facts (id, kind, subject, subject_norm, claim, value, unit, source_table, row_id, build, load_id, verdict, source_class, note, superseded, updated_at) VALUES ('spelllevels:1', 'spell_level', 'Zorbo Bolt', 'zorbo bolt', 'Zorbo Bolt requires level 5.', '5', 'level', 'spelllevels', '1', '9.9.9.1', 'load-1', 'holds', 'client-db2', '', 0, 'now'), ('spelllevels:2', 'spell_level', 'Quux''s Nova', 'quux s nova', 'Quux''s Nova requires level 9.', '9', 'level', 'spelllevels', '2', '9.9.9.1', 'load-1', 'holds', 'client-db2', '', 0, 'now');`);
   return out.join("\n") + "\n";
 }
 

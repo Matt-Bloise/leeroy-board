@@ -26,8 +26,8 @@ test("the drill passes on the fixtures and prints exactly the expected report", 
 
 test("it wipes and restores for real: the numbers in the report", async () => {
   const text = EXPECTED;
-  assert.match(text, /^1\. source database: 49 tables from schema\.sql, seeded with 465 fixture statements$/m);
-  assert.match(text, /^2\. export: 44 tables exported, 5 never exported \(account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens\)/m);
+  assert.match(text, /^1\. source database: 51 tables from schema\.sql, seeded with 467 fixture statements$/m);
+  assert.match(text, /^2\. export: 44 tables exported, 7 never exported \(account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens, game_fact_loads, game_facts\)/m);
   assert.match(text, /^   ok   intents {16}rows {2}450 -> {2}450 /m);
   assert.match(text, /^   ok   sessions {15}rows {4}1 -> {4}0 {3}never exported/m);
   assert.match(text, /^RESTORE DRILL PASSED: 44 tables, 464 rows, every count and checksum matches$/m);
@@ -91,7 +91,7 @@ test("the report never contains a secret fixture value, and the fixtures hold th
 test("every table of schema.sql is either in the report or named never exported (a new table cannot be forgotten)", async () => {
   const schema = readFileSync(new URL("../../infrastructure/schema.sql", import.meta.url), "utf8");
   const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
-  assert.equal(tables.length, 49);
+  assert.equal(tables.length, 51);
   for (const t of tables) assert.match(EXPECTED, new RegExp(`\\b${t}\\b`), `${t} is missing from the expected report`);
 });
 

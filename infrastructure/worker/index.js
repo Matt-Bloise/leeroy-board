@@ -27,6 +27,7 @@ import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMAND
 import { handleListen, latestTurn } from "./listener.js";
 import { handleSelftestClaude } from "./selftest.js";
 import { handleShadowAsk } from "./shadow-ask.js";
+import { handleFactsLoad } from "./game-facts.js";
 import { handleHeartbeat, handleHeartbeatStatus, runDeadmanCheck, deadmanOn } from "./deadman.js";
 import { manifestFor } from "./setup-command.js";
 import { buildAnnounceBody, lookupRosterId } from "./announce.js";
@@ -522,7 +523,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 export function projectionTag(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); }
 
 export const ROUTES = [
-  "POST /discord", "POST /listen", "POST /selftest/claude", "POST /shadow/ask", "POST /heartbeat", "POST /heartbeat/status", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
+  "POST /discord", "POST /listen", "POST /selftest/claude", "POST /shadow/ask", "POST /heartbeat", "POST /heartbeat/status", "POST /facts/load", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
@@ -570,6 +571,10 @@ const worker = {
       }
       if (req.method === "POST" && path === "/heartbeat/status") {
         return await handleHeartbeatStatus(req, env);
+      }
+      // Game-facts loader (flag GAME_FACTS_LOAD, off: 404; signed with its own derived key; posts nothing and no answer path reads it yet). See game-facts.js.
+      if (req.method === "POST" && path === "/facts/load") {
+        return await handleFactsLoad(req, env);
       }
       if (req.method === "GET" && path === "/discord/commands") {
         return jsonResp({ commands: manifestFor(env, DISCORD_SLASH_COMMANDS_MANIFEST) }, 200, cors);

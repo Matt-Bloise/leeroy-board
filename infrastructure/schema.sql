@@ -548,3 +548,39 @@ CREATE TABLE IF NOT EXISTS incidents (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_incidents_open ON incidents(source) WHERE closed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_incidents_opened ON incidents(opened_at DESC);
+
+-- game_facts: grounded game facts (flag GAME_FACTS_LOAD; migration 0016). Game data only, no friend data. Plain tables and two indexes: no virtual table, no trigger (see the migration for the write cost of each index).
+CREATE TABLE IF NOT EXISTS game_fact_loads (
+  id TEXT PRIMARY KEY,
+  build TEXT,
+  manifest_sha256 TEXT,
+  files_json TEXT,
+  kind TEXT NOT NULL CHECK (kind IN ('client', 'curated')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done', 'failed')),
+  counts_json TEXT,
+  started_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS game_facts (
+  id TEXT NOT NULL,
+  load_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  subject TEXT NOT NULL DEFAULT '',
+  subject_norm TEXT NOT NULL DEFAULT '',
+  subject_base TEXT NOT NULL DEFAULT '',
+  claim TEXT NOT NULL,
+  value TEXT NOT NULL DEFAULT '',
+  unit TEXT NOT NULL DEFAULT '',
+  source_table TEXT NOT NULL DEFAULT '',
+  row_id TEXT NOT NULL DEFAULT '',
+  build TEXT,
+  verdict TEXT NOT NULL DEFAULT 'holds' CHECK (verdict IN ('holds', 'wrong', 'unverifiable')),
+  source_class TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  superseded INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT,
+  PRIMARY KEY (id, load_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_game_facts_kind_subject ON game_facts(kind, subject_norm);
+CREATE INDEX IF NOT EXISTS idx_game_facts_kind_base ON game_facts(kind, subject_base) WHERE subject_base <> '';
