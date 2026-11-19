@@ -160,9 +160,9 @@ test("the old separate listener secret is gone from the Worker, the config, the 
 });
 
 // ---- part 2: the flag and the rules ----------------------------------------------------------------------------------------------------------------
-test("LISTENER_UNTAGGED ships off, is declared in wrangler.toml and the flags runbook, and only 'on' turns it on", () => {
+test("LISTENER_UNTAGGED ships off (absent in wrangler.toml, optional: see off-flag-absence.test.mjs), is in the flags runbook, and only 'on' turns it on", () => {
   const t = read("infrastructure/wrangler.toml");
-  assert.match(t.slice(t.indexOf("[vars]")), /^LISTENER_UNTAGGED = "off"/m);
+  assert.ok(!/^LISTENER_UNTAGGEDs*=/m.test(t.slice(t.indexOf("[vars]"))), "not declared: absent = off");
   assert.ok(read("docs/runbooks/flags.md").includes("`LISTENER_UNTAGGED`"));
   for (const v of [undefined, "", "off", "dry", "live", "true", "1", "yes", {}]) assert.equal(untaggedOn({ LISTENER_UNTAGGED: v }), false, String(v));
   assert.equal(untaggedOn({ LISTENER_UNTAGGED: " On " }), true);
@@ -601,7 +601,7 @@ test("docs: M2 sentence on answered messages in the privacy page, the retention 
   assert.ok(read("privacy/index.html").includes("treated as a question to him"));
   assert.match(read("docs/runbooks/listener.md"), /No retention purge yet \(a follow-up\)[^\n]*plain form/);
   const t = read("infrastructure/wrangler.toml");
-  assert.match(t.slice(t.indexOf("LISTENER_UNTAGGED =")).split("\n")[0], /dry: the classifier is still called[^#]*every text that is not answered is filed in group_log[^#]*personal topics included/);
+  assert.match(t.slice(t.indexOf("# LISTENER_UNTAGGED (optional")).split("\n")[0], /dry: the classifier is still called[^#]*every text that is not answered is filed in group_log[^#]*personal topics included/);
 });
 test("runbook and flag comments say personal-topic text is filed and only never answered unprompted; no document claims it is withheld", () => {
   const rb = read("docs/runbooks/listener.md");
