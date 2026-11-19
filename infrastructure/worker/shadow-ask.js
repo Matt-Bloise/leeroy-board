@@ -5,8 +5,8 @@
 // Gate, in order: flag SHADOW_ASK "on" (anything else, a PR preview or no usable bot token: 404, nothing read), then an HMAC with the SHADOW key (listener-config.js shadowKey: derived from the bot token with its own label, so
 // the listener key the PC forwarder holds cannot call this route; same headers X-Listen-Timestamp / X-Listen-Signature, 120 s window,
 // 401), body up to 4 KB (413), ASK_RESEARCH on (409), a body that carries "purpose":"shadow-ask" and only the keys below (400: a signed /api/listen event or self-test body can never start a paid compose), then the
-// replay refusal (409, the signature hash is kept for the window) and the rate limit, 6 an hour and 20 a day (429). Spend goes through the normal Claude spend guard (the monthly token cap, with its pause and alert) and
-// a sub-counter of its own capped at SHADOW_SUBCAP_FRACTION of that cap, so shadow runs can never starve the real asks.
+// replay refusal (409, the signature hash is kept for the window) and the rate limit, 6 an hour and 20 a day by default (429; Worker vars SHADOW_ASK_HOURLY and SHADOW_ASK_DAILY, see shadowLimits). Spend goes through the normal Claude spend guard (the monthly token cap, with its pause and alert) and
+// a sub-counter of its own capped at SHADOW_ASK_SUBCAP_PERCENT (default 2) percent of that cap, so shadow runs can never starve the real asks.
 // The caller is the key holder, so the response carries the answer text; it still passes the outbound protections (secrets, hex tokens, long ids) first, and what the table stores is what the caller is shown.
 import { answerWithAi, isPrPreviewEnv, resolveAiProvider, askDeadlineMs } from "./ai-models.js";
 import { monthTag } from "./research/claude.js";
@@ -25,10 +25,28 @@ export const SHADOW_PURPOSE = "shadow-ask";
 export const SHADOW_PER_HOUR = 6;
 export const SHADOW_PER_DAY = 20;
 export const SHADOW_RATE_KEY = "shadow_ask_rate";
-export const SHADOW_SUBCAP_FRACTION = 0.02; // 2% of the monthly Claude cap (100,000 tokens at the default 5,000,000): about ten full-size composes a month, and never a dent in the ask budget
+export const SHADOW_SUBCAP_PERCENT = 2;
+export const SHADOW_SUBCAP_FRACTION = SHADOW_SUBCAP_PERCENT / 100; // 2% of the monthly Claude cap (100,000 tokens at the default 5,000,000): about ten full-size composes a month, and never a dent in the ask budget
 export const shadowSubCounterKey = (now) => `claude_tokens_shadow_${monthTag(now)}`;
 export const SHADOW_LOCAL_CHARS = 1500; // the local answer kept for the comparison (the whole body is 4 KB)
 export const REPLAY_WINDOW_MS = 120 * 1000; // LISTEN_MAX_AGE_SECONDS: how long a signature stays valid, so how long its hash is kept
+// Worker vars SHADOW_ASK_HOURLY, SHADOW_ASK_DAILY, SHADOW_ASK_SUBCAP_PERCENT. The defaults are the original hard-coded limits. A value is read only if it is a plain positive decimal (a string like "40" or a number);
+// unset, empty, non-numeric, NaN, Infinity, zero, negative or "1e3"-style text gives the DEFAULT, never "unlimited". A positive value past the range is clamped to the range edge. The daily limit is never below the hourly one.
+const parsePositive = (v) => {
+  if (typeof v === "number") return Number.isFinite(v) && v > 0 ? v : null;
+  if (typeof v !== "string" || !/^\s*\d+(\.\d+)?\s*$/.test(v)) return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+const clampedInt = (v, def, lo, hi) => { const n = parsePositive(v); const i = n === null ? 0 : Math.floor(n); return i < 1 ? def : Math.min(hi, Math.max(lo, i)); };
+export function shadowLimits(env) {
+  const e = env || {};
+  const hourly = clampedInt(e.SHADOW_ASK_HOURLY, SHADOW_PER_HOUR, 1, 120);
+  const daily = Math.max(hourly, clampedInt(e.SHADOW_ASK_DAILY, SHADOW_PER_DAY, 1, 600));
+  const pct = parsePositive(e.SHADOW_ASK_SUBCAP_PERCENT);
+  const percent = pct === null ? SHADOW_SUBCAP_PERCENT : Math.min(20, Math.max(0.1, pct));
+  return { hourly, daily, percent, fraction: percent / 100 };
+}
 const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const ALLOWED_KEYS = new Set(["purpose", "question", "as", "channel", "private", "local_answer"]);
@@ -86,13 +104,14 @@ export async function handleShadowAsk(req, env, deps = {}) {
     asker = { slug: m.slug, name: m.name };
   }
 
+  const limits = shadowLimits(env);
   const nowFn = deps.now || (() => new Date());
   const nowMs = nowFn().getTime();
   let replay = false;
   let wait = 0;
   // Accepted signatures only: the SHA-256 of the lower-cased signature (never the signature) is kept in the limiter row (compare-and-set) until the moment the verifier would stop accepting it (its timestamp plus the 120 s window),
   // so a repeat is refused (409) before anything runs. A call refused for any reason (400, 429) is NOT recorded, so a flood of rejected signed requests cannot push an accepted signature out of the cache; entries are pruned
-  // by expiry only, never by count (the rate limits bound the list: at most 20 accepted calls a day, each kept for 2 minutes).
+  // by expiry only, never by count (the rate limits bound the list: at most SHADOW_ASK_DAILY accepted calls a day, 20 by default, each kept for 2 minutes).
   const sigHash = await sha256Hex(String(req.headers.get("X-Listen-Signature") || "").toLowerCase());
   const expiresAt = Number(req.headers.get("X-Listen-Timestamp")) * 1000 + REPLAY_WINDOW_MS;
   try {
@@ -102,8 +121,8 @@ export async function handleShadowAsk(req, env, deps = {}) {
       if (seen.some((e) => e.h === sigHash)) { replay = true; return { skip: true }; }
       const lastHour = hits.filter((t) => nowMs - t < HOUR_MS).sort((a, b) => a - b);
       let left = 0;
-      if (lastHour.length >= SHADOW_PER_HOUR) left = Math.ceil((lastHour[lastHour.length - SHADOW_PER_HOUR] + HOUR_MS - nowMs) / 1000);
-      if (hits.length >= SHADOW_PER_DAY) left = Math.max(left, Math.ceil(([...hits].sort((a, b) => a - b)[hits.length - SHADOW_PER_DAY] + DAY_MS - nowMs) / 1000));
+      if (lastHour.length >= limits.hourly) left = Math.ceil((lastHour[lastHour.length - limits.hourly] + HOUR_MS - nowMs) / 1000);
+      if (hits.length >= limits.daily) left = Math.max(left, Math.ceil(([...hits].sort((a, b) => a - b)[hits.length - limits.daily] + DAY_MS - nowMs) / 1000));
       if (left > 0) { wait = left; return { skip: true }; } // a limited call writes nothing
       return { doc: { seen: [...seen, { h: sigHash, x: expiresAt }], hits: [...hits, nowMs] } };
     }, { now: () => new Date(nowMs).toISOString() });
@@ -115,7 +134,7 @@ export async function handleShadowAsk(req, env, deps = {}) {
 
   const id = crypto.randomUUID();
   let rec = null;
-  const sink = { shadow: true, subSpend: { counter: shadowSubCounterKey, fraction: SHADOW_SUBCAP_FRACTION }, record: (r) => { rec = r; } };
+  const sink = { shadow: true, subSpend: { counter: shadowSubCounterKey, fraction: limits.fraction }, record: (r) => { rec = r; } };
   const t0 = Date.now();
   try {
     await answerWithAi({
