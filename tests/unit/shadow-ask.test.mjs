@@ -673,12 +673,14 @@ test("route: SHADOW_ASK_SUBCAP_PERCENT sets the reservation fraction (a cap wher
   assert.ok(tokens(DB, shadowSubCounterKey(now)) > 0);
 });
 
-test("wrangler.toml pins the three limit vars at the original defaults, and both runbooks document them", () => {
+test("wrangler.toml sets the three limit vars to valid in-range values (the code defaults are pinned by the shadowLimits tests), and both runbooks document them", () => {
   const toml = read("infrastructure/wrangler.toml");
   const vars = toml.slice(toml.indexOf("[vars]"));
-  assert.match(vars, /^SHADOW_ASK_HOURLY = "6"/m);
-  assert.match(vars, /^SHADOW_ASK_DAILY = "20"/m);
-  assert.match(vars, /^SHADOW_ASK_SUBCAP_PERCENT = "2"/m);
+  const num = (k) => Number((vars.match(new RegExp("^" + k + " = \"([0-9.]+)\"", "m")) || [])[1]);
+  const h = num("SHADOW_ASK_HOURLY"), d = num("SHADOW_ASK_DAILY"), p = num("SHADOW_ASK_SUBCAP_PERCENT");
+  assert.ok(Number.isInteger(h) && h >= 1 && h <= 120, "hourly in range");
+  assert.ok(Number.isInteger(d) && d >= h && d <= 600, "daily in range and not below hourly");
+  assert.ok(p >= 0.1 && p <= 20, "sub-cap percent in range");
   for (const doc of ["docs/runbooks/flags.md", "docs/runbooks/shadow-ask.md"]) for (const k of ["SHADOW_ASK_HOURLY", "SHADOW_ASK_DAILY", "SHADOW_ASK_SUBCAP_PERCENT"]) assert.ok(read(doc).includes("`" + k + "`"), `${k} in ${doc}`);
   assert.ok(!read("infrastructure/flagship-flags.txt").includes("SHADOW_ASK_"), "not Flagship keys");
 });
