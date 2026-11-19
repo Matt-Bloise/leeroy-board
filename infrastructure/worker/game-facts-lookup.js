@@ -36,7 +36,8 @@ export function buildMatch({ specific, generic }, mode) {
   return or(specific.length ? specific : generic);
 }
 
-const VISIBLE = "l.status = 'done' AND g.superseded = 0 AND g.verdict IN ('holds', 'wrong')";
+// Visible: the row's load is done, it is not superseded, and no NEWER done load holds the same id (the build preference is applied here, in the query, before any LIMIT: finish supersedes older rows too, this is the second guard).
+const VISIBLE = "l.status = 'done' AND g.superseded = 0 AND g.verdict IN ('holds', 'wrong') AND NOT EXISTS (SELECT 1 FROM game_facts g2 JOIN game_fact_loads l2 ON l2.id = g2.load_id WHERE g2.id = g.id AND g2.load_id <> g.load_id AND l2.status = 'done' AND (l2.finished_at > l.finished_at OR (l2.finished_at = l.finished_at AND l2.started_at > l.started_at)))";
 const COLS = "g.id AS id, g.claim AS claim, g.value AS value, g.source_table AS source_table, g.row_id AS row_id, g.build AS build, g.verdict AS verdict, g.kind AS kind, g.subject_norm AS subject_norm, l.finished_at AS finished_at";
 const JOIN = "JOIN game_fact_loads l ON l.id = g.load_id";
 
@@ -59,26 +60,13 @@ export function buildLikeSql(tokens, narrow, fetch) {
   return { sql: `SELECT ${COLS} FROM game_facts g ${JOIN} WHERE ${where} AND ${VISIBLE} ORDER BY l.finished_at DESC, g.id LIMIT ?`, binds: [...binds, fetch] };
 }
 
-const dottedGreater = (a, b) => { // build numbers, "1.60.1.70959" > "1.9"
-  const x = String(a || "").split(".").map(Number), y = String(b || "").split(".").map(Number);
-  for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d !== 0) return d > 0; }
-  return false;
-};
 const shape = (r) => ({ id: r.id, claim: r.claim, value: r.value, source_table: r.source_table, row_id: r.row_id, build: r.build });
 
-// Pure over the rows: keeps the newest build per (kind, subject) and orders by the query's own rank (the rows arrive in rank order).
+// Pure over the rows (they arrive in rank order): splits holds from wrong and applies the limit.
 export function pickRows(rows, limit) {
-  const best = new Map();
-  for (const r of rows) {
-    const k = `${r.verdict}|${r.kind}|${r.subject_norm}|${r.source_table}`;
-    const cur = best.get(k);
-    if (!cur || dottedGreater(r.build, cur.build)) best.set(k, r);
-  }
-  const keep = new Set(best.values());
-  const ordered = rows.filter((r) => keep.has(r));
   return {
-    rows: ordered.filter((r) => r.verdict === "holds").slice(0, limit).map(shape),
-    doNotSay: ordered.filter((r) => r.verdict === "wrong").slice(0, limit).map(shape),
+    rows: rows.filter((r) => r.verdict === "holds").slice(0, limit).map(shape),
+    doNotSay: rows.filter((r) => r.verdict === "wrong").slice(0, limit).map(shape),
   };
 }
 

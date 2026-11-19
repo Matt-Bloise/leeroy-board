@@ -7,7 +7,7 @@
 // NOTHING from the tables or the facts files is written anywhere but the signed request body: no output file, nothing in the repo. The tool prints counts only, never a row's text.
 // <token-file>: a file holding the Discord bot token. It is read, used to derive the FACTS-LOAD signing key (HMAC-SHA256 of the token with the label "leeroy-facts-load-v1") and never printed. Owner's machine only.
 // --base: https only (http only for localhost, 127.0.0.1 or [::1]); no credentials in the URL; only api.leeroy.party or a local host unless --allow-host names the host; redirects are refused (a redirect would replay the signed body elsewhere).
-// Resume: the load id and the number of batches sent are kept in --state (default: the OS temp folder, outside the repo). Run the same command again after a failure: it skips begin and continues. Batches are idempotent on the Worker.
+// Resume: one state file for the run (per scope: load id, batches sent, finished) is kept in --state (default: the OS temp folder, outside the repo). Run the same command again after a failure: it skips begin and continues. Batches are idempotent on the Worker.
 // The Worker needs each signed timestamp strictly newer than the last accepted one (whole seconds), so calls are at least one second apart; it allows 120 accepted calls an hour, and this tool stops after --max-calls (default 100) and says so.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -85,6 +85,7 @@ export function curatedBuild(b, loadBuild) {
 export function curatedRow(o, id, loadBuild, extra = {}) {
   let claim = clean(o.claim), value = clean(o.value);
   if (!claim) return { skip: "no_claim" };
+  const subject = cut(claim, 80).trim(); // the claim's head: every curated fact has a real subject, so no two collapse
   if (Array.from(value).length > MAX.value) {
     const joined = `${claim} (${value})`;
     if (Array.from(joined).length > MAX.claim) return { skip: "too_long" };
@@ -94,7 +95,7 @@ export function curatedRow(o, id, loadBuild, extra = {}) {
   const sc = FACT_SOURCE_CLASSES.includes(o.source_class) ? o.source_class : "none";
   const verdict = FACT_VERDICTS.includes(o.verdict) ? o.verdict : null;
   if (!verdict) return { skip: "bad_verdict" };
-  return { row: { id, kind: "curated", subject: "", claim, value, unit: "", source_table: extra.source_table || "", row_id: extra.row_id || "", build: b.build, verdict, source_class: sc, note: cut(clean(extra.note), MAX.note) }, buildFallback: b.fallback, classFallback: sc !== o.source_class };
+  return { row: { id, kind: "curated", subject, claim, value, unit: "", source_table: extra.source_table || "curated", row_id: extra.row_id || id.slice(id.indexOf(":") + 1), build: b.build, verdict, source_class: sc, note: cut(clean(extra.note), MAX.note) }, buildFallback: b.fallback, classFallback: sc !== o.source_class };
 }
 
 export function deriveCuratedRows(factsLines, clientFactsLines, loadBuild) {
@@ -112,13 +113,13 @@ export function deriveCuratedRows(factsLines, clientFactsLines, loadBuild) {
   for (const o of factsLines || []) {
     const cid = clean(o && o.cid);
     if (!/^[A-Za-z0-9_.-]{1,40}$/.test(cid)) { skip("bad_cid"); continue; }
-    take(curatedRow(o, `curated:${cid}`, loadBuild, { note: o.next_step }));
+    take(curatedRow(o, `curated:${cid}`, loadBuild, { note: o.next_step, source_table: "facts", row_id: cid }));
   }
   for (const o of clientFactsLines || []) {
     const tag = sha256(`${clean(o && o.claim)}|${clean(o && o.table)}|${clean(o && o.row_id)}`).slice(0, 12);
     const table = clean(o && o.table).toLowerCase();
     const rid = clean(o && o.row_id);
-    take(curatedRow(o, `curated:cf-${tag}`, loadBuild, { note: o.note, source_table: /^[a-z0-9_]{1,40}$/.test(table) ? table : "", row_id: /^[A-Za-z0-9_.:-]{1,40}$/.test(rid) ? rid : "" }));
+    take(curatedRow(o, `curated:cf-${tag}`, loadBuild, { note: o.note, source_table: /^[a-z0-9_]{1,40}$/.test(table) ? table : "client_facts", row_id: /^[A-Za-z0-9_.:-]{1,40}$/.test(rid) ? rid : `cf-${tag}` }));
   }
   return { rows, skipped, notes };
 }
@@ -157,7 +158,7 @@ export function buildPlan({ tables, traits = null, facts = null, clientFacts = n
     const files = {};
     if (facts) files["facts.jsonl"] = fileMeta(facts);
     if (clientFacts) files["client-facts.jsonl"] = fileMeta(clientFacts);
-    if (!Object.keys(files).length) throw new Error("no curated input: pass --facts and/or --client-facts, or --scope client");
+    if (!facts || !clientFacts) throw new Error("a curated load replaces ALL curated rows: pass both --facts and --client-facts, or --scope client");
     const c = deriveCuratedRows(facts ? readJsonl(facts) : [], clientFacts ? readJsonl(clientFacts) : [], manifest.build);
     for (const [k, n] of Object.entries(c.skipped)) skipped.curated[k] = (skipped.curated[k] || 0) + n;
     notes = c.notes;
@@ -268,24 +269,24 @@ export async function run(argv, deps = {}) {
       return { status: res.status, json: j };
     } catch { return { status: 0, json: null }; }
   };
-  const stateFor = (l) => {
-    const p = o.state ? path.resolve(o.state) : path.join(os.tmpdir(), "leeroy-facts", `state-${l.kind}-${l.build}.json`);
-    return assertOutsideRepo(p);
-  };
+  // One state file for the run, with progress per scope: {scopes: {client: {plan_sha, load_id, next, done}, curated: {...}}}. It is removed only when EVERY planned scope is finished.
+  let sp;
+  try { sp = assertOutsideRepo(o.state ? path.resolve(o.state) : path.join(os.tmpdir(), "leeroy-facts", `state-${plan.build}.json`)); } catch (e) { err(`refusing: ${e.message}`); return 2; }
+  let state = { scopes: {} };
+  try { const j = existsSync(sp) ? JSON.parse(readFileSync(sp, "utf8")) : null; if (j && j.scopes && typeof j.scopes === "object") state = j; } catch { state = { scopes: {} }; }
+  const save = () => { mkdirSync(path.dirname(sp), { recursive: true }); writeFileSync(sp, JSON.stringify(state)); };
+  const stop = (why, r) => { log(`stopped (${why}${r ? `: HTTP ${r.status}, reason ${okReason(r.json)}` : ""}); run the same command again to resume`); return 1; };
   for (const l of plan.loads) {
-    let sp;
-    try { sp = stateFor(l); } catch (e) { err(`refusing: ${e.message}`); return 2; }
     const sha = planSha(l, plan.manifest_sha256);
-    let st = null;
-    try { st = existsSync(sp) ? JSON.parse(readFileSync(sp, "utf8")) : null; } catch { st = null; }
-    if (st && (st.plan_sha !== sha || st.kind !== l.kind)) st = null; // a different plan: start over (the Worker marks the old open load failed after 30 minutes)
-    const save = () => { mkdirSync(path.dirname(sp), { recursive: true }); writeFileSync(sp, JSON.stringify(st)); };
-    const stop = (why, r) => { log(`stopped (${why}${r ? `: HTTP ${r.status}, reason ${okReason(r.json)}` : ""}); run the same command again to resume`); return 1; };
+    let st = state.scopes[l.kind];
+    if (st && st.plan_sha !== sha) st = null; // a different plan: start over (the Worker marks the old open load failed after 30 minutes)
+    if (st && st.done) { log(`${l.kind}: already finished in an earlier run`); continue; }
     if (!st) {
       if (calls >= o.maxCalls) return stop("call budget used up");
-      const r = await send({ op: "begin", build: l.build, manifest_sha256: plan.manifest_sha256, files: l.files, kind: l.kind, expected: l.rows.length });
+      const r = await send({ op: "begin", build: l.build, manifest_sha256: plan.manifest_sha256, files: l.files, kind: l.kind, kinds: l.counts });
       if (r.status !== 200 || !r.json || r.json.ok !== true || typeof r.json.load_id !== "string") return stop(`begin ${l.kind} failed`, r);
-      st = { plan_sha: sha, kind: l.kind, load_id: r.json.load_id, next: 0 };
+      st = { plan_sha: sha, load_id: r.json.load_id, next: 0, done: false };
+      state.scopes[l.kind] = st;
       save();
       log(`begin ${l.kind}: load opened`);
     } else log(`resume ${l.kind}: ${st.next} of ${l.batches.length} batches already sent`);
@@ -298,12 +299,14 @@ export async function run(argv, deps = {}) {
     }
     log(`rows ${l.kind}: ${l.batches.length} batches sent`);
     if (calls >= o.maxCalls) return stop("call budget used up");
-    const f = await send({ op: "finish", load_id: st.load_id });
+    const f = await send({ op: "finish", load_id: st.load_id }); // idempotent on the Worker: a lost response is retried by running the command again
     if (f.status !== 200 || !f.json || f.json.ok !== true) return stop(`finish ${l.kind} failed`, f);
     const c = f.json.counts || {};
     log(`finish ${l.kind}: total ${c.total}, added ${c.added}, changed ${c.changed}, unchanged ${c.unchanged}, removed ${c.removed}`);
-    try { unlinkSync(sp); } catch { /* already gone */ }
+    st.done = true;
+    save();
   }
+  if (plan.loads.every((l) => state.scopes[l.kind] && state.scopes[l.kind].done)) { try { unlinkSync(sp); } catch { /* already gone */ } }
   log(`done: ${calls} calls`);
   return 0;
 }

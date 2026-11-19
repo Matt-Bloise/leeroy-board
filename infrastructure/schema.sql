@@ -564,7 +564,7 @@ CREATE TABLE IF NOT EXISTS game_fact_loads (
 CREATE INDEX IF NOT EXISTS idx_game_fact_loads_kind ON game_fact_loads(kind, status, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS game_facts (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
   kind TEXT NOT NULL,
   subject TEXT NOT NULL DEFAULT '',
   subject_norm TEXT NOT NULL DEFAULT '',
@@ -574,12 +574,13 @@ CREATE TABLE IF NOT EXISTS game_facts (
   source_table TEXT NOT NULL DEFAULT '',
   row_id TEXT NOT NULL DEFAULT '',
   build TEXT,
-  load_id TEXT,
+  load_id TEXT NOT NULL,
   verdict TEXT NOT NULL DEFAULT 'holds' CHECK (verdict IN ('holds', 'wrong', 'unverifiable')),
   source_class TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
   superseded INTEGER NOT NULL DEFAULT 0,
-  updated_at TEXT
+  updated_at TEXT,
+  PRIMARY KEY (id, load_id)
 );
 CREATE INDEX IF NOT EXISTS idx_game_facts_kind_subject ON game_facts(kind, subject_norm);
 CREATE INDEX IF NOT EXISTS idx_game_facts_build ON game_facts(build);

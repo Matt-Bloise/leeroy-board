@@ -48,12 +48,13 @@ const BUILD = "9.9.9.1";
 const BUILD2 = "9.9.9.2";
 const SHA = "a".repeat(64);
 const FILES = { "spelllevels.csv": { sha256: SHA, bytes: 10, rows: 3 } };
-const begin = (env, { kind = "client", build = BUILD, expected = 3, opts } = {}) => call(env, { purpose: P, op: "begin", build, manifest_sha256: SHA, files: FILES, kind, expected }, opts);
+const begin = (env, { kind = "client", build = BUILD, kinds = kind === "curated" ? { curated: 3 } : { spell_level: 3 }, opts } = {}) => call(env, { purpose: P, op: "begin", build, manifest_sha256: SHA, files: FILES, kind, kinds }, opts);
+const kindsOf = (rows) => rows.reduce((m, r) => (m[r.kind] = (m[r.kind] || 0) + 1, m), {});
 const mkRow = (i, over = {}) => ({ id: `spelllevels:${i}`, kind: "spell_level", subject: `Zorbo ${["Alpha", "Beta", "Gamma", "Delta", "Epsilon"][i % 5]} Bolt${i}`, claim: `Zorbo ${["Alpha", "Beta", "Gamma", "Delta", "Epsilon"][i % 5]} Bolt${i} requires level ${i + 4}.`, value: String(i + 4), unit: "level", source_table: "spelllevels", row_id: String(i), build: BUILD, verdict: "holds", source_class: "client-db2", note: "", ...over });
 const rowsOp = (env, loadId, rows, opts) => call(env, { purpose: P, op: "rows", load_id: loadId, rows }, opts);
 const finish = (env, loadId, opts) => call(env, { purpose: P, op: "finish", load_id: loadId }, opts);
 async function loadAll(env, rows, { kind = "client", build = BUILD } = {}) {
-  const b = await begin(env, { kind, build, expected: rows.length });
+  const b = await begin(env, { kind, build, kinds: kindsOf(rows) });
   assert.equal(b.status, 200, b.text);
   const r = await rowsOp(env, b.json.load_id, rows);
   assert.equal(r.status, 200, r.text);
@@ -100,7 +101,7 @@ test("the route is on the Worker's route table and answers only POST", async () 
 
 test("signature: missing headers, a wrong signature, a stale or future timestamp, a non-integer timestamp: 401", async () => {
   const { DB, env } = await fresh();
-  const body = JSON.stringify({ purpose: P, op: "begin", build: BUILD, manifest_sha256: SHA, files: FILES, kind: "client", expected: 3 });
+  const body = JSON.stringify({ purpose: P, op: "begin", build: BUILD, manifest_sha256: SHA, files: FILES, kind: "client", kinds: { spell_level: 3 } });
   assert.equal((await call(env, null, { raw: body, headers: false })).status, 401);
   assert.equal((await call(env, null, { raw: body, sig: "0".repeat(64) })).status, 401);
   assert.equal((await call(env, null, { raw: body, ts: nowS() - 600 })).status, 401, "stale");
@@ -177,7 +178,7 @@ test("rate limit: 120 accepted calls in an hour, the 121st is 429 with Retry-Aft
 
 test("only the facts-load purpose and the listed keys are accepted: a signed listener event, self-test or heartbeat body is 400 and writes nothing", async () => {
   const { DB, env } = await fresh();
-  for (const body of [{}, { purpose: "shadow-ask", question: "x" }, { purpose: "heartbeat", source: "pc-bot" }, { purpose: P }, { purpose: P, op: "drop" }, { purpose: P, op: "begin", extra: 1, build: BUILD, manifest_sha256: SHA, files: FILES, kind: "client", expected: 3 },
+  for (const body of [{}, { purpose: "shadow-ask", question: "x" }, { purpose: "heartbeat", source: "pc-bot" }, { purpose: P }, { purpose: P, op: "drop" }, { purpose: P, op: "begin", extra: 1, build: BUILD, manifest_sha256: SHA, files: FILES, kind: "client", kinds: { spell_level: 3 } },
     { purpose: P, op: "finish", load_id: "00000000-0000-0000-0000-000000000000", rows: [] }, [], "x", { purpose: P, op: "rows", load_id: "../etc", rows: [mkRow(1)] }]) {
     const r = await call(env, body);
     assert.equal(r.status, 400, JSON.stringify(body).slice(0, 60));
@@ -191,8 +192,8 @@ test("only the facts-load purpose and the listed keys are accepted: a signed lis
 // ---- begin / rows / finish -----------------------------------------------------------------------------------------------------------------------
 test("begin validates every field; the response is fixed fields only", async () => {
   const { env } = await fresh();
-  const good = { purpose: P, op: "begin", build: BUILD, manifest_sha256: SHA, files: FILES, kind: "client", expected: 3 };
-  for (const [name, patch] of Object.entries({ build: { build: "v1.2" }, build2: { build: "1" }, buildLong: { build: "1.".repeat(20) }, sha: { manifest_sha256: "A".repeat(64) }, kind: { kind: "other" }, expected0: { expected: 0 }, expectedBig: { expected: 1e9 }, expectedStr: { expected: "3" },
+  const good = { purpose: P, op: "begin", build: BUILD, manifest_sha256: SHA, files: FILES, kind: "client", kinds: { spell_level: 3 } };
+  for (const [name, patch] of Object.entries({ build: { build: "v1.2" }, build2: { build: "1" }, buildLong: { build: "1.".repeat(20) }, sha: { manifest_sha256: "A".repeat(64) }, kind: { kind: "other" }, kinds0: { kinds: {} }, kindsBig: { kinds: { spell_level: 1e9 } }, kindsStr: { kinds: { spell_level: "3" } }, kindsUnknown: { kinds: { friend: 3 } }, kindsCurated: { kinds: { curated: 3 } }, kindsArr: { kinds: [] }, kindsZero: { kinds: { spell_level: 0 } }, kindsNeg: { kinds: { spell_level: -1 } }, noKinds: { kinds: undefined },
     files: { files: {} }, filesArr: { files: [] }, fileName: { files: { "../x": FILES["spelllevels.csv"] } }, fileKey: { files: { a: { sha256: SHA, bytes: 1, rows: 1, extra: 1 } } }, fileSha: { files: { a: { sha256: "zz", bytes: 1, rows: 1 } } }, fileBytes: { files: { a: { sha256: SHA, bytes: -1, rows: 1 } } } })) {
     const r = await call(env, { ...good, ...patch });
     assert.equal(r.status, 400, name);
@@ -222,7 +223,7 @@ test("begin conflict: a second begin of the same kind while one is open is 409; 
 
 test("rows: a good batch is stored, counted and searchable; the response has fixed fields only", async () => {
   const { DB, env } = await fresh();
-  const b = await begin(env, { expected: 3 });
+  const b = await begin(env, { kinds: { spell_level: 3 } });
   const r = await rowsOp(env, b.json.load_id, nGood(3));
   assert.equal(r.status, 200);
   assert.deepEqual(Object.keys(r.json).sort(), ["accepted", "load_id", "ok", "total"]);
@@ -237,7 +238,7 @@ test("rows: a good batch is stored, counted and searchable; the response has fix
 
 test("strict validation: ONE bad row refuses the WHOLE batch (400 invalid_row), nothing is written, and the timestamp is not consumed", async () => {
   const { DB, env } = await fresh();
-  const b = await begin(env, { expected: 5 });
+  const b = await begin(env, { kinds: { spell_level: 5 } });
   const long = (n) => "x".repeat(n);
   const LOAD_DEPENDENT = new Set(["curatedKindOnClient", "buildOther", "build2"]);
   const bad = {
@@ -269,7 +270,7 @@ test("strict validation: ONE bad row refuses the WHOLE batch (400 invalid_row), 
 test("validateRow accepts every vocabulary value and the edge lengths", () => {
   for (const kind of FACT_KINDS.filter((k) => k !== "curated")) assert.ok(validateRow(mkRow(1, { kind }), "client").row, kind);
   assert.ok(validateRow(mkRow(1, { subject: "s".repeat(120), claim: "c".repeat(400), value: "v".repeat(80), note: "n".repeat(300), id: `a_b:${"1".repeat(40)}` }), "client").row);
-  assert.ok(validateRow({ ...mkRow(1), id: "curated:C003", kind: "curated", subject: "", source_table: "", row_id: "" }, "curated").row);
+  assert.ok(validateRow({ ...mkRow(1), id: "curated:C003", kind: "curated", subject: "Curated", source_table: "", row_id: "" }, "curated").row);
   assert.equal(validateRow(mkRow(1, { kind: "curated" }), "client").error, "row_kind");
   assert.equal(normSubject("  Zorbo's  Bolt!! "), "zorbo s bolt");
   assert.equal(normSubject("Caf\u00e9-\u00dcnit"), "cafe unit");
@@ -279,17 +280,17 @@ test("validateRow accepts every vocabulary value and the edge lengths", () => {
 
 test("a client load carries one build; a curated load takes rows of their own builds", async () => {
   const { env } = await fresh();
-  const b = await begin(env, { expected: 2 });
+  const b = await begin(env, { kinds: { spell_level: 2 } });
   assert.equal((await rowsOp(env, b.json.load_id, [mkRow(1, { build: BUILD2 })])).status, 400);
-  const c = await begin(env, { kind: "curated", expected: 2 });
-  const cur = (n, build) => ({ id: `curated:C${n}`, kind: "curated", subject: "", claim: `Curated claim number ${n}.`, value: "", unit: "", source_table: "", row_id: "", build, verdict: "holds", source_class: "wiki", note: "" });
+  const c = await begin(env, { kind: "curated", kinds: { curated: 2 } });
+  const cur = (n, build) => ({ id: `curated:C${n}`, kind: "curated", subject: `Curated subject ${n}`, claim: `Curated claim number ${n}.`, value: "", unit: "", source_table: "", row_id: "", build, verdict: "holds", source_class: "wiki", note: "" });
   assert.equal((await rowsOp(env, c.json.load_id, [cur(1, "1.2.3"), cur(2, "2026.11.19")])).status, 200);
   assert.equal((await rowsOp(env, c.json.load_id, [mkRow(1)])).status, 400, "a client row cannot enter a curated load");
 });
 
 test("upsert is idempotent: the same batch twice leaves one row per id, the counts do not double, and nothing is renumbered in the index", async () => {
   const { DB, env } = await fresh();
-  const b = await begin(env, { expected: 4 });
+  const b = await begin(env, { kinds: { spell_level: 4 } });
   const rows = nGood(4);
   const first = await rowsOp(env, b.json.load_id, rows);
   const rid = one(DB, "SELECT rowid AS r FROM game_facts WHERE id = 'spelllevels:2'").r;
@@ -319,7 +320,7 @@ test("FTS stays in sync through an update of subject and claim (the external-con
 
 test("finish: refused while the loaded rows are not the expected count (the load stays open); then done, with counts", async () => {
   const { DB, env } = await fresh();
-  const b = await begin(env, { expected: 5 });
+  const b = await begin(env, { kinds: { spell_level: 5 } });
   await rowsOp(env, b.json.load_id, nGood(3));
   const early = await finish(env, b.json.load_id);
   assert.equal(early.status, 409);
@@ -331,7 +332,9 @@ test("finish: refused while the loaded rows are not the expected count (the load
   assert.deepEqual(f.json.counts, { total: 5, added: 5, changed: 0, unchanged: 0, removed: 0 });
   assert.deepEqual(Object.keys(f.json).sort(), ["accepted", "counts", "load_id", "ok"]);
   assert.equal(one(DB, "SELECT status FROM game_fact_loads WHERE id = ?", b.json.load_id).status, "done");
-  assert.equal((await finish(env, b.json.load_id)).status, 409, "a closed load cannot finish twice");
+  const again = await finish(env, b.json.load_id);
+  assert.equal(again.status, 200, "finish on a done load is idempotent: a lost response can be retried");
+  assert.deepEqual(again.json, f.json);
   assert.equal((await rowsOp(env, b.json.load_id, [mkRow(9)])).status, 409, "or take more rows");
   assert.equal((await finish(env, "11111111-1111-1111-1111-111111111111")).status, 404);
 });
@@ -343,21 +346,23 @@ test("build change: a new load diffs against the old (added, changed value, remo
   const second = [mkRow(1, { build: BUILD2 }), mkRow(2, { build: BUILD2, value: "99", claim: "Changed claim for two." }), mkRow(4, { build: BUILD2 })]; // 1 same, 2 changed, 3 gone, 4 new
   const b = await loadAll(env, second, { build: BUILD2 });
   assert.deepEqual(b.finish.counts, { total: 3, added: 1, changed: 1, unchanged: 1, removed: 1 });
-  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts").c, 4, "rows are never deleted");
-  assert.equal(one(DB, "SELECT superseded FROM game_facts WHERE id = 'spelllevels:3'").superseded, 1);
-  for (const id of [1, 2, 4]) assert.equal(one(DB, "SELECT superseded FROM game_facts WHERE id = ?", `spelllevels:${id}`).superseded, 0, String(id));
-  assert.equal(one(DB, "SELECT build FROM game_facts WHERE id = 'spelllevels:1'").build, BUILD2);
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts").c, 6, "rows are never deleted: each load keeps its own row per id");
+  const live = (id) => all(DB, "SELECT load_id, superseded, build FROM game_facts WHERE id = ? ORDER BY rowid", `spelllevels:${id}`);
+  assert.deepEqual(live(3).map((r) => r.superseded), [1], "gone from the new build: retired");
+  for (const id of [1, 2]) assert.deepEqual(live(id).map((r) => [r.load_id, r.superseded]), [[a.id, 1], [b.id, 0]], String(id));
+  assert.deepEqual(live(4).map((r) => [r.load_id, r.superseded]), [[b.id, 0]]);
+  assert.equal(live(1)[1].build, BUILD2);
   const meta = JSON.parse(one(DB, "SELECT counts_json FROM game_fact_loads WHERE id = ?", b.id).counts_json);
   assert.equal(meta.prev_load_id, a.id); assert.equal(meta.prev_build, BUILD);
   // a later load that brings id 3 back revives it
   const c = await loadAll(env, [mkRow(3, { build: "9.9.9.3" })], { build: "9.9.9.3" });
   assert.equal(c.finish.counts.removed, 3);
-  assert.equal(one(DB, "SELECT superseded FROM game_facts WHERE id = 'spelllevels:3'").superseded, 0);
+  assert.deepEqual(all(DB, "SELECT load_id FROM game_facts WHERE id = 'spelllevels:3' AND superseded = 0").map((r) => r.load_id), [c.id]);
 });
 
 test("a curated load only supersedes curated rows, and a client load never touches them", async () => {
   const { DB, env } = await fresh();
-  const cur = (n) => ({ id: `curated:C${n}`, kind: "curated", subject: "", claim: `Curated claim ${n}.`, value: "", unit: "", source_table: "", row_id: "", build: "2026.11.19", verdict: "holds", source_class: "wiki", note: "" });
+  const cur = (n) => ({ id: `curated:C${n}`, kind: "curated", subject: `Curated subject ${n}`, claim: `Curated claim ${n}.`, value: "", unit: "", source_table: "", row_id: "", build: "2026.11.19", verdict: "holds", source_class: "wiki", note: "" });
   await loadAll(env, [cur(1), cur(2)], { kind: "curated" });
   await loadAll(env, nGood(2));
   assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE kind = 'curated' AND superseded = 0").c, 2);
@@ -380,7 +385,7 @@ const ids = (r) => r.rows.map((x) => x.id).sort();
 
 test("an unfinished or failed load is invisible to the lookup; a finished one is visible; a re-load hides the rows it touches until it finishes", async () => {
   const { DB, env } = await fresh();
-  const b = await begin(env, { expected: 2 });
+  const b = await begin(env, { kinds: { spell_level: 2 } });
   await rowsOp(env, b.json.load_id, [mkRow(1, { subject: "Frostglaive", claim: "Frostglaive requires level 14." }), mkRow(2)]);
   assert.deepEqual((await lookupGameFacts(env, "what level is Frostglaive")).rows, [], "open load: invisible");
   DB.raw.prepare("UPDATE game_fact_loads SET status = 'failed' WHERE id = ?").run(b.json.load_id);
@@ -391,7 +396,7 @@ test("an unfinished or failed load is invisible to the lookup; a finished one is
   assert.deepEqual(seen.rows.map((r) => r.id), ["spelllevels:1"]);
   assert.deepEqual(Object.keys(seen.rows[0]).sort(), ["build", "claim", "id", "row_id", "source_table", "value"]);
   // a second load touches id 1 and stays open: that row is not served from the open load
-  const c = await begin(env, { build: BUILD2, expected: 1 });
+  const c = await begin(env, { build: BUILD2, kinds: { spell_level: 1 } });
   await rowsOp(env, c.json.load_id, [mkRow(1, { build: BUILD2, subject: "Frostglaive", claim: "Frostglaive requires level 99." })]);
   const mid = await lookupGameFacts(env, "what level is Frostglaive");
   assert.ok(!JSON.stringify(mid).includes("level 99"), "the open load's value is never served");
@@ -399,7 +404,7 @@ test("an unfinished or failed load is invisible to the lookup; a finished one is
 
 test("lookup returns holds rows, wrong rows as doNotSay, and never unverifiable or superseded ones", async () => {
   const { DB, env } = await fresh();
-  const cur = (n, over) => ({ id: `curated:C${n}`, kind: "curated", subject: "", claim: "", value: "", unit: "", source_table: "", row_id: "", build: "2026.11.19", verdict: "holds", source_class: "wiki", note: "", ...over });
+  const cur = (n, over) => ({ id: `curated:C${n}`, kind: "curated", subject: `Curated subject ${n}`, claim: "", value: "", unit: "", source_table: "", row_id: "", build: "2026.11.19", verdict: "holds", source_class: "wiki", note: "", ...over });
   await loadAll(env, [
     cur(1, { claim: "Glimmerfang is learned at level 20.", verdict: "holds" }),
     cur(2, { claim: "Glimmerfang is learned at level 40.", verdict: "wrong" }),
@@ -432,11 +437,7 @@ test("lookup narrows by the kind of fact asked, falls back to the name alone, pr
   assert.deepEqual(await lookupGameFacts(env, ""), { rows: [], doNotSay: [], via: "none" });
   assert.deepEqual(await lookupGameFacts(env, "the of and or not what"), { rows: [], doNotSay: [], via: "none" });
   assert.deepEqual((await lookupGameFacts(env, "Nonexistentword")).rows, []);
-  // newest build wins for the same subject and kind
-  await loadAll(env, [mkRow(7, { id: "spelllevels:70", subject: "Sparkmoth", claim: "Sparkmoth requires level 10.", build: "1.9.0" })], { build: "1.9.0" });
-  DB.raw.prepare("INSERT INTO game_facts (id, kind, subject, subject_norm, claim, value, unit, source_table, row_id, build, load_id, verdict, source_class, note, superseded, updated_at) SELECT 'spelllevels:71', kind, subject, subject_norm, 'Sparkmoth requires level 12.', '12', unit, source_table, '71', '1.10.0', load_id, verdict, source_class, note, 0, updated_at FROM game_facts WHERE id = 'spelllevels:70'").run();
-  const nb = await lookupGameFacts(env, "Sparkmoth level");
-  assert.deepEqual(nb.rows.map((r) => r.build), ["1.10.0"], "1.10.0 is newer than 1.9.0 (dotted compare, not text)");
+  // finish later builds, and a stale flag cannot bring an older load's row back (see the dedicated test below)
 });
 
 test("hostile questions: operators, quotes, NEAR, star, caret, column filters, parentheses and SQL never reach the query as syntax", async () => {
@@ -481,7 +482,7 @@ test("the token and MATCH builders: only quoted letters and digits, reserved and
 
 test("the LIKE fallback answers when the FTS5 query cannot run, with the same visibility rules (FTS5 is available in the test SQLite, so the failure is forced)", async () => {
   const { DB, env } = await fresh();
-  const cur = (n, over) => ({ id: `curated:C${n}`, kind: "curated", subject: "", claim: "", value: "", unit: "", source_table: "", row_id: "", build: "2026.11.19", verdict: "holds", source_class: "wiki", note: "", ...over });
+  const cur = (n, over) => ({ id: `curated:C${n}`, kind: "curated", subject: `Curated subject ${n}`, claim: "", value: "", unit: "", source_table: "", row_id: "", build: "2026.11.19", verdict: "holds", source_class: "wiki", note: "", ...over });
   await loadAll(env, [cur(1, { claim: "Moonlit Gale is learned at level 20." }), cur(2, { claim: "Moonlit Gale is learned at level 40.", verdict: "wrong" }), cur(3, { claim: "Moonlit Gale probably costs 9 mana.", verdict: "unverifiable" })], { kind: "curated", build: "2026.11.19" });
   const noFts = { ...DB, prepare: (sql) => { if (/game_facts_fts/.test(sql)) throw new Error("no such module: fts5"); return DB.prepare(sql); } };
   const r = await lookupGameFacts({ ...env, DB: noFts }, "At what level is Moonlit Gale learned?");
@@ -567,7 +568,7 @@ function inprocess(env, { onCall = null } = {}) {
   const seen = [];
   const fetchImpl = async (url, init) => {
     const body = JSON.parse(init.body);
-    seen.push({ url: String(url), op: body.op, redirect: init.redirect });
+    seen.push({ url: String(url), op: body.op, redirect: init.redirect, kinds: body.kinds });
     const forced = onCall ? onCall(seen.length, body) : null;
     if (forced) return new Response(JSON.stringify(forced.json || {}), { status: forced.status });
     return quiet(() => worker.fetch(new Request(String(url), init), env, ctx));
@@ -625,7 +626,7 @@ test("tool plan refuses: a table that fails its MANIFEST check (hash, bytes, row
   writeFileSync(csv, orig);
   assert.ok(buildPlan({ tables: dir, scope: "client" }));
   assert.throws(() => buildPlan({ tables: dir, traits: traitsFile(dir, "1.2.3.4"), scope: "client" }), /traits file build differs/);
-  assert.throws(() => buildPlan({ tables: dir, scope: "curated" }), /no curated input/);
+  assert.throws(() => buildPlan({ tables: dir, scope: "curated" }), /a curated load replaces ALL curated rows/);
   const m = JSON.parse(readFileSync(join(dir, "MANIFEST.json"), "utf8")); m.build = "FAKE"; writeFileSync(join(dir, "MANIFEST.json"), JSON.stringify(m));
   assert.throws(() => buildPlan({ tables: dir, scope: "client" }), /no usable build/);
 });
@@ -634,7 +635,7 @@ test("tool dry run (the default) sends nothing, needs no token, prints counts an
   const dir = tmp(); writeTables(dir, { nItems: 10 });
   const { out, deps } = clockDeps();
   let sent = 0;
-  const code = await runTool(["--tables", dir, "--traits", traitsFile(dir), "--facts", jsonl(dir, "facts.jsonl", curatedLines())], { ...deps, fetchImpl: async () => { sent++; throw new Error("no network in a dry run"); } });
+  const code = await runTool(["--tables", dir, "--traits", traitsFile(dir), "--facts", jsonl(dir, "facts.jsonl", curatedLines()), "--client-facts", jsonl(dir, "client-facts.jsonl", clientFactLines())], { ...deps, fetchImpl: async () => { sent++; throw new Error("no network in a dry run"); } });
   assert.equal(code, 0);
   assert.equal(sent, 0);
   const text = out.join("\n");
@@ -679,7 +680,7 @@ test("tool end to end: begin, rows in batches, finish against the Worker; signed
   const dir = tmp(); writeTables(dir);
   const { fetchImpl, seen } = inprocess(env);
   const { out, deps } = clockDeps();
-  const argv = [tokenFile(dir), "--tables", dir, "--traits", traitsFile(dir), "--facts", jsonl(dir, "facts.jsonl", curatedLines()), "--apply", "--base", "http://localhost:8787", "--state", join(dir, "state.json")];
+  const argv = [tokenFile(dir), "--tables", dir, "--traits", traitsFile(dir), "--facts", jsonl(dir, "facts.jsonl", curatedLines()), "--client-facts", jsonl(dir, "client-facts.jsonl", clientFactLines()), "--apply", "--base", "http://localhost:8787", "--state", join(dir, "state.json")];
   const code = await runTool(argv, { ...deps, fetchImpl });
   assert.equal(code, 0, out.join("\n"));
   assert.ok(seen.every((s) => s.redirect === "error" && s.url === "http://localhost:8787/api/facts/load"));
@@ -687,15 +688,16 @@ test("tool end to end: begin, rows in batches, finish against the Worker; signed
   const loads = all(DB, "SELECT kind, status, build, manifest_sha256 FROM game_fact_loads ORDER BY kind");
   assert.deepEqual(loads.map((l) => [l.kind, l.status, l.build]), [["client", "done", BUILD], ["curated", "done", BUILD]]);
   assert.equal(loads[0].manifest_sha256, sha256(readFileSync(join(dir, "MANIFEST.json"))));
-  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE kind = 'item_level_req'").c, 450);
-  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE kind = 'curated'").c, 5 - 1 - 1, "bad cid and the too-long line skipped");
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE kind = 'item_level_req' AND superseded = 0").c, 450);
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE kind = 'curated'").c, 4, "bad cid, bad verdict and the too-long line skipped");
   assert.ok(Object.keys(JSON.parse(one(DB, "SELECT files_json FROM game_fact_loads WHERE kind = 'client'").files_json)).includes("traits.json"));
   const text = out.join("\n");
   assert.match(text, /finish client: total \d+, added \d+, changed 0, unchanged 0, removed 0/);
   assert.ok(!text.includes(BOT) && !text.includes("Zorbo"));
   const got = await lookupGameFacts(env, "What level do I need to learn Zorbo Alpha Bolt?");
-  assert.equal(got.rows[0].id, "spelllevels:1001", "the best match by rank comes first");
-  assert.equal(got.rows[0].value, "5");
+  const lv = got.rows.find((r) => r.id === "spelllevels:1001");
+  assert.ok(lv, "the table fact is found (a curated fact about the same spell may rank beside it)");
+  assert.equal(lv.value, "5");
   assert.ok((await lookupGameFacts(env, "Which talent is needed before Icicle Sting?")).rows.some((r) => r.id.startsWith("trait_prereq:")));
   assert.ok((await lookupGameFacts(env, "Is Glimmerfang learned at level 40?")).doNotSay.some((r) => r.id === "curated:C002"));
   assert.ok(!existsSync(join(dir, "state.json")), "state removed after a finished load");
@@ -705,7 +707,7 @@ test("tool end to end: begin, rows in batches, finish against the Worker; signed
   assert.equal(again, 0, out.join("; "));
   const second = JSON.parse(one(DB, "SELECT counts_json FROM game_fact_loads WHERE kind = 'client' AND status = 'done' ORDER BY finished_at DESC, rowid DESC LIMIT 1").counts_json);
   assert.equal(second.added, 0); assert.equal(second.changed, 0); assert.equal(second.removed, 0);
-  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE superseded = 1").c, 0);
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE superseded = 0").c, one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE superseded = 1").c, "every old row retired, every new row live");
 });
 
 test("tool resume: a failed batch stops the run, keeps the load id, and the same command continues without a second begin", async () => {
@@ -717,8 +719,8 @@ test("tool resume: a failed batch stops the run, keeps the load id, and the same
   const first = clockDeps();
   assert.equal(await runTool(argv, { ...first.deps, fetchImpl: a.fetchImpl }), 1);
   assert.match(first.out.join("\n"), /stopped \(rows batch 2 failed: HTTP 503, reason unavailable\); run the same command again to resume/);
-  const st = JSON.parse(readFileSync(state, "utf8"));
-  assert.equal(st.next, 1);
+  const st = JSON.parse(readFileSync(state, "utf8")).scopes.client;
+  assert.equal(st.next, 1); assert.equal(st.done, false);
   assert.equal(one(DB, "SELECT status FROM game_fact_loads").status, "open");
   const b = inprocess(env);
   const second = first; // one clock for both runs (a later run always has a later second)
@@ -727,7 +729,7 @@ test("tool resume: a failed batch stops the run, keeps the load id, and the same
   assert.match(second.out.join("\n"), /resume client: 1 of \d+ batches already sent/);
   assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_fact_loads").c, 1);
   assert.equal(one(DB, "SELECT status FROM game_fact_loads").status, "done");
-  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts").c, 450 + 6 * 3 + 3);
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE superseded = 0").c, 450 + 6 * 3 + 3);
 });
 
 test("tool call budget: --max-calls stops with a resume message, never past the budget", async () => {
@@ -795,4 +797,174 @@ test("tool writes nothing into the repo: a --state path inside the checkout is r
   assert.equal(sent, 0);
   assert.match(out.join("\n"), /refusing: refusing to write inside the repo/);
   assert.ok(!existsSync(join(ROOT, "tests", "unit", "state-should-not-exist.json")));
+});
+
+// ---- review round: visibility, concurrency, partial input, anchors, lookup, resume ----------------------------------------------------------------
+const stale = (DB, pattern) => { // a DB whose FIRST read of the load row says "open", whatever it is: a read that is stale by the time the batch runs
+  let forged = false;
+  return { ...DB, prepare: (sql) => {
+    if (!forged && pattern.test(sql)) { forged = true; const st = DB.prepare(sql); return { bind: (...a) => ({ first: async () => ({ ...(await st.bind(...a).first()), status: "open" }) }) }; }
+    return DB.prepare(sql);
+  } };
+};
+const published = (DB, where = "1 = 1") => one(DB, `SELECT COUNT(*) AS c FROM game_facts g JOIN game_fact_loads l ON l.id = g.load_id WHERE l.status = 'done' AND g.superseded = 0 AND ${where}`).c; // what a lookup can see
+const LOAD_READ = /SELECT id, build, kind, status, counts_json, finished_at FROM game_fact_loads/;
+
+test("a failed, interrupted or open reload never hides a published fact", async () => {
+  const { DB, env } = await fresh();
+  const mk = (i, over = {}) => mkRow(i, { subject: `Frostglaive ${i}`, claim: `Frostglaive ${i} requires level ${10 + i}.`, ...over });
+  await loadAll(env, [mk(1), mk(2)]);
+  const claims = async () => (await lookupGameFacts(env, "level of Frostglaive")).rows.map((r) => r.claim).sort();
+  const before = await claims();
+  assert.equal(before.length, 2);
+  const b = await begin(env, { build: BUILD2, kinds: { spell_level: 2 } });
+  await rowsOp(env, b.json.load_id, [mk(1, { build: BUILD2, claim: "Frostglaive 1 requires level 99.", value: "99" })]);
+  assert.deepEqual(await claims(), before, "an open reload with a changed value: the published rows are untouched");
+  const late = await begin(env, { build: BUILD2, kinds: { spell_level: 2 }, opts: { handler: handleFactsLoad, deps: { now: () => new Date(Date.now() + 31 * 60 * 1000) } } });
+  assert.equal(late.status, 200, "the interrupted load is marked failed after 30 minutes");
+  assert.equal(one(DB, "SELECT status FROM game_fact_loads WHERE id = ?", b.json.load_id).status, "failed");
+  assert.deepEqual(await claims(), before, "an interrupted reload");
+  const n = one(DB, "SELECT COUNT(*) AS c FROM game_facts").c;
+  assert.equal((await rowsOp(env, b.json.load_id, [mk(2, { build: BUILD2 })])).status, 409, "a failed load takes no more rows");
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts").c, n);
+  assert.equal((await finish(env, late.json.load_id)).status, 409, "an incomplete finish");
+  assert.deepEqual(await claims(), before);
+  await rowsOp(env, late.json.load_id, [mk(1, { build: BUILD2, claim: "Frostglaive 1 requires level 99.", value: "99" }), mk(2, { build: BUILD2 })]);
+  assert.deepEqual(await claims(), before, "all rows sent but not finished: still the old facts");
+  assert.equal((await finish(env, late.json.load_id)).status, 200);
+  const after = await claims();
+  assert.ok(after.includes("Frostglaive 1 requires level 99.") && !after.includes("Frostglaive 1 requires level 11."), "published at finish");
+  assert.equal(after.length, 2);
+});
+
+test("rows and finish are consistent: a late rows call writes nothing, even from a stale read; a delayed finish supersedes nothing", async () => {
+  const { DB, env } = await fresh();
+  const a = await loadAll(env, nGood(3));
+  const total = () => one(DB, "SELECT COUNT(*) AS c FROM game_facts").c;
+  const countsBefore = one(DB, "SELECT counts_json FROM game_fact_loads WHERE id = ?", a.id).counts_json;
+  assert.equal((await rowsOp(env, a.id, [mkRow(9)])).status, 409);
+  assert.equal(total(), 3);
+  const late = await call({ ...env, DB: stale(DB, LOAD_READ) }, { purpose: P, op: "rows", load_id: a.id, rows: [mkRow(9), mkRow(10)] });
+  assert.equal(late.status, 409, "the pre-read said open, the statement itself still refused");
+  assert.equal(total(), 3, "the guard is in the INSERT: nothing was written");
+  assert.equal(one(DB, "SELECT counts_json FROM game_fact_loads WHERE id = ?", a.id).counts_json, countsBefore, "and the counters did not move");
+  // a dead load (failed) holding a complete set of rows, and a newer load that is live
+  const x = await begin(env, { kinds: { spell_level: 3 } });
+  await rowsOp(env, x.json.load_id, nGood(3, 20));
+  DB.raw.prepare("UPDATE game_fact_loads SET status = 'failed' WHERE id = ?").run(x.json.load_id);
+  const y = await loadAll(env, nGood(3, 30));
+  const liveY = () => one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE load_id = ? AND superseded = 0", y.id).c;
+  const retired = () => one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE superseded = 1").c;
+  const r0 = retired();
+  assert.equal(liveY(), 3);
+  const delayed = await call({ ...env, DB: stale(DB, LOAD_READ) }, { purpose: P, op: "finish", load_id: x.json.load_id });
+  assert.equal(delayed.status, 409);
+  assert.equal(liveY(), 3, "the newer load's rows are still live");
+  assert.equal(retired(), r0, "nothing was superseded");
+  assert.equal(one(DB, "SELECT status FROM game_fact_loads WHERE id = ?", x.json.load_id).status, "failed");
+  const served = (await lookupGameFacts(env, "Zorbo", { limit: 20 })).rows.map((r) => r.id);
+  assert.ok(served.every((id) => !/^spelllevels:2\d$/.test(id)), "the failed load's rows are never served");
+});
+
+test("begin declares the kinds with a count each; finish needs every declared kind complete and retires only the declared kinds; an older build is refused", async () => {
+  const { DB, env } = await fresh();
+  const trait = (i) => mkRow(i, { id: `trait_max_ranks:1112-${i}`, kind: "trait_max_ranks", unit: "ranks", source_table: "traitnode", subject: `Frostweave ${i}`, claim: `Frostweave ${i} is a Mage talent with 2 ranks.`, value: "2" });
+  const item = (i) => mkRow(i, { id: `itemsparse:${i}`, kind: "item_level_req", source_table: "itemsparse", build: BUILD2 });
+  await loadAll(env, [...nGood(2), trait(1), trait(2)]);
+  const b = await begin(env, { build: BUILD2, kinds: { spell_level: 2 } });
+  assert.equal((await rowsOp(env, b.json.load_id, [trait(3)])).status, 400, "a kind begin did not declare");
+  await rowsOp(env, b.json.load_id, [mkRow(1, { build: BUILD2 })]);
+  assert.equal((await finish(env, b.json.load_id)).status, 409, "one of two declared spell_level rows");
+  await rowsOp(env, b.json.load_id, [mkRow(2, { build: BUILD2 })]);
+  assert.equal((await finish(env, b.json.load_id)).status, 200);
+  assert.equal(published(DB, "g.kind = 'trait_max_ranks'"), 2, "a load without traits never retires trait facts");
+  assert.equal(published(DB, "g.kind = 'spell_level'"), 2);
+  const c = await begin(env, { build: BUILD2, kinds: { spell_level: 1, item_level_req: 1 } });
+  await rowsOp(env, c.json.load_id, [mkRow(1, { build: BUILD2 })]);
+  assert.equal((await finish(env, c.json.load_id)).status, 409, "a declared kind with no rows at all");
+  assert.equal(published(DB, "g.kind = 'spell_level'"), 2, "nothing retired by the refused finish");
+  await rowsOp(env, c.json.load_id, [item(1)]);
+  assert.equal((await finish(env, c.json.load_id)).status, 200);
+  assert.equal(published(DB, "g.kind = 'spell_level'"), 1, "now spell_level is the declared one-row set");
+  const old = await begin(env, { build: "9.9.9.0", kinds: { spell_level: 1 } });
+  assert.equal(old.status, 409);
+  assert.deepEqual(old.json, { ok: false, reason: "older_build" });
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_fact_loads WHERE build = '9.9.9.0'").c, 0);
+  assert.equal((await begin(env, { build: BUILD2, kinds: { spell_level: 1 } })).status, 200, "the same build may be loaded again");
+  assert.equal((await begin(env, { kind: "curated", build: "9.9.9.10", kinds: { curated: 1 } })).status, 200, "another kind of load has its own build line");
+});
+
+test("anchors: a field that ends in a newline, CRLF or CR is rejected (in JS a bare $ matches only at the very end; this pins it)", () => {
+  const base = mkRow(1);
+  for (const field of ["id", "source_table", "row_id", "build", "unit", "verdict", "source_class", "kind"]) {
+    for (const suffix of ["\n", "\r\n", "\r", " ", " "]) assert.ok(validateRow({ ...base, [field]: base[field] + suffix }, "client").error, `${field} + ${JSON.stringify(suffix)}`);
+  }
+  const shaOk = "a".repeat(64), files = { "a.csv": { sha256: shaOk, bytes: 1, rows: 1 } };
+  const ok = { purpose: P, op: "begin", build: BUILD, manifest_sha256: shaOk, files, kind: "client", kinds: { spell_level: 1 } };
+  assert.equal(parseFactsBody(ok).op, "begin");
+  for (const patch of [{ build: `${BUILD}\n` }, { build: `${BUILD}\r\n` }, { manifest_sha256: `${shaOk}\n` }, { files: { "a.csv\n": files["a.csv"] } }, { files: { "a.csv": { ...files["a.csv"], sha256: `${shaOk}\r\n` } } }]) assert.ok(parseFactsBody({ ...ok, ...patch }).error, JSON.stringify(patch).slice(0, 40));
+  const id = "0".repeat(8) + "-0000-0000-0000-" + "0".repeat(12);
+  assert.equal(parseFactsBody({ purpose: P, op: "finish", load_id: id }).op, "finish");
+  for (const bad of [`${id}\n`, `${id}\r\n`]) { assert.ok(parseFactsBody({ purpose: P, op: "finish", load_id: bad }).error); assert.ok(parseFactsBody({ purpose: P, op: "rows", load_id: bad, rows: [mkRow(1)] }).error); }
+});
+
+test("lookup: curated facts have subjects, so similar ones do not collapse; the newest done load per id is chosen in the query, before the limit", async () => {
+  const { DB, env } = await fresh();
+  const derived = deriveCuratedRows(curatedLines(), clientFactLines(), BUILD);
+  for (const r of derived.rows) { assert.ok(r.subject.length >= 1 && r.subject.length <= 120, r.id); assert.ok(r.source_table && r.row_id, r.id); assert.ok(validateRow(r, "curated").row, r.id); }
+  const cur = (n, claim) => ({ id: `curated:C${n}`, kind: "curated", subject: claim.slice(0, 80), claim, value: "", unit: "", source_table: "facts", row_id: `C${n}`, build: "2026.11.19", verdict: "holds", source_class: "wiki", note: "" });
+  await loadAll(env, [cur(1, "Stormcaller Totem lasts 20 seconds."), cur(2, "Stormcaller Totem lasts 30 seconds in raids.")], { kind: "curated", build: "2026.11.19" });
+  assert.deepEqual((await lookupGameFacts(env, "How long does Stormcaller Totem last?")).rows.map((r) => r.id).sort(), ["curated:C1", "curated:C2"]);
+  // many older matches ahead of the newer row of the same id: the window cannot hide it
+  const old = [mkRow(700, { subject: "Sparkmoth", claim: "Sparkmoth requires level 10.", value: "10", build: "9.9.9.5" }), ...Array.from({ length: 45 }, (_, i) => mkRow(701 + i, { subject: "Sparkmoth", claim: "Sparkmoth requires level 11.", value: "11", build: "9.9.9.5" }))];
+  await loadAll(env, old, { build: "9.9.9.5" });
+  await loadAll(env, [mkRow(700, { subject: "Sparkmoth", claim: "Sparkmoth Sparkmoth requires level 12.", value: "12", build: "9.9.9.10" })], { build: "9.9.9.10" });
+  DB.raw.prepare("UPDATE game_facts SET superseded = 0").run(); // a stale or lost flag: the query must still pick the newest done load per id
+  const r = await lookupGameFacts(env, "Sparkmoth level 10 12");
+  assert.deepEqual(r.rows.filter((x) => x.id === "spelllevels:700").map((x) => x.value), ["12"], "the older load's row of the same id is not served, though it matches better than most");
+  assert.ok(!r.rows.some((x) => /level 10./.test(x.claim)));
+  const wide = await lookupGameFacts(env, "Sparkmoth level 10 12", { limit: 20 });
+  assert.deepEqual(wide.rows.filter((x) => x.id === "spelllevels:700").map((x) => x.value), ["12"], "and in a wider window");
+});
+
+test("tool state keeps progress per scope: a lost curated finish leaves the file, the rerun resumes only that scope and the Worker answers the repeated finish", async () => {
+  const { DB, env } = await fresh();
+  const dir = tmp(); writeTables(dir, { nItems: 5 });
+  const state = join(dir, "state.json");
+  const argv = [tokenFile(dir), "--tables", dir, "--facts", jsonl(dir, "facts.jsonl", curatedLines()), "--client-facts", jsonl(dir, "client-facts.jsonl", clientFactLines()), "--apply", "--base", "http://localhost:8787", "--state", state];
+  const a = inprocess(env);
+  let finishes = 0;
+  const lossy = async (url, init) => { const res = await a.fetchImpl(url, init); return JSON.parse(init.body).op === "finish" && ++finishes === 2 ? new Response("{}", { status: 502 }) : res; }; // the Worker processed it; the answer was lost
+  const first = clockDeps();
+  assert.equal(await runTool(argv, { ...first.deps, fetchImpl: lossy }), 1);
+  const st = JSON.parse(readFileSync(state, "utf8"));
+  assert.equal(st.scopes.client.done, true); assert.equal(st.scopes.curated.done, false);
+  assert.deepEqual(all(DB, "SELECT status FROM game_fact_loads ORDER BY kind").map((l) => l.status), ["done", "done"], "the Worker had finished both");
+  await first.deps.sleep(2000);
+  const b = inprocess(env);
+  assert.equal(await runTool(argv, { ...first.deps, fetchImpl: b.fetchImpl }), 0, first.out.join("; "));
+  assert.deepEqual(b.seen.map((s) => s.op), ["finish"], "no begin, no rows: only the unfinished scope's finish, answered again with the same counts");
+  assert.match(first.out.join("\n"), /client: already finished in an earlier run/);
+  assert.ok(!existsSync(state), "removed once every planned scope is finished");
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_fact_loads").c, 2);
+});
+
+test("tool declares exactly the kinds it generated: a run without --traits retires no trait fact", async () => {
+  const { DB, env } = await fresh();
+  const dir = tmp(); writeTables(dir, { nItems: 5 });
+  const base = [tokenFile(dir), "--tables", dir, "--scope", "client", "--apply", "--base", "http://localhost:8787", "--state", join(dir, "state.json")];
+  const first = clockDeps();
+  const a = inprocess(env);
+  assert.equal(await runTool([...base, "--traits", traitsFile(dir)], { ...first.deps, fetchImpl: a.fetchImpl }), 0, first.out.join("; "));
+  const declaredA = a.seen.find((s) => s.op === "begin").kinds;
+  assert.ok(declaredA.trait_max_ranks > 0 && declaredA.spell_level > 0);
+  await first.deps.sleep(2000);
+  const b = inprocess(env);
+  assert.equal(await runTool(base, { ...first.deps, fetchImpl: b.fetchImpl }), 0, first.out.join("; "));
+  const declaredB = b.seen.find((s) => s.op === "begin").kinds;
+  assert.deepEqual(Object.keys(declaredB).sort(), ["item_level_req", "spell_cast_time", "spell_cooldown", "spell_level", "spell_mana_cost"]);
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE kind LIKE 'trait_%' AND superseded = 0").c, declaredA.trait_max_ranks + declaredA.trait_points_required + declaredA.trait_prereq, "trait facts stay published");
+  assert.equal(one(DB, "SELECT COUNT(*) AS c FROM game_facts WHERE kind LIKE 'trait_%' AND superseded = 1").c, 0);
+  const lone = await runTool(["--tables", dir, "--facts", jsonl(dir, "f2.jsonl", curatedLines()), "--scope", "curated"], { ...clockDeps().deps });
+  assert.equal(lone, 2, "a curated load replaces every curated row, so it needs both curated files");
 });
