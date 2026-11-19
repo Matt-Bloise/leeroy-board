@@ -868,11 +868,11 @@ test("rows and finish are consistent: a late rows call writes nothing, even from
 
 test("begin declares the kinds with a count each; finish needs every declared kind complete and retires only the declared kinds; an older build is refused", async () => {
   const { DB, env } = await fresh();
-  const trait = (i) => mkRow(i, { id: `trait_max_ranks:1112-${i}`, kind: "trait_max_ranks", unit: "ranks", source_table: "traitnode", subject: `Frostweave ${i}`, claim: `Frostweave ${i} is a Mage talent with 2 ranks.`, value: "2" });
+  const trait = (i, build = BUILD) => mkRow(i, { id: `trait_max_ranks:1112-${i}`, kind: "trait_max_ranks", unit: "ranks", source_table: "traitnode", subject: `Frostweave ${i}`, claim: `Frostweave ${i} is a Mage talent with 2 ranks.`, value: "2", build });
   const item = (i) => mkRow(i, { id: `itemsparse:${i}`, kind: "item_level_req", source_table: "itemsparse", build: BUILD2 });
   await loadAll(env, [...nGood(2), trait(1), trait(2)]);
   const b = await begin(env, { build: BUILD2, kinds: { spell_level: 2 } });
-  assert.equal((await rowsOp(env, b.json.load_id, [trait(3)])).status, 400, "a kind begin did not declare");
+  assert.equal((await rowsOp(env, b.json.load_id, [trait(3, BUILD2)])).status, 400, "a kind begin did not declare");
   await rowsOp(env, b.json.load_id, [mkRow(1, { build: BUILD2 })]);
   assert.equal((await finish(env, b.json.load_id)).status, 409, "one of two declared spell_level rows");
   await rowsOp(env, b.json.load_id, [mkRow(2, { build: BUILD2 })]);
