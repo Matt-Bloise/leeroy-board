@@ -2,6 +2,7 @@
 //   manifest   hash, byte and row mismatches refuse; a good manifest loads
 //   write      no writer here may write inside the repo checkout (truth-gen, run, grade-pack)
 //   truth-gen  uniqueness filters, deterministic seed, header carries build and hashes, no talent questions, allowed_numbers
+//   traits     trait kinds from a fictional traits.json: uniqueness, prerequisite edge, ambiguity skips, hash in the header, rank/points/name scoring
 //   score      exact_match, unsupported_numbers, contradiction, degraded: word/number forms, invented numbers, the question's own numbers
 //   run        signing and the https/redirect/token rules against a stub, resume without repeats, max-items, rate windows, answers only with --keep-answers
 //   grade      blinding, the private-corpus refusal, external only for fictional, merge unblinds
@@ -16,10 +17,10 @@ import { spawn } from "node:child_process";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { sha256, loadVerifiedTable, assertOutsideRepo, REPO_ROOT, parseCsv } from "../../tools/replay/common.mjs";
-import { generate, KINDS } from "../../tools/replay/truth-gen.mjs";
+import { generate, KINDS, TRAIT_KINDS, buildTraitCandidates } from "../../tools/replay/truth-gen.mjs";
 import { exact_match, unsupported_numbers, contradiction, degraded, summarize, extractNumbers } from "../../tools/replay/score.mjs";
-import { PASS_BAR, WITHIN_BUDGET_MS, PAIR_RULE, evaluateBar, evaluatePairRule } from "../../tools/replay/pass-bar.mjs";
-import { runReplay, waitMs, checkBase, buildBody } from "../../tools/replay/run.mjs";
+import { PASS_BAR, WITHIN_BUDGET_MS, PAIR_RULE, INFORMATIONAL_KINDS, INFORMATIONAL_LABEL, evaluateBar, evaluatePairRule } from "../../tools/replay/pass-bar.mjs";
+import { runReplay, waitMs, checkBase, buildBody, KNOWN_KINDS, formatSummary } from "../../tools/replay/run.mjs";
 import { buildPackets, mergeGrades } from "../../tools/replay/grade-pack.mjs";
 import { verifyListen, shadowKey } from "../../infrastructure/worker/listener-config.js";
 
@@ -251,6 +252,206 @@ test("pass bar: evaluateBar needs every rate, the sample size and the required k
     assert.equal(r.pass, false, JSON.stringify(bad)); assert.equal(r.failures.length, 1);
   }
   assert.equal(evaluateBar({ by_kind: {} }).pass, false);
+});
+
+// ---- traits: fictional trees in a temp dir ----
+const TN = (nodeId, name, maxRanks, { edgesTo = [], conds = [], requires = [], entryId = nodeId + 5000 } = {}) => ({ nodeId: String(nodeId), entryId: String(entryId), spellId: String(900000 + nodeId), name, maxRanks: String(maxRanks), x: "1", y: "2", type: "0", text: "", edgesTo: edgesTo.map(String), conds, requires: requires.map((r) => ({ nodeId: String(r), name: "n" + r, edgeRowId: "1" })), requiredBy: [], linkedWith: [] });
+const COND = (spent, currency = "3820", condType = "0") => ({ condType, spentAmountRequired: String(spent), currency, tab: "1" });
+function traitsObject() {
+  const mage = [
+    TN(1, "Frobnitz Bolt", 3, { edgesTo: [2, 5, 9] }),
+    TN(2, "Quuxlance", 2, { conds: [COND(5)], requires: [1] }),         // one requires entry (1): prereq; one cond: points 5
+    TN(3, "Twinsong", 2, { conds: [COND(5)] }), TN(4, "Twinsong", 1),  // duplicate name: both excluded everywhere
+    TN(5, "Mergepoint", 1, { conds: [COND(10)], requires: [1, 6] }),    // two requires entries: no prereq
+    TN(6, "Sidestep", 4, { edgesTo: [5] }),
+    TN(7, "Doublecond", 2, { conds: [COND(5), COND(8, "0")] }),        // two conds: no points, ranks ok
+    TN(8, "Zerocurr", 2, { conds: [COND(5, "0")] }),                   // currency 0 cond: no points
+    TN(9, "Greater Frobnitz Bolt", 1, { conds: [COND(15)], requires: [1] }),          // name contains the source name: no prereq
+    TN(10, "Choice Alpha", 1, { entryId: 7001 }), TN(10, "Choice Beta", 1, { entryId: 7002 }), // one nodeId, two entries
+    TN(11, "Zero Rank", 0), TN(12, "?", 2), TN(13, "Cased Name", 2), TN(14, "cased name", 2),
+    TN(15, "Orphan Strike", 2, { conds: [COND(0)] }),                  // requirement 0: no points
+    TN(16, "Sourcedup", 2, { edgesTo: [17] }), TN(17, "Sinkone", 2, { conds: [COND(20)], requires: [16] }), // clean pair
+    TN(18, "Twinsong", 2, { edgesTo: [19] }), TN(19, "Sinktwo", 2, { requires: [18] }), // source name is a duplicate: no prereq
+    TN(21, "Decoyleft", 2, { edgesTo: [22] }), TN(22, "Decoyright", 2),   // an edge but no requires entry: never inferred from edgesTo
+    TN(23, "Ghostchild", 2, { requires: [999] }),                      // requires a node that is not in the tree: skipped
+  ];
+  const paladin = [TN(1, "Quuxlance", 5, { edgesTo: [2] }), TN(2, "Holyfrob", 1, { conds: [COND(30)], requires: [1] })];
+  return { build: "9.9.9.TRAITFAKE", source: "fictional", trees: { 1112: { treeId: "1112", system: "10", nodeCount: mage.length, nodes: mage }, 1100: { treeId: "1100", system: "10", nodeCount: paladin.length, nodes: paladin }, 7777: { treeId: "7777", system: "10", nodeCount: 1, nodes: [TN(1, "Notaclass Hit", 3)] } } };
+}
+function writeTraits(dir, obj = traitsObject(), name = "traits.json") { const p = join(dir, name); writeFileSync(p, JSON.stringify(obj)); return p; }
+const ofKind = (text, kind) => records(text).slice(1).filter((r) => r.kind === kind);
+
+test("traits: uniqueness filter drops duplicate (case-insensitive), repeated-nodeId, zero-rank, '?' and non-class-tree nodes; ranks come from maxRanks", () => {
+  const { out, used } = buildTraitCandidates(traitsObject());
+  assert.equal(used, 2);
+  const names = (k) => out[k].map((r) => `${r.class_name}:${r.entity_name}`);
+  const ranks = names("trait_max_ranks");
+  for (const bad of ["Twinsong", "Choice Alpha", "Choice Beta", "Zero Rank", "?", "Cased Name", "cased name", "Notaclass Hit"]) assert.ok(!ranks.some((n) => n.endsWith(":" + bad)), bad);
+  assert.ok(ranks.includes("Mage:Quuxlance") && ranks.includes("Paladin:Quuxlance"), "the same name in two class trees is allowed");
+  assert.deepEqual(out.trait_max_ranks.find((r) => r.id === "trait_max_ranks-1112-1").expected, { value: 3, unit: "ranks" });
+  assert.deepEqual(out.trait_max_ranks.find((r) => r.id === "trait_max_ranks-1100-1").expected, { value: 5, unit: "ranks" });
+  assert.deepEqual(buildTraitCandidates({ ...traitsObject(), trees: Object.values(traitsObject().trees) }).out.trait_max_ranks.map((r) => r.id), out.trait_max_ranks.map((r) => r.id), "array form of trees gives the same set");
+});
+test("traits: points need exactly one cond with a real currency and a positive integer requirement", () => {
+  const { out } = buildTraitCandidates(traitsObject());
+  const got = Object.fromEntries(out.trait_points_required.map((r) => [`${r.class_name}:${r.entity_name}`, r.expected.value]));
+  assert.deepEqual(got, { "Mage:Quuxlance": 5, "Mage:Mergepoint": 10, "Mage:Greater Frobnitz Bolt": 15, "Mage:Sinkone": 20, "Paladin:Holyfrob": 30 });
+  assert.ok(out.trait_points_required.every((r) => r.expected.unit === "points"));
+  for (const bad of ["Doublecond", "Zerocurr", "Orphan Strike", "Twinsong"]) assert.ok(!(`Mage:${bad}` in got), bad);
+});
+test("traits: prerequisite = the single entry of the node's requires list; zero, several, unknown or ineligible sources are skipped, edgesTo is never used", () => {
+  const { out } = buildTraitCandidates(traitsObject());
+  const got = Object.fromEntries(out.trait_prereq.map((r) => [`${r.class_name}:${r.entity_name}`, r.expected]));
+  assert.deepEqual(got, {
+    "Mage:Quuxlance": { value: "Frobnitz Bolt", unit: "name" },
+    "Mage:Sinkone": { value: "Sourcedup", unit: "name" },
+    "Paladin:Holyfrob": { value: "Quuxlance", unit: "name" },
+  });
+  assert.ok(!("Mage:Mergepoint" in got), "two requires entries");
+  assert.ok(!("Mage:Greater Frobnitz Bolt" in got), "source name contained in the asked name");
+  assert.ok(!("Mage:Sinktwo" in got), "the only source has a duplicate name");
+  assert.ok(!("Mage:Decoyright" in got), "an edgesTo edge without a requires entry is not a prerequisite");
+  assert.ok(!("Mage:Ghostchild" in got), "requires names a node that is not in the tree");
+  const rec = out.trait_prereq.find((r) => r.id === "trait_prereq-1112-2");
+  assert.deepEqual(rec.rows, [{ table: "traittree", id: "1112" }, { table: "traitnode", id: "2" }, { table: "traitnode", id: "1" }]);
+  assert.ok(rec.allowed_numbers.includes(1112) && rec.allowed_numbers.includes(5002) && rec.allowed_numbers.includes(5001) && rec.allowed_numbers.includes(900001));
+  // the same source listed twice is still one prerequisite; a bare id is accepted as well as an object
+  const dupEdge = traitsObject(); dupEdge.trees[1112].nodes.push(TN(30, "Sourcedup2", 2), TN(31, "Sinkthree", 1, { requires: [30, 30] }), TN(32, "Sinkfour", 1));
+  dupEdge.trees[1112].nodes.find((n) => n.nodeId === "32").requires = ["30"];
+  assert.ok(buildTraitCandidates(dupEdge).out.trait_prereq.some((r) => r.entity_name === "Sinkfour"));
+  assert.ok(buildTraitCandidates(dupEdge).out.trait_prereq.some((r) => r.entity_name === "Sinkthree"));
+});
+test("traits: generate records build and sha256 of the file, names the class in the question, is deterministic; without a traits file nothing changes", () => {
+  const d = fixtureDir();
+  const tp = writeTraits(d);
+  const a = generate({ dir: d, seed: 5, perKind: 100, traitsPath: tp }), b = generate({ dir: d, seed: 5, perKind: 100, traitsPath: tp });
+  assert.equal(a.text, b.text);
+  assert.equal(a.header.traits.build, "9.9.9.TRAITFAKE");
+  assert.equal(a.header.traits.sha256, sha256(readFileSync(tp)));
+  assert.equal(a.header.traits.bytes, readFileSync(tp).length);
+  assert.equal(a.header.traits.trees_used, 2);
+  assert.equal(JSON.stringify(a.header).includes(tp.replace(/\\/g, "\\\\")), false, "the file path is not recorded");
+  assert.deepEqual(TRAIT_KINDS.map((k) => a.header.selected[k]), [a.header.candidates.trait_max_ranks, 5, 3]);
+  const q = ofKind(a.text, "trait_prereq").find((r) => r.entity_name === "Quuxlance" && r.class_name === "Mage");
+  assert.ok(q.question.includes("Quuxlance") && q.question.includes("Mage"));
+  assert.ok(ofKind(a.text, "trait_max_ranks").every((r) => r.question.includes(r.entity_name) && r.question.includes(r.class_name)));
+  // the file is hashed, so an edit changes the recorded hash; the DB2 tables are still verified by the manifest
+  const obj = traitsObject(); obj.trees[1112].nodes[0].maxRanks = "4";
+  const c = generate({ dir: d, seed: 5, perKind: 100, traitsPath: writeTraits(d, obj, "traits2.json") });
+  assert.notEqual(c.header.traits.sha256, a.header.traits.sha256);
+  writeFileSync(join(d, "spelllevels.csv"), readFileSync(join(d, "spelllevels.csv"), "utf8").replace("1001,0,0,0,5,0,1001", "1001,0,0,0,50,0,1001"));
+  assert.throws(() => generate({ dir: d, traitsPath: tp }), /spelllevels\.csv/);
+  const d2 = fixtureDir();
+  const plain = generate({ dir: d2, seed: 5, perKind: 100 });
+  assert.equal("traits" in plain.header, false);
+  assert.ok(!records(plain.text).some((r) => String(r.kind).startsWith("trait_")));
+  writeFileSync(join(d2, "bad.json"), "{}");
+  assert.throws(() => generate({ dir: d2, traitsPath: join(d2, "bad.json") }), /none of the known class trees/);
+  writeFileSync(join(d2, "bad2.json"), "not json");
+  assert.throws(() => generate({ dir: d2, traitsPath: join(d2, "bad2.json") }), /not JSON/);
+  rmSync(d, { recursive: true, force: true }); rmSync(d2, { recursive: true, force: true });
+});
+test("traits: the CLI refuses an output path in the repo with a traits file, a missing --traits file, and --traits with --no-traits", async () => {
+  const d = fixtureDir();
+  const tp = writeTraits(d);
+  const bad = join(REPO_ROOT, "tools", "replay", "must-not-exist-traits.jsonl");
+  let r = await runCli("truth-gen.mjs", ["--tables", d, "--traits", tp, "--out", bad]);
+  assert.notEqual(r.code, 0); assert.match(r.err, /inside the repo/); assert.equal(existsSync(bad), false);
+  r = await runCli("truth-gen.mjs", ["--tables", d, "--traits", join(d, "nope.json"), "--out", join(d, "o.jsonl")]);
+  assert.notEqual(r.code, 0); assert.match(r.err, /not found/);
+  r = await runCli("truth-gen.mjs", ["--tables", d, "--traits", tp, "--no-traits", "--out", join(d, "o.jsonl")]);
+  assert.notEqual(r.code, 0);
+  r = await runCli("truth-gen.mjs", ["--tables", d, "--traits", tp, "--out", join(d, "ok.jsonl"), "--per-kind", "100"]);
+  assert.equal(r.code, 0); assert.match(r.out, /trait_prereq\s+candidates\s+3\s+selected\s+3/);
+  assert.equal(JSON.parse(readFileSync(join(d, "ok.jsonl"), "utf8").split("\n")[0]).traits.sha256, sha256(readFileSync(tp)));
+  rmSync(d, { recursive: true, force: true });
+});
+test("traits: with no trait flag the CLI reads no file outside the tables dir and generates no trait kinds", async () => {
+  const d = fixtureDir();
+  const log = join(d, "reads.log");
+  const hook = join(d, "hook.cjs");
+  writeFileSync(hook, `const fs=require("fs");const L=${JSON.stringify(log)};const rec=(p)=>{try{fs.appendFileSync(L,String(p)+String.fromCharCode(10))}catch{}};for(const n of ["readFileSync","openSync","existsSync","statSync"]){const o=fs[n];fs[n]=function(p,...r){if(typeof p==="string"&&p!==L)rec(p);return o.call(this,p,...r)}}`);
+  const out = join(d, "o.jsonl");
+  const p = spawn(process.execPath, ["--require", hook, TOOLS("truth-gen.mjs"), "--tables", d, "--out", out], { stdio: ["ignore", "pipe", "pipe"] });
+  const code = await new Promise((r) => p.on("close", r));
+  assert.equal(code, 0);
+  const seen = readFileSync(log, "utf8").split(String.fromCharCode(10)).filter(Boolean).map((x) => x.split(String.fromCharCode(92)).join("/").toLowerCase());
+  assert.ok(seen.length > 0 && seen.some((x) => x.endsWith("manifest.json")), "the hook saw the tables reads");
+  assert.ok(!seen.some((x) => /traits|leeroy-ops|private/.test(x)), "a trait or private path was touched");
+  const head = JSON.parse(readFileSync(out, "utf8").split(String.fromCharCode(10))[0]);
+  assert.equal("traits" in head, false);
+  assert.ok(!readFileSync(out, "utf8").includes('"kind":"trait_'));
+  rmSync(d, { recursive: true, force: true });
+});
+test("traits score: rank phrasing", () => {
+  const R = { value: 3, unit: "ranks" };
+  for (const t of ["It has 3 ranks.", "3 rank", "Three ranks.", "You can put up to three ranks into it", "Max rank 3", "maximum ranks of 3", "Ranks: 3", "It has 3."]) assert.equal(exact_match(t, R), true, t);
+  for (const t of ["It has 4 ranks.", "5 points", "It needs 3 points in the tree", "Level 3", "rank 2 of 4", "no idea", "It does not have 3 ranks", "It has 30 ranks", "13 ranks"]) assert.equal(exact_match(t, R), false, t);
+  assert.equal(exact_match("It has a single rank.", { value: 1, unit: "ranks" }), true);
+  assert.equal(exact_match("only one point can be spent", { value: 1, unit: "ranks" }), true);
+  assert.equal(exact_match("It has a single rank.", R), false);
+  assert.equal(contradiction("It has 4 ranks.", R, "q"), true, "ranks is the question's own unit, not another fact");
+  assert.equal(contradiction("It has 3 ranks.", R, "q"), false);
+  assert.equal(contradiction("It has 3 ranks, but 4 once upgraded", R, "q"), false, "an upgrade clause is another fact");
+  assert.deepEqual(unsupported_numbers("It has 3 ranks and costs 4 ranks of nothing", { question: "q", expected: R, allowed_numbers: [3] }), [4]);
+  assert.deepEqual(unsupported_numbers("It has 3 ranks. Tip: 2 gems", { question: "q", expected: R, allowed_numbers: [3] }), []);
+});
+test("traits score: points phrasing", () => {
+  const P = { value: 5, unit: "points" };
+  for (const t of ["You need 5 points spent first.", "5 talent points", "Five points", "needs 5 points in the tree", "a requirement of 5 points", "5 point"]) assert.equal(exact_match(t, P), true, t);
+  for (const t of ["3 ranks", "It has 5 ranks", "needs 10 points", "50 points", "level 5", "not 5 points"]) assert.equal(exact_match(t, P), false, t);
+  assert.equal(exact_match("5", P), true, "a bare number with no unit anywhere");
+  assert.equal(exact_match("It has 5 ranks", { value: 5, unit: "points" }), false);
+  assert.equal(contradiction("It needs 10 points.", P, "q"), true);
+  assert.equal(contradiction("It needs 5 points; the tree holds 51 points in total.", P, "q"), false);
+  assert.equal(contradiction("It needs 5 points and has 3 ranks.", P, "q"), false);
+  assert.deepEqual(unsupported_numbers("Needs 5 points and 20 points elsewhere", { question: "q", expected: P, allowed_numbers: [5] }), [20]);
+  // the new units are read only for trait items: other kinds score as before
+  assert.equal(exact_match("It has 3 ranks, level 20", { value: 20, unit: "level" }), true);
+  assert.deepEqual(unsupported_numbers("Level 20 with 3 ranks", { question: "q", expected: { value: 20, unit: "level" }, allowed_numbers: [] }), []);
+});
+test("traits score: the prerequisite name must be named, not negated, and not just the asked talent's own name", () => {
+  const rec = { kind: "trait_prereq", question: "Which Mage talent do you need to take first before you can learn Frob Bolt Mastery?", entity_name: "Frob Bolt Mastery", expected: { value: "Frob Bolt", unit: "name" }, allowed_numbers: [1112, 5] };
+  const ok = { reason: "ok", status: "answered", model: "m" };
+  assert.equal(scoreTruthItem(rec, ok, "You need Frob Bolt first.").exact, true);
+  assert.equal(scoreTruthItem(rec, ok, "Take frob  bolt before it.").exact, true);
+  assert.equal(scoreTruthItem(rec, ok, "Frob Bolt Mastery requires Frob Bolt.").exact, true);
+  assert.equal(scoreTruthItem(rec, ok, "Frob Bolt Mastery has no prerequisite.").exact, false, "the asked talent's own name is not the answer");
+  assert.equal(scoreTruthItem(rec, ok, "It does not require Frob Bolt, it is open.").exact, false);
+  assert.equal(scoreTruthItem(rec, ok, "You need Frob Boltish first.").exact, false, "word boundary");
+  assert.equal(scoreTruthItem(rec, ok, "You need Other Talent first.").exact, false);
+  assert.equal(scoreTruthItem(rec, ok, "").exact, false);
+  assert.equal(scoreTruthItem(rec, { ...ok, status: "degraded" }, "Frob Bolt").exact, false);
+  const withNum = scoreTruthItem(rec, ok, "Frob Bolt first, it costs 250 mana");
+  assert.equal(withNum.unsupported_count, 1);
+  assert.equal(scoreTruthItem(rec, ok, "Frob Bolt, node 1112, 5 points").unsupported_count, 0);
+  assert.equal(contradiction("Frob Bolt", rec.expected, rec.question), false);
+  assert.equal(exact_match("O'Brien Bolt first", { value: "O\u2019Brien Bolt", unit: "name" }), true, "apostrophe forms match");
+});
+test("traits bar: trait kinds are known to run.mjs, are not required, and are held to the same bar and sample size as every other kind", () => {
+  for (const k of TRAIT_KINDS) assert.ok(KNOWN_KINDS.includes(k), k);
+  assert.ok(!TRAIT_KINDS.some((k) => PASS_BAR.required_kinds.includes(k)));
+  const good = { exact_scored: 30, exact_rate: 0.9, unsupported_rate: 0.02, degraded_rate: 0.05, within_budget_rate: 0.95 };
+  const base = { spell_level: good, item_level_req: good };
+  assert.equal(evaluateBar({ by_kind: { ...base, trait_prereq: good } }).pass, true);
+  assert.deepEqual([...INFORMATIONAL_KINDS], ["trait_prereq"]);
+  assert.equal(INFORMATIONAL_LABEL, "likely, not counted toward the bar");
+  const awful = { exact_scored: 2, exact_rate: 0, unsupported_rate: 1, degraded_rate: 1, within_budget_rate: 0 };
+  assert.equal(evaluateBar({ by_kind: { ...base, trait_prereq: awful } }).pass, true, "an informational kind never fails the bar");
+  assert.equal(evaluateBar({ by_kind: { trait_prereq: good } }).pass, false, "an informational kind never satisfies the required kinds");
+  assert.equal(evaluateBar({ by_kind: base }).pass, true, "a run without trait items still passes on the required kinds");
+  const r = evaluateBar({ by_kind: { ...base, trait_max_ranks: { ...good, exact_scored: 29 }, trait_points_required: { ...good, exact_rate: 0.5 } } });
+  assert.equal(r.pass, false); assert.ok(r.failures.some((f) => f.startsWith("trait_max_ranks: only 29")) && r.failures.some((f) => f.startsWith("trait_points_required: exact_rate")));
+});
+test("traits summary: trait_prereq is its own row marked likely and not counted; the verdict ignores it", () => {
+  const row = (kind, exact) => ({ kind, scored: true, status: "answered", reason: "ok", model: "m", latency_ms: 1000, scores: { exact, unsupported_count: 0 } });
+  const rows = [];
+  for (const k of ["spell_level", "item_level_req"]) for (let i = 0; i < 30; i++) rows.push(row(k, true));
+  for (let i = 0; i < 5; i++) rows.push(row("trait_prereq", false));
+  const text = formatSummary(rows);
+  assert.match(text, /trait_prereq \*/);
+  assert.match(text, /\* trait_prereq: likely, not counted toward the bar/);
+  assert.match(text, /pass bar: PASS/);
 });
 
 // ---- run: stub of the shadow route ----
