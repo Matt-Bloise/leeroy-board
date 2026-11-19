@@ -11,6 +11,7 @@ import { badPhrases, HOUSE } from "../ask-build.js";
 import { isRefusalSentence, refusalRemainder, contentSentences, splitBanter, splitSentenceText } from "../answer-lint.js";
 import { RESEARCH_DOWN_ANSWER, DEGRADED_ANSWERS } from "./provider.js";
 import { defangPings } from "./real-names.js";
+import { dropUnshownRowIds, clientTableItem } from "../game-facts-read.js";
 
 export const CLASSIC_TAG = "Classic value, not confirmed for Forever";
 export const CLASSIC_NAME_TAG = "Classic-era name, not confirmed for Forever";
@@ -356,17 +357,23 @@ export function appendBasis(main, { labels, confidence }) {
 // The whole text step. `retrievedIds`: ids the prompt showed (a Set, or null for "no filter"). Returns { text, basis, labelled, tagged, usable, unverifiedCites }.
 // `text` ends with a bare `-# Sources: id, id` line when library ids survive (the formatter turns it into links); the labels and the confidence word are appended after formatting (appendBasis).
 // A cited page the prompt never showed is not deleted as a claim: its id leaves the link line, and the answer's confidence is capped at "likely".
-export function researchPrepare(text, { groundingText = "", retrievedIds = null, budget = 1500, allow = [] } = {}) {
+// factIds (GAME_FACTS_READ only; null = off, the default): a Set of the client-table row ids the prompt showed. A bracketed row id that was not shown is removed, the row ids the answer uses come back as factCites, a
+// cited row counts as a library-grade source for the confidence word, and the model's own "client table ..." label is left out (finishAnswerText writes the one compact client table item itself).
+export function researchPrepare(text, { groundingText = "", retrievedIds = null, budget = 1500, allow = [], factIds = null } = {}) {
   const usable = usableAnswer(text);
   const src = takeSources(stripRefusals(String(text || "").slice(0, MAX_INPUT_CHARS)));
   const outage = !usable || String(text || "").trim() === RESEARCH_DOWN_ANSWER || DEGRADED_ANSWERS.has(String(text || "").trim()); // both code-written outage lines carry no sources/confidence tag
   let body = usable ? src.body : RESEARCH_DOWN_ANSWER; // callers retry or fall back to library facts before this; this keeps the eval and format paths from emitting nothing
+  const rawText = String(text || "");
+  const factCites = factIds && usable ? [...factIds].filter((id) => rawText.includes(id)) : [];
+  if (factIds) body = dropUnshownRowIds(body, factIds);
   const lab = labelClassic(body, groundingText);
   body = trimToSentences(neutraliseMentions(defuseLinks(lab.text, { allow })), budget);
   const ids = retrievedIds ? src.ids.filter((id) => retrievedIds.has(id)) : src.ids;
   const unverifiedCites = src.ids.length > ids.length;
   const pre = ids.length ? `${body}\n-# Sources: ${ids.join(", ")}` : body;
-  const labels = src.labels.map((l) => neutraliseMentions(defuseLinks(l)).replace(/[`\[\]()<>]/g, "")).filter(Boolean);
+  const rawLabels = src.labels.map((l) => neutraliseMentions(defuseLinks(l)).replace(/[`\[\]()<>]/g, "")).filter(Boolean).filter((l) => !factIds || (!/client table/i.test(l) && ![...factIds].some((id) => l.includes(id))));
+  const labels = factCites.length ? [clientTableItem(factCites), ...rawLabels] : rawLabels; // the answer rests on table rows: that is its first source label
   // The outage line is not a researched answer: it carries no sources/confidence tag.
-  return { text: pre, basis: outage ? null : { labels, confidence: chooseConfidence({ found: src.found, hasLibraryIds: ids.length > 0, labelled: lab.labelled, unverifiedCites }) }, labelled: lab.labelled, tagged: lab.tagged, usable, unverifiedCites };
+  return { text: pre, basis: outage ? null : { labels, confidence: chooseConfidence({ found: src.found, hasLibraryIds: ids.length > 0 || factCites.length > 0, labelled: lab.labelled, unverifiedCites }) }, labelled: lab.labelled, tagged: lab.tagged, usable, unverifiedCites, factCites };
 }

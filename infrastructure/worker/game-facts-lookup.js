@@ -1,4 +1,4 @@
-// Game-facts lookup: lookupGameFacts(env, question, { limit }). docs/runbooks/game-facts.md. NOT wired into any answer path in this PR; a later PR runs it before the Claude hop.
+// Game-facts lookup: lookupGameFacts(env, question, { limit }). docs/runbooks/game-facts.md. Read by the ask path only behind GAME_FACTS_READ (game-facts-read.js).
 // No full-text index: the question is folded with the SAME normaliser the loader used (game-facts-name.js), cut into word windows (longest first), and the windows are looked up as names through the (kind, subject_norm) index and, for
 // "Arcane Spirit" finding "Arcane Spirit III", the partial (kind, subject_base) index. Curated facts (kind 'curated', a sentence each, a few hundred rows) are matched on their words instead.
 // Returns { rows, doNotSay, ambiguous, via }. A row is { id, kind, subject, claim, value, unit, source_table, row_id, build }. ALL rows that share a matched name come back, with their ids: when one name has several rows of the same kind
@@ -128,8 +128,8 @@ async function runAll(env, q) {
   return results || [];
 }
 
-// -> { rows, doNotSay, ambiguous, via: "names" | "none" }. limit: the most rows returned by whole names (the first name is never cut: an ambiguous name returns every row).
-export async function lookupGameFacts(env, question, { limit = 5 } = {}) {
+// lookupGameFacts, plus failed: true when a database error was swallowed (the reader, game-facts-read.js, tells an error from an empty table; lookupGameFacts below drops the field, so its result is unchanged).
+export async function lookupGameFactsChecked(env, question, { limit = 5 } = {}) {
   const empty = { rows: [], doNotSay: [], ambiguous: false, via: "none" };
   const n = Number.isInteger(limit) ? Math.min(20, Math.max(1, limit)) : 5;
   const { tokens, windows } = questionWindows(question);
@@ -164,6 +164,12 @@ export async function lookupGameFacts(env, question, { limit = 5 } = {}) {
     const rank = (r) => r.id;
     return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, ...(rankMissing ? { rankMissing: true } : {}), via: "names" };
   } catch {
-    return empty;
+    return { ...empty, failed: true };
   }
+}
+
+// -> { rows, doNotSay, ambiguous, via: "names" | "none" }. limit: the most rows returned by whole names (the first name is never cut: an ambiguous name returns every row).
+export async function lookupGameFacts(env, question, opts) {
+  const { failed, ...result } = await lookupGameFactsChecked(env, question, opts);
+  return result;
 }

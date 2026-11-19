@@ -31,6 +31,7 @@ import { researchEnabled, researchAnswer } from "./research/index.js";
 import { assertAnthropicUrl, namesAreReal } from "./research/real-names.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_LENGTH_OVERRIDE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { findAskerTurns, renderTurns, PRIOR_TURNS_RULE } from "./research/turns.js";
+import { gameFactsReadOn, readGameFacts, GAME_FACTS_RULE, GAME_FACTS_NOTHING_RULE, addClientTableSources, isTableAbstention } from "./game-facts-read.js";
 import { groupMemoryOn, buildGroupMemoryBlock, groupRowsForAsk, appendGroupLog, isGroupSlug, GROUP_MEMORY_RULE } from "./research/group-memory.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER, degradedLines, DEGRADED_SUFFIX } from "./research/provider.js";
@@ -1121,7 +1122,11 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const groupText = groupMember && researchReal
       ? await buildGroupMemoryBlock(env, { askerSlug: memberSlug, isMember: true, channel: groupMemory.channel, share: groupMemory.share !== false, names: sheets0.filter((s) => s && s.slug).map((s) => ({ slug: s.slug, display: s.name || s.slug })), mentionText: `${question}\n${prevText}` })
       : "";
+    // GAME_FACTS_READ (off by default; research asks only): the client table rows that match the question, one lookup (3 D1 reads) started beside the persona load; readGameFacts never throws, and null means nothing changes.
+    const gfPromise = research && retrieve && gameFactsReadOn(env) ? readGameFacts(env, question) : null;
     const persona = await loadPersona(env);
+    const gf = gfPromise ? await gfPromise : null;
+    const gfActive = Boolean(gf && (gf.block || gf.tableFact)); // the table-fact rules go in when a block is shown or the question asks for a table figure
     const usePersona = persona && promptVariant !== "plain";
     let systemPrompt = usePersona
       ? buildSystemPrompt(persona, {
@@ -1133,7 +1138,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     // Research mode: the persona pack's "Keep the reply under N characters" line (persona.js) would undercut the research cap, so a shorter N is replaced for this ask.
     const personaCap = Number(persona && persona.format && persona.format.chatMaxChars);
     // Research mode with nothing in the library: the research rules go after VOICE_RULE and override the "only from LIBRARY" lines for this question.
-    systemPrompt = `${systemPrompt}\n\n${PERSONALISE_RULE}\n\n${VOICE_RULE}${research && abstain ? `\n\n${RESEARCH_RULES}` : ""}${research && (abstain || !usePersona || (personaCap > 0 && personaCap < RESEARCH_HARD_CHARS)) ? `\n\n${RESEARCH_LENGTH_OVERRIDE}` : ""}\n\n${FENCE_RULE}${groupText ? `\n\n${GROUP_MEMORY_RULE}` : ""}`;
+    systemPrompt = `${systemPrompt}\n\n${PERSONALISE_RULE}\n\n${VOICE_RULE}${research && abstain ? `\n\n${RESEARCH_RULES}` : ""}${research && (abstain || !usePersona || (personaCap > 0 && personaCap < RESEARCH_HARD_CHARS)) ? `\n\n${RESEARCH_LENGTH_OVERRIDE}` : ""}\n\n${FENCE_RULE}${groupText ? `\n\n${GROUP_MEMORY_RULE}` : ""}${gfActive ? `\n\n${GAME_FACTS_RULE}` : ""}`;
 
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.
     // The abstain answer is written by code (self-rag.js composeAbstain): the Library pages that cover the asker's own class, spec and professions.
@@ -1173,18 +1178,18 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     // page the prompt only summarised), plus the build, the party and the question.
     const shownFacts = hits.slice(0, 20).map((h) => h.value).join(" ");
     const shownPages = ranked.map((p) => `${p.title}${p.blurb ? ` ${p.blurb}` : ""}`).join(" ");
-    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, question, prevQ, by, ...(research && priorTurns ? priorTurns.map((t) => t.q) : [])].join(" "); // the earlier question was shown too: a name or number only it holds may be repeated
+    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, question, prevQ, by, ...(research && priorTurns ? priorTurns.map((t) => t.q) : []), ...(gf && gf.ground ? [gf.ground] : [])].join(" "); // the earlier question was shown too: a name or number only it holds may be repeated
     const groundingText = groundingWithIds(groundingBase, retrievedIds, abstain);
     const NL = "\n";
     const libraryBlock = !retrieve
       ? ["(not needed for this message)", skip === "build" ? BUILD_RULE : SKIP_RULE].join(NL)
       : abstain
-        ? ["(no library fact matches this question)", research ? RESEARCH_NOTHING_RULE : ABSTAIN_RULE].join(NL)
+        ? ["(no library fact matches this question)", research ? (gfActive ? GAME_FACTS_NOTHING_RULE : RESEARCH_NOTHING_RULE) : ABSTAIN_RULE].join(NL)
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
     const turnsText = research && priorTurns ? renderTurns(priorTurns) : ""; // ASK_RESEARCH only: the asker's own last turns (research/turns.js); empty when off, so the prompt is byte-identical
-    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${turnsText ? `${fence("PRIOR_TURNS", turnsText)}\n${PRIOR_TURNS_RULE}\n\n` : ""}${groupText ? `${groupText}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
+    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${turnsText ? `${fence("PRIOR_TURNS", turnsText)}\n${PRIOR_TURNS_RULE}\n\n` : ""}${groupText ? `${groupText}\n\n` : ""}${gf && gf.block ? `${gf.block}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, ...(gfActive ? { gameFactIds: gf.ids } : {}), abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1196,7 +1201,7 @@ const eggFor = (persona) => {
   return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
 };
 
-export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "", research = false }) {
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "", research = false, factIds = null }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
     let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap, ...(research ? { keepAdvice: true } : {}) });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
@@ -1218,14 +1223,16 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
     }
     // Research text step: refusal sentences out, labels, mention and link safety, whole-sentence trim, one sources line with one confidence word (appended after formatting).
     let researchBasis = null;
+    let factCites = []; // GAME_FACTS_READ: the client-table row ids the answer cites (researchPrepare); always empty with the flag off
     // The original voice runs 600-900 characters, hard 1500 for the body (the persona's 1200 chat cap would cut it); the finished answer, sources and confidence line included, stays at or under 1900 (Discord's limit is 2000).
     const researchCap = research ? RESEARCH_FINAL_CHARS : 0;
     let boardHost = "";
     if (research) { try { boardHost = new URL(env.BOARD_PUBLIC_URL || "https://leeroy.party").hostname; } catch {} }
     if (research && !trusted) {
-      const rp = researchPrepare(repaired, { groundingText: typeof groundingText === "string" ? groundingText : "", retrievedIds: retrieved ? retrieved.ids : null, budget: RESEARCH_HARD_CHARS, allow: boardHost ? [boardHost] : [] });
+      const rp = researchPrepare(repaired, { groundingText: typeof groundingText === "string" ? groundingText : "", retrievedIds: retrieved ? retrieved.ids : null, budget: RESEARCH_HARD_CHARS, allow: boardHost ? [boardHost] : [], ...(factIds ? { factIds: new Set(factIds) } : {}) });
       repaired = rp.text;
       researchBasis = rp.basis;
+      factCites = rp.factCites || [];
     }
     const libPages = parsedPages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
     const known = new Set(libPages.map((p) => p.id));
@@ -1248,7 +1255,9 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
       : { main: repaired, more: "", sources: "" };
     parts.main = classPageFallback(parts.main, { question, pages: parsedPages, boardUrl: env.BOARD_PUBLIC_URL }); // ask-fallback.js hook
     // The confidence line is for answers the library did not ground (the research prompt state); a library-backed answer keeps its own Sources line.
-    if (research && researchBasis && retrieved && retrieved.abstain) parts.main = appendBasis(parts.main, researchBasis);
+    const basisAppended = Boolean(research && researchBasis && retrieved && retrieved.abstain && !(factIds && !factCites.length && isTableAbstention(parts.main))); // GAME_FACTS_READ: the one-line table abstention gets no "general knowledge" footer
+    if (basisAppended) parts.main = appendBasis(parts.main, researchBasis);
+    if (research && factCites.length && !basisAppended) parts.main = addClientTableSources(parts.main, factCites); // GAME_FACTS_READ: the compact "client table" item of the Sources line
     if (research) {
       // Last step, on the FINAL assembled text (formatter links, class-page fallback, the basis line): link and mention safety, then the length guarantee (also with ANSWER_FORMAT off).
       parts.main = fitToCap(neutraliseMentions(defuseLinks(parts.main, { allow: boardHost ? [boardHost] : [] })), Math.min(researchCap, 1999));
@@ -1601,7 +1610,7 @@ export async function answerWithAi({
 
     // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
     const uxOn = answerUxEnabled(env);
-    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener, research });
+    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener, research, ...(inputs.gameFactIds ? { factIds: inputs.gameFactIds } : {}) });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
     // The model column exactly as an ask_turns row carries it. A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
