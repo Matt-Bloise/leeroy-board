@@ -99,6 +99,20 @@ export function usageTokens(usage, estimate) {
 }
 
 // Conservative upper bound on what a prompt costs: ASCII at 3 characters per token, every other UTF-16 unit (CJK, emoji, accents) at 1.5 tokens, plus the full answer allowance.
+// Measured usage for the shadow recorder: integers only, each field clamped to [0, MEASURED_CLAMP]; anything else is null (never a guess).
+export const MEASURED_CLAMP = 1e7;
+export function measuredUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const ok = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+  if (!ok(usage.input_tokens) || !ok(usage.output_tokens)) return null;
+  return { input_tokens: Math.min(MEASURED_CLAMP, Math.floor(usage.input_tokens)), output_tokens: Math.min(MEASURED_CLAMP, Math.floor(usage.output_tokens)) };
+}
+export function sumMeasured(list) {
+  const got = list.map(measuredUsage).filter(Boolean);
+  if (!got.length) return null;
+  return { input_tokens: Math.min(MEASURED_CLAMP, got.reduce((a, u) => a + u.input_tokens, 0)), output_tokens: Math.min(MEASURED_CLAMP, got.reduce((a, u) => a + u.output_tokens, 0)) };
+}
+
 export function estimateTokens(systemText, userText) {
   const text = `${systemText ?? ""}${userText ?? ""}`;
   const nonAscii = (text.match(/[^\u0000-\u007f]/g) || []).length;
@@ -366,9 +380,17 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   };
   // sent: the send in flight (or the last one), so a timeout says which one it was and how long it ran (failReason). The retry is capped at CLAUDE_RETRY_MAX_MS and never past the hop's end.
   let sent = null;
-  const attempt = (modelOverride, stage = "retry", dl = stage === "retry" ? Math.min(deadlineAt, Date.now() + CLAUDE_RETRY_MAX_MS) : deadlineAt) => {
+  const measured = []; // the usage block of every send that reported one (compose and any retry), summed for the shadow recorder
+  const attempt = async (modelOverride, stage = "retry", dl = stage === "retry" ? Math.min(deadlineAt, Date.now() + CLAUDE_RETRY_MAX_MS) : deadlineAt) => {
     sent = { stage, at: Date.now() };
-    return call({ env, systemPrompt: sendSystem, userPrompt: sendUser, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
+    try {
+      const r = await call({ env, systemPrompt: sendSystem, userPrompt: sendUser, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
+      if (r && typeof r === "object") measured.push(r.usage);
+      return r;
+    } catch (e) {
+      if (e && typeof e === "object" && e.usage) measured.push(e.usage); // a failed send that still reports usage (none does today)
+      throw e;
+    }
   };
   let res;
   try {
@@ -406,7 +428,8 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   await settle(usageTokens(res.usage, estimate) - estimate);
   const text = cleanReply(res.answer);
   if (text === null) return { reason: `claude:reply-flagged@${real ? replyFlagKind(res.answer, env) : "name"}` }; // the fixed kind only: empty, a secret kind, or name (tokenised mode)
-  return { answer: text, model: res.model, provider: "claude" };
+  const usage = sumMeasured(measured);
+  return { answer: text, model: res.model, provider: "claude", ...(usage ? { usage } : {}) };
 }
 
 // ---- one capped call that is not an ask (the group-wiki refresher, research/group-wiki.js) ---------------------------------------------------------------

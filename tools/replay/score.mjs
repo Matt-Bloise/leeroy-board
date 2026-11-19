@@ -47,12 +47,24 @@ export function extractNumberWords(text) {
 }
 
 // -> {unit: "level"|"seconds"|"mana"|"other", mult} or null (no context). mult converts the token to the unit's base (minutes -> seconds x60).
-function unitOf(text, t) {
+// ku: the expected unit of the item being scored. The trait units (ranks, points) are read ONLY when ku asks for them, so the other kinds score exactly as before.
+const RANK_AFTER = /^\s*-?\s*ranks?\b/i;
+const RANK_BEFORE = /\b(?:max(?:imum)?\s+ranks?|ranks)\s*(?:of|is|was|:|=)?\s*$/i;
+const POINT_AFTER = /^\s*-?\s*(?:talent\s+)?points?\b/i;
+function unitOf(text, t, ku = null) {
   const before = tail(text, t.index);
   const after = text.slice(t.end, t.end + 28);
   const next = text.slice(t.end, t.end + 28); // right after the token: a glued s/ms/m/min suffix shows here
   if (LEVEL_BEFORE.test(before) || LEVEL_AFTER.test(after)) return { unit: "level", mult: 1 };
   if (MANA_AFTER.test(after) || MANA_BEFORE.test(before)) return { unit: "mana", mult: 1 };
+  if (ku === "ranks") {
+    if (RANK_AFTER.test(after) || RANK_BEFORE.test(before)) return { unit: "ranks", mult: 1 };
+    if (POINT_AFTER.test(after)) return { unit: "other", mult: 1 }; // points are another fact for a ranks question
+  }
+  if (ku === "points") {
+    if (POINT_AFTER.test(after)) return { unit: "points", mult: 1 };
+    if (RANK_AFTER.test(after)) return { unit: "other", mult: 1 };
+  }
   const glued = /^(ms|s|min|m)(?![A-Za-z0-9])/.exec(next);
   const probe = glued ? glued[0] + " " : after;
   if (/^\s*-?\s*(?:ms|milliseconds?)\b/i.test(probe)) return { unit: "seconds", mult: 0.001 };
@@ -64,24 +76,44 @@ function unitOf(text, t) {
   return null;
 }
 
-export const KIND_UNIT = Object.freeze({ spell_level: "level", item_level_req: "level", spell_cooldown: "seconds", spell_cast_time: "seconds", spell_mana_cost: "mana" });
+export const KIND_UNIT = Object.freeze({ spell_level: "level", item_level_req: "level", spell_cooldown: "seconds", spell_cast_time: "seconds", spell_mana_cost: "mana", trait_max_ranks: "ranks", trait_points_required: "points", trait_prereq: "name" });
 const unitForExpected = (expected) => (expected && expected.unit) || "level";
+// A numeric expectation. A "name" expectation (trait_prereq) is a string and never goes through the number paths.
+const isNumeric = (expected) => Boolean(expected) && expected.unit !== "name" && typeof expected.value !== "string" && Number.isFinite(Number(expected.value));
+// "a single rank" / "single point" state the number one. Only for the ranks and points units.
+const SINGLE_RE = /\b(?:single|only\s+one)\s+(?:talent\s+)?(?:rank|point)\b/gi;
 
 // Tokens of one answer that carry the question's unit, normalised to that unit. Word forms count here only.
 function unitTokens(text, unit) {
   const toks = [...extractNumbers(text), ...extractNumberWords(text)];
   const out = [];
   for (const t of toks) {
-    const u = unitOf(text, t);
+    const u = unitOf(text, t, unit);
     if (u && u.unit === unit) out.push({ ...t, norm: t.value * u.mult, negated: negatedAt(text, t.index) });
+  }
+  if (unit === "ranks" || unit === "points") {
+    for (const m of String(text).matchAll(SINGLE_RE)) out.push({ value: 1, raw: m[0], index: m.index, end: m.index + m[0].length, word: true, norm: 1, negated: negatedAt(text, m.index) });
   }
   return out;
 }
 
+const normName = (s) => String(s).toLowerCase().replace(/[\u2018\u2019`]/g, "'").replace(/\s+/g, " ").trim();
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const wordRe = (name) => new RegExp(`(?<![\\p{L}\\p{N}])${escRe(normName(name)).replace(/ /g, "\\s+")}(?![\\p{L}\\p{N}])`, "gu");
+// Name expectation: the prerequisite is named, not negated, after the asked talent's own name is removed from the answer (so "X needs Y" never matches because the question's name contains Y).
+// Lexical: an answer that lists many talents passes if the right one is among them.
+function nameMatch(answer, name, entity) {
+  let text = normName(answer);
+  if (entity) text = text.replace(wordRe(entity), " ");
+  for (const m of text.matchAll(wordRe(name))) if (!negatedAt(text, m.index)) return true;
+  return false;
+}
+
 // exact_match: the expected number is stated as the question's unit ("level 20", "20th level", "twenty" next to level, "5 minutes" for 300 seconds) or, when the answer states no number in that unit at all,
 // as a bare standalone token that is not an id and carries no other unit (gold, %, mana for a level question ...). Not part of a longer number (120, 2.05).
-export function exact_match(answer, expected) {
-  if (typeof answer !== "string" || !answer || !expected || !Number.isFinite(Number(expected.value))) return false;
+export function exact_match(answer, expected, entity = null) {
+  if (typeof answer === "string" && answer && expected && expected.unit === "name") return typeof expected.value === "string" && expected.value !== "" && nameMatch(answer, expected.value, entity);
+  if (typeof answer !== "string" || !answer || !isNumeric(expected)) return false;
   const want = Number(expected.value);
   const unit = unitForExpected(expected);
   const ctx = unitTokens(answer, unit);
@@ -89,7 +121,7 @@ export function exact_match(answer, expected) {
   if (ctx.length) return false;
   for (const t of extractNumbers(answer)) {
     if (ID_BEFORE.test(tail(answer, t.index)) || negatedAt(answer, t.index)) continue;
-    if (unitOf(answer, t)) continue; // a number with some other unit is not this answer
+    if (unitOf(answer, t, unit)) continue; // a number with some other unit is not this answer
     if (near(t.value, want)) return true;
   }
   return false;
@@ -100,7 +132,8 @@ export function exact_match(answer, expected) {
 export function unsupported_numbers(answer, { question = "", expected = null, allowed_numbers = [] } = {}) {
   if (typeof answer !== "string" || !answer) return [];
   const ok = [];
-  if (expected && Number.isFinite(Number(expected.value))) ok.push(Number(expected.value));
+  if (isNumeric(expected)) ok.push(Number(expected.value));
+  const ku = expected && expected.unit ? expected.unit : null;
   for (const v of allowed_numbers || []) if (Number.isFinite(Number(v))) ok.push(Number(v));
   for (const t of extractNumbers(question)) ok.push(t.value);
   const has = (v) => ok.some((x) => near(x, v));
@@ -108,7 +141,7 @@ export function unsupported_numbers(answer, { question = "", expected = null, al
   for (const t of extractNumbers(answer)) {
     const lineStart = answer.slice(answer.lastIndexOf("\n", t.index - 1) + 1, t.index).trim() === "";
     if (lineStart && /^[.)]/.test(answer.slice(t.end))) continue;
-    const u = unitOf(answer, t);
+    const u = unitOf(answer, t, ku);
     if (has(t.value)) continue;
     if (u && has(t.value * u.mult)) continue;
     if (!u && Number.isInteger(t.value) && t.value <= 10) continue;
@@ -120,13 +153,15 @@ export function unsupported_numbers(answer, { question = "", expected = null, al
 // contradiction: the answer states a DIFFERENT number in the question's unit than the expected one ("level 30" when the fact is level 20), unless that number is negated ("not level 30"), is in the question, or sits in a clause about a
 // different fact (max, cap, rank, upgrade, improved). Number words next to the unit count.
 export function contradiction(answer, expected, question = "") {
-  if (typeof answer !== "string" || !answer || !expected || !Number.isFinite(Number(expected.value))) return false;
+  if (typeof answer !== "string" || !answer || !isNumeric(expected)) return false;
   const want = Number(expected.value);
   const unit = unitForExpected(expected);
-  const qn = extractNumbers(question).map((t) => t.value);
+  // ranks: "rank(s)" is the question's own unit, so it must not mark a clause as another fact; points: "rank(s)" and totals are another fact.
+  const differentFact = unit === "ranks" ? /\b(?:cap(?:ped)?|upgrade[sd]?)\b/i : unit === "points" ? /\b(?:max(?:imum)?|cap(?:ped)?|ranks?|upgrade[sd]?|total)\b/i : DIFFERENT_FACT;
+  const qn =extractNumbers(question).map((t) => t.value);
   // per CLAUSE: sentences, then commas, semicolons and but/though/however/while
   for (const sentence of answer.split(/(?<=[.!?])\s+|\n+|;|,(?!\d)|\s+(?:but|though|however|while)\s+/)) {
-    if (DIFFERENT_FACT.test(sentence)) continue;
+    if (differentFact.test(sentence)) continue;
     for (const t of unitTokens(sentence, unit)) {
       if (!t.negated && !near(t.norm, want) && !qn.some((q) => near(q, t.norm))) return true;
     }
@@ -148,7 +183,7 @@ export const withinBudget = (latencyMs) => Number.isFinite(latencyMs) && latency
 // Scores one result against one truth record. answer: the text (null when the Worker withheld it).
 export function scoreTruthItem(record, res, answer) {
   const expected = record.expected;
-  const em = exact_match(answer, expected);
+  const em = exact_match(answer, expected, record.entity_name);
   const ct = contradiction(answer, expected, record.question);
   const un = unsupported_numbers(answer, { question: record.question, expected, allowed_numbers: record.allowed_numbers });
   return { exact_match: em, contradiction: ct, exact: em && !ct && !degraded(res), unsupported_count: un.length, degraded: degraded(res) };

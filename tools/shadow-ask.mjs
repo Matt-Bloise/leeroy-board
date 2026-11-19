@@ -72,4 +72,5 @@ if (Number.isFinite(out.latency_ms)) {
     ? `timing: compose ${s} s (round trip ${(wallMs / 1000).toFixed(1)} s): within the ask hard end (under 22 s)`
     : `timing: compose ${s} s (round trip ${(wallMs / 1000).toFixed(1)} s): over the ask hard end (22 s); a real /ask would have answered with the degraded line`);
 }
+console.log(`tokens: input ${Number.isInteger(out.input_tokens) ? out.input_tokens : "unknown"}, output ${Number.isInteger(out.output_tokens) ? out.output_tokens : "unknown"} (measured, Anthropic usage)`);
 process.exit(res.status === 200 && out.ok === true ? 0 : 1);

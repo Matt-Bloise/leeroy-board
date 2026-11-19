@@ -17,9 +17,9 @@ import { fileURLToPath } from "node:url";
 import { shadowKey, signListen } from "../../infrastructure/worker/listener-config.js";
 import { MAX_QUESTION_CHARS } from "../../infrastructure/worker/limits.js";
 import { appendOut, assertOutsideRepo, readJsonl, sha256, parseArgs, die, withLock, DEFAULT_OUT_DIR } from "./common.mjs";
-import { KINDS } from "./truth-gen.mjs";
+import { KINDS, TRAIT_KINDS } from "./truth-gen.mjs";
 import { scoreTruthItem, summarize, withinBudget, degraded } from "./score.mjs";
-import { evaluateBar, PASS_BAR } from "./pass-bar.mjs";
+import { evaluateBar, PASS_BAR, INFORMATIONAL_KINDS, INFORMATIONAL_LABEL } from "./pass-bar.mjs";
 
 export const SHADOW_PER_HOUR = 6;
 export const SHADOW_PER_DAY = 20;
@@ -41,7 +41,7 @@ export function checkBase(base, allowHosts = []) {
 }
 
 // Only fixed vocabularies reach stdout or the results file: a response cannot smuggle text through these fields.
-export const KNOWN_KINDS = Object.freeze([...KINDS, "pair"]);
+export const KNOWN_KINDS = Object.freeze([...KINDS, ...TRAIT_KINDS, "pair"]);
 export const safeStatus = (v) => (WORKER_SETS.includes(v) ? v : "other");
 export const safeKind = (v) => (v === undefined || v === null ? "pair" : KNOWN_KINDS.includes(v) ? v : "other");
 // reason: the same pattern as safeReason in infrastructure/worker/shadow-ask.js. model: the same but it may also carry "+" and "[ ]" (the label is provider:model+research+degraded or [reason]).
@@ -172,7 +172,7 @@ export async function runReplay(opts, deps = {}) {
         model: safeModel(out.model), latency_ms: Number.isFinite(out.latency_ms) ? Math.round(out.latency_ms) : null,
         reason: safeReason(out.reason), within_budget: withinBudget(out.latency_ms), degraded: degraded(raw),
         answer_length: answer ? Array.from(answer).length : 0, answer_sha256: answer ? sha256(answer) : null,
-        http_status: res.status, scored, sent_at: sentAt, local_omitted: localOmitted || undefined, scores: null,
+        input_tokens: tokInt(out.input_tokens), output_tokens: tokInt(out.output_tokens), http_status: res.status, scored, sent_at: sentAt, local_omitted: localOmitted || undefined, scores: null,
       };
       if (scored) row.scores = rec.expected ? scoreTruthItem(rec, raw, answer) : { degraded: row.degraded };
       if (keepAnswers && answer !== null) row.answer = answer;
@@ -185,6 +185,14 @@ export async function runReplay(opts, deps = {}) {
   });
 }
 
+// Measured Anthropic tokens per compose (the Worker reports integers or null). Totals and mean per item over the items that reported both numbers.
+const tokInt = (v) => (Number.isInteger(v) && v >= 0 && v <= 1e7 ? v : null);
+export function tokenStats(rows) {
+  const known = rows.filter((r) => !r.type && tokInt(r.input_tokens) !== null && tokInt(r.output_tokens) !== null);
+  const input_total = known.reduce((a, r) => a + r.input_tokens, 0);
+  const output_total = known.reduce((a, r) => a + r.output_tokens, 0);
+  return { items_with_usage: known.length, input_total, output_total, input_mean: known.length ? input_total / known.length : null, output_mean: known.length ? output_total / known.length : null };
+}
 const pct = (v) => (v === null || v === undefined ? "  n/a" : (v * 100).toFixed(1).padStart(5) + "%");
 const ms = (v) => (v === null || v === undefined ? "   n/a" : String(Math.round(v)).padStart(6));
 export function formatSummary(rows) {
@@ -193,12 +201,16 @@ export function formatSummary(rows) {
   const lines = [];
   const row = (label, g) => `${label.padEnd(16)} ${String(g.n).padStart(4)} ${String(g.scored).padStart(6)} ${String(g.exact_scored).padStart(6)} ${pct(g.exact_rate)} ${pct(g.unsupported_rate)} ${pct(g.degraded_rate)} ${pct(g.within_budget_rate)} ${ms(g.latency_p50_ms)} ${ms(g.latency_p95_ms)}`;
   lines.push(`${"kind".padEnd(16)} ${"n".padStart(4)} ${"scored".padStart(6)} ${"truth".padStart(6)} ${"exact".padStart(6)} ${"unsup".padStart(6)} ${"degr".padStart(6)} ${"budget".padStart(6)} ${"p50ms".padStart(6)} ${"p95ms".padStart(6)}`);
-  for (const [k, g] of Object.entries(s.by_kind).sort()) lines.push(row(k, g));
+  for (const [k, g] of Object.entries(s.by_kind).sort()) lines.push(row(INFORMATIONAL_KINDS.includes(k) ? `${k} *` : k, g));
   lines.push(row("ALL", s));
+  const t = tokenStats(results);
+  lines.push(t.items_with_usage ? `tokens (measured, ${t.items_with_usage} of ${results.length} items): input ${t.input_total} total, ${Math.round(t.input_mean)} mean; output ${t.output_total} total, ${Math.round(t.output_mean)} mean` : "tokens: no measured usage in these results");
   if (results.some((r) => r.scores && typeof r.scores.exact === "boolean")) {
     const v = evaluateBar(s);
     lines.push(v.pass ? "pass bar: PASS" : "pass bar: FAIL (a first run against a Worker with no game_facts table is expected to fail: it is the baseline)");
     for (const f of v.failures) lines.push(`  - ${f}`);
+    const info = INFORMATIONAL_KINDS.filter((k) => s.by_kind[k]);
+    if (info.length) lines.push(`* ${info.join(", ")}: ${INFORMATIONAL_LABEL} (reported, never in the pass/fail decision or the required kinds)`);
     lines.push(`bar: exact >= ${PASS_BAR.exact_rate_min}, unsupported <= ${PASS_BAR.unsupported_rate_max}, degraded <= ${PASS_BAR.degraded_rate_max}, budget >= ${PASS_BAR.within_budget_rate_min}, >= ${PASS_BAR.min_scored_per_kind} scored per kind`);
   }
   return lines.join("\n");

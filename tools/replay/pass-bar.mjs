@@ -15,6 +15,11 @@ export const PASS_BAR = Object.freeze({
   required_kinds: Object.freeze(["spell_level", "item_level_req"]),
 });
 
+// Informational kinds: reported as their own kind with the label below, never part of the pass/fail decision or the required-kinds rule. trait_prereq rests on the edge rule "TraitEdge type 2: left is the prerequisite of right",
+// which agrees with the legacy table on 21 of 23 comparable edges (the two that differ are in redesigned trees), so it is likely, not sure.
+export const INFORMATIONAL_KINDS = Object.freeze(["trait_prereq"]);
+export const INFORMATIONAL_LABEL = "likely, not counted toward the bar";
+
 // Pair corpora (Leeroy versus the Worker): rubric scores come from a separate blind grading step (grade-pack.mjs).
 export const RUBRIC_DIMENSIONS = Object.freeze(["tone", "helpfulness", "groundedness"]);
 export const RUBRIC_MIN = 1;
@@ -41,8 +46,9 @@ export function evaluateBar(summary) {
     if (s.degraded_rate === null || s.degraded_rate > PASS_BAR.degraded_rate_max) failures.push(`${label}: degraded_rate ${fmt(s.degraded_rate)} > ${PASS_BAR.degraded_rate_max}`);
     if (s.within_budget_rate === null || s.within_budget_rate < PASS_BAR.within_budget_rate_min) failures.push(`${label}: within_budget_rate ${fmt(s.within_budget_rate)} < ${PASS_BAR.within_budget_rate_min}`);
   };
-  for (const [k, s] of Object.entries(kinds)) check(k, s);
-  if (!Object.keys(kinds).length) failures.push("no scored truth items");
+  const counted = Object.entries(kinds).filter(([k]) => !INFORMATIONAL_KINDS.includes(k));
+  for (const [k, s] of counted) check(k, s);
+  if (!counted.length) failures.push("no scored truth items");
   return { pass: failures.length === 0, failures };
 }
 

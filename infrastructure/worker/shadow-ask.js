@@ -159,14 +159,22 @@ export async function handleShadowAsk(req, env, deps = {}) {
     v: 1, research: Boolean(rec.research), group_memory: Boolean(rec.groupMemory), share: !priv, as_given: Boolean(as), channel_given: Boolean(channel), local_dropped: localDropped,
     cites: Array.isArray(rec.cites) ? rec.cites.length : 0, answer_chars: answer ? Array.from(answer).length : 0, deadline_ms: askDeadlineMs(env), hard_end_ms: hardEnd, within_hard_end: latencyMs <= hardEnd,
   };
+  // Measured Anthropic usage of the compose (and any retry send), integers or null (unknown, or a degraded non-Claude answer).
+  const mu = (v) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.min(1e7, Math.floor(v)) : null);
+  const ru = rec.usage && typeof rec.usage === "object" && rec.status === "answered" ? rec.usage : null;
+  const inputTokens = ru ? mu(ru.input_tokens) : null;
+  const outputTokens = ru ? mu(ru.output_tokens) : null;
+  const usageKnown = inputTokens !== null && outputTokens !== null;
+  meta.input_tokens = usageKnown ? inputTokens : null;
+  meta.output_tokens = usageKnown ? outputTokens : null;
   const createdAt = nowFn().toISOString();
   try {
     await env.DB.prepare("INSERT INTO shadow_answers (id, created_at, asker_slug, question, answer, model, latency_ms, status, reason, local_answer, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(id, createdAt, asker.slug || null, question, answer, model, latencyMs, status, reason, localAnswer, JSON.stringify(meta)).run();
   } catch {
     console.log(JSON.stringify({ evt: "shadow_ask", stored: false, status, reason, ms: latencyMs }));
-    return json({ id, ok: false, status: "store-failed", model, latency_ms: latencyMs, reason: "store:failed", answer }, 500);
+    return json({ id, ok: false, status: "store-failed", model, latency_ms: latencyMs, reason: "store:failed", answer, input_tokens: meta.input_tokens, output_tokens: meta.output_tokens }, 500);
   }
   console.log(JSON.stringify({ evt: "shadow_ask", stored: true, status, reason, ms: latencyMs })); // no text, no name
-  return json({ id, ok: status === "answered", status, model, latency_ms: latencyMs, reason: reason || (status === "answered" ? "ok" : null), answer });
+  return json({ id, ok: status === "answered", status, model, latency_ms: latencyMs, reason: reason || (status === "answered" ? "ok" : null), answer, input_tokens: meta.input_tokens, output_tokens: meta.output_tokens });
 }
