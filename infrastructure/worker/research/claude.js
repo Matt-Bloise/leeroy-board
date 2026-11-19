@@ -41,7 +41,7 @@ export function splitBudget(remainingMs) {
   const compose = Math.min(CLAUDE_COMPOSE_MS, r - RETRY_MIN_MS);
   return { compose, retry: Math.min(CLAUDE_RETRY_MAX_MS, r - compose) };
 }
-const MAX_PROMPT_CHARS = 60000; // CPU proxy that does not depend on a clock (Workers freezes timers during pure compute)
+export const MAX_PROMPT_CHARS = 60000; // CPU proxy that does not depend on a clock (Workers freezes timers during pure compute)
 // Wall-clock budget for tokenise + guards per ask (measured with performance.now; in a Worker the clock may not advance during compute, so MAX_PROMPT_CHARS is the backstop).
 export const privacyBudget = { ms: 8 };
 

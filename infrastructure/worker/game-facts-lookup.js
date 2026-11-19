@@ -54,10 +54,10 @@ const COLS = "g.id AS id, g.kind AS kind, g.subject AS subject, g.subject_norm A
 const FROM = "FROM game_facts g JOIN game_fact_loads l ON l.id = g.load_id";
 const marks = (n) => Array.from({ length: n }, () => "?").join(", ");
 
-export function buildNameSql(keys, column, fetch) {
+export function buildNameSql(keys, column, fetch, kindList = KIND_LIST) {
   if (!["subject_norm", "subject_base"].includes(column)) throw new Error("bad column");
   const base = column === "subject_base" ? " AND g.subject_base <> ''" : ""; // the partial index is usable only when the query says so
-  return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind IN (${KIND_LIST}) AND g.${column} IN (${marks(keys.length)})${base} AND ${VISIBLE} LIMIT ?`, binds: [...keys, fetch] };
+  return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind IN (${kindList}) AND g.${column} IN (${marks(keys.length)})${base} AND ${VISIBLE} LIMIT ?`, binds: [...keys, fetch] };
 }
 export function buildCuratedSql(fetch) {
   return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind = 'curated' AND ${VISIBLE} LIMIT ?`, binds: [fetch] };
@@ -76,7 +76,10 @@ export function parseNote(note) {
 }
 const shape = (r) => ({ id: r.id, kind: r.kind, subject: r.subject, claim: r.claim, value: r.value, unit: r.unit, source_table: r.source_table, row_id: r.row_id, build: r.build, ...parseNote(r.note) });
 const rankOfRow = (r) => parseNote(r.note).rank;
-const KIND_RANK = new Map(NAME_KINDS.map((k, i) => [k, i]));
+const KIND_RANK = new Map(FACT_KINDS.map((k, i) => [k, i])); // curated is last
+const ALL_KIND_LIST = FACT_KINDS.map((k) => `'${k}'`).join(", "); // constants, never input
+export const READER_ROW_LIMIT = 24; // SQL LIMIT of each reader candidate query
+export const READER_PER_NAME = 12; // most rows of one matched name the reader keeps
 // The rank the question asks for next to a chosen name window: "fireball rank 4", "fireball rank iv", or "rank 4 fireball". null when none (then every rank comes back).
 export function askedRank(tokens, win) {
   const read = (a, b) => { if (a !== "rank") return null; if (/^[0-9]{1,3}$/.test(b || "")) return Number(b); const i = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"].indexOf(b); return i >= 0 ? i + 1 : null; };
@@ -129,7 +132,9 @@ async function runAll(env, q) {
 }
 
 // lookupGameFacts, plus failed: true when a database error was swallowed (the reader, game-facts-read.js, tells an error from an empty table; lookupGameFacts below drops the field, so its result is unchanged).
-export async function lookupGameFactsChecked(env, question, { limit = 5 } = {}) {
+// reader: true is the per-ask bounded mode of the reader: each candidate query has a SQL LIMIT of READER_ROW_LIMIT (so at most two index-ranged queries and 2 x 24 rows), a name keeps at most READER_PER_NAME rows, and curated rows are
+// found by NAME through the same index (no scan of the curated kind). Without it (the default) nothing changes: 400-row fetches and the curated word match.
+export async function lookupGameFactsChecked(env, question, { limit = 5, reader = false } = {}) {
   const empty = { rows: [], doNotSay: [], ambiguous: false, via: "none" };
   const n = Number.isInteger(limit) ? Math.min(20, Math.max(1, limit)) : 5;
   const { tokens, windows } = questionWindows(question);
@@ -137,8 +142,10 @@ export async function lookupGameFactsChecked(env, question, { limit = 5 } = {}) 
   try {
     const fetched = new Map();
     const add = (list) => { for (const r of list) fetched.set(`${r.id}|${r.load_id || ""}|${r.build}`, r); };
-    if (exact.length) add(await runAll(env, buildNameSql(exact, "subject_norm", 400)));
-    if (byBase.length) add(await runAll(env, buildNameSql(byBase, "subject_base", 400)));
+    const fetchN = reader ? READER_ROW_LIMIT : 400;
+    const kinds = reader ? ALL_KIND_LIST : KIND_LIST;
+    if (exact.length) add(await runAll(env, buildNameSql(exact, "subject_norm", fetchN, kinds)));
+    if (byBase.length) add(await runAll(env, buildNameSql(byBase, "subject_base", fetchN, kinds)));
     const named = chooseNames(windows, [...fetched.values()]);
     const holds = [], wrong = [];
     let ambiguous = false, rankMissing = false;
@@ -152,6 +159,7 @@ export async function lookupGameFactsChecked(env, question, { limit = 5 } = {}) 
         if (!mine.some((r) => rankOfRow(r) !== undefined)) { rankMissing = true; mine = []; }
       }
       mine = [...mine].sort((a, b) => (rankOfRow(a) ?? 1e9) - (rankOfRow(b) ?? 1e9) || KIND_RANK.get(a.kind) - KIND_RANK.get(b.kind) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      if (reader) mine = mine.slice(0, READER_PER_NAME);
       const gh = mine.filter((r) => r.verdict === "holds"), gw = mine.filter((r) => r.verdict === "wrong");
       const perKind = new Map();
       for (const r of gh) perKind.set(r.kind, (perKind.get(r.kind) || 0) + 1);
@@ -159,7 +167,7 @@ export async function lookupGameFactsChecked(env, question, { limit = 5 } = {}) 
       if (holds.length === 0 || holds.length + gh.length <= n) holds.push(...gh);
       wrong.push(...gw);
     }
-    const cur = curatedMatches(question, await runAll(env, buildCuratedSql(300)));
+    const cur = reader ? [] : curatedMatches(question, await runAll(env, buildCuratedSql(300)));
     for (const r of cur) { if (r.verdict === "holds" && holds.length < n) holds.push(r); else if (r.verdict === "wrong") wrong.push(r); }
     const rank = (r) => r.id;
     return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, ...(rankMissing ? { rankMissing: true } : {}), via: "names" };
