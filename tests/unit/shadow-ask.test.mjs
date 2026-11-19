@@ -703,12 +703,13 @@ test("wrangler.toml carries ONE limits var, SHADOW_ASK_LIMITS, with in-range par
   const vars = toml.slice(toml.indexOf("[vars]"));
   assert.ok(!/^SHADOW_ASK_(HOURLY|DAILY|SUBCAP_PERCENT) =/m.test(vars), "the three separate vars are gone: the Workers Free plan allows 64 variables in all");
   const m = vars.match(/^SHADOW_ASK_LIMITS = "([0-9.]+)\/([0-9.]+)\/([0-9.]+)"/m);
-  assert.ok(m, "SHADOW_ASK_LIMITS = hourly/daily/percent");
-  const [h, d, p] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  assert.ok(Number.isInteger(h) && h >= 1 && h <= 120, "hourly in range");
-  assert.ok(Number.isInteger(d) && d >= h && d <= 600, "daily in range and not below hourly");
-  assert.ok(p >= 0.1 && p <= 20, "sub-cap percent in range");
-  assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: `${h}/${d}/${p}` }).hourly, h);
+  if (m) { // declared only while a baseline needs more than the defaults; absent means 6/20/2
+    const [h, d, p] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    assert.ok(Number.isInteger(h) && h >= 1 && h <= 120, "hourly in range");
+    assert.ok(Number.isInteger(d) && d >= h && d <= 600, "daily in range and not below hourly");
+    assert.ok(p >= 0.1 && p <= 20, "sub-cap percent in range");
+    assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: `${h}/${d}/${p}` }).hourly, h);
+  } else assert.deepEqual(shadowLimits({}), { hourly: 6, daily: 20, percent: 2, fraction: 0.02 }, "absent var: the defaults");
   for (const doc of ["docs/runbooks/flags.md", "docs/runbooks/shadow-ask.md"]) for (const k of ["SHADOW_ASK_LIMITS"]) assert.ok(read(doc).includes("`" + k + "`"), `${k} in ${doc}`);
   assert.ok(!read("infrastructure/flagship-flags.txt").includes("SHADOW_ASK_"), "not Flagship keys");
 });
