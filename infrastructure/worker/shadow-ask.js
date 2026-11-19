@@ -48,7 +48,7 @@ export function shadowLimits(env) {
   const hourly = clampedInt(part(0, (env || {}).SHADOW_ASK_HOURLY), SHADOW_PER_HOUR, 1, 120);
   const daily = Math.max(hourly, clampedInt(part(1, (env || {}).SHADOW_ASK_DAILY), SHADOW_PER_DAY, 1, 600));
   const pct = parts.length > 3 ? null : parsePositive(part(2, (env || {}).SHADOW_ASK_SUBCAP_PERCENT));
-  const percent = pct === null ? SHADOW_SUBCAP_PERCENT : Math.min(20, Math.max(0.1, pct));
+  const percent = pct === null ? SHADOW_SUBCAP_PERCENT : Math.min(60, Math.max(0.1, pct));
   return { hourly, daily, percent, fraction: percent / 100 };
 }
 const HOUR_MS = 3600 * 1000;
