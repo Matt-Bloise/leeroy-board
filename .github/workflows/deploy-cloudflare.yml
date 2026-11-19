@@ -4,6 +4,53 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      # Skipped only when EVERY changed file matches (GitHub evaluates this per push). Nothing here is read by this workflow, by tools/pages-bundle.mjs or by wrangler.
+      # A skipped push changes nothing: the next push that deploys checks out its own sha, which contains every earlier commit. docs/runbooks/rollback.md, "When a push deploys".
+      # Never add: infrastructure/, data/, pages-worker/, js/, css/, scenes/, index.html, tools/pages-bundle.mjs, tools/d1-row-count.mjs, tools/flagship-ensure-flags.mjs, tools/sync-discord-commands.mjs.
+      - "docs/**"
+      - "tests/**"
+      - "**/*.md"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".claude/**"
+      - "tools/gateway-spike/**"
+      - "tools/replay/**"
+      - "tools/voice-eval/**"
+      - "tools/add-member.mjs"
+      - "tools/api-scope.mjs"
+      - "tools/bench-ask-cpu.mjs"
+      - "tools/check-secret-scope.sh"
+      - "tools/ci-report.mjs"
+      - "tools/ci-scope.mjs"
+      - "tools/claude-selftest.mjs"
+      - "tools/cost-model.mjs"
+      - "tools/deadman-status.mjs"
+      - "tools/docs-only.mjs"
+      - "tools/first-paint-measure.mjs"
+      - "tools/flake-signatures.json"
+      - "tools/flake-signatures.mjs"
+      - "tools/grade-answers.mjs"
+      - "tools/heartbeat-send.mjs"
+      - "tools/images.mjs"
+      - "tools/import-signups.mjs"
+      - "tools/lighthouse-summary.mjs"
+      - "tools/local-check.sh"
+      - "tools/measure-claude-latency.mjs"
+      - "tools/measure-research-cpu.mjs"
+      - "tools/pages-prune.mjs"
+      - "tools/pull-export.mjs"
+      - "tools/render-legal.mjs"
+      - "tools/research-synthetic.mjs"
+      - "tools/restore-drill.mjs"
+      - "tools/restore-local.mjs"
+      - "tools/roster-upsert.mjs"
+      - "tools/rotate-salts.mjs"
+      - "tools/shadow-ask.mjs"
+      - "tools/source-probe.mjs"
+      - "tools/source-probe.sources.json"
+      - "tools/stamps.mjs"
+      - "tools/terms-watch.mjs"
+      - "tools/tooltips-compliance.mjs"
   workflow_dispatch:
     inputs:
       allow_create_database:
