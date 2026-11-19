@@ -196,6 +196,15 @@ test("member key erase: zero rows keyed by this member's ids or hashes in any co
   for (const [sql, ...a] of keep) assert.equal(count(db, sql, ...a), 1, sql);
 });
 
+test("member key erase before migration 0014 (no shadow_answers table): the erase still succeeds and still clears everything else", async () => {
+  const { db } = await seeded(), e = env(db);
+  db.raw.exec("DROP TABLE shadow_answers");
+  const res = await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asKey }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
+  assert.equal(res.status, 200);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM group_log WHERE author_slug = ?", SLUG), 0);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM members WHERE slug = ?", SLUG), 0);
+});
+
 test("web session erase: everything keyed by the Discord id or its hashes is gone; rows found only by name stay (stated)", async () => {
   const { db, ids } = await seeded(), e = env(db);
   db.raw.prepare("INSERT INTO ask_turns (id, by_name, question, status, created_at) VALUES ('q-legacy', ?, 'legacy question', 'answered', ?)").run(NAME, NOWISO); // no asker row

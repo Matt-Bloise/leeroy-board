@@ -2,7 +2,8 @@
 // One mirrored question is run through the REAL production compose path (answerWithAi in ai-models.js: research prompt, Claude, real names, group memory read as a roster member's ask reads it, full-size prompt, the
 // ask deadline and its hard end) with a record-only sink, so NOTHING is posted or shown: no Discord message, no interaction followup, no webhook, no socket message, no card, no stats entry, no group-memory write, no
 // answer_details, and no ask_turns row (the board and its polls read ask_turns; this never touches it). The result goes to the private D1 table shadow_answers (migration 0014) and back to the signed caller.
-// Gate, in order: flag SHADOW_ASK "on" (anything else, a PR preview or no usable bot token: 404, nothing read), then the listener's HMAC (listener-config.js: X-Listen-Timestamp / X-Listen-Signature, 120 s window,
+// Gate, in order: flag SHADOW_ASK "on" (anything else, a PR preview or no usable bot token: 404, nothing read), then an HMAC with the SHADOW key (listener-config.js shadowKey: derived from the bot token with its own label, so
+// the listener key the PC forwarder holds cannot call this route; same headers X-Listen-Timestamp / X-Listen-Signature, 120 s window,
 // 401), body up to 4 KB (413), ASK_RESEARCH on (409), a body that carries "purpose":"shadow-ask" and only the keys below (400: a signed /api/listen event or self-test body can never start a paid compose), then the
 // replay refusal (409, the signature hash is kept for the window) and the rate limit, 6 an hour and 20 a day (429). Spend goes through the normal Claude spend guard (the monthly token cap, with its pause and alert) and
 // a sub-counter of its own capped at SHADOW_SUBCAP_FRACTION of that cap, so shadow runs can never starve the real asks.
@@ -12,7 +13,7 @@ import { monthTag } from "./research/claude.js";
 import { researchModeOn } from "./research/provider.js";
 import { hardEndMs } from "./research/no-wall.js";
 import { scanSecrets, redactHex } from "./research/real-names.js";
-import { listenerKeyFor, verifyListen, isSnow } from "./listener-config.js";
+import { shadowKeyFor, verifyListen, isSnow } from "./listener-config.js";
 import { loadConfigKey } from "./config.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { updateKvJson } from "./kv-cas.js";
@@ -28,7 +29,6 @@ export const SHADOW_SUBCAP_FRACTION = 0.02; // 2% of the monthly Claude cap (100
 export const shadowSubCounterKey = (now) => `claude_tokens_shadow_${monthTag(now)}`;
 export const SHADOW_LOCAL_CHARS = 1500; // the local answer kept for the comparison (the whole body is 4 KB)
 export const REPLAY_WINDOW_MS = 120 * 1000; // LISTEN_MAX_AGE_SECONDS: how long a signature stays valid, so how long its hash is kept
-const MAX_SEEN = 64;
 const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const ALLOWED_KEYS = new Set(["purpose", "question", "as", "channel", "private", "local_answer"]);
@@ -56,10 +56,10 @@ export function parseShadowBody(v) {
 
 // deps.now: a clock returning a Date (tests).
 export async function handleShadowAsk(req, env, deps = {}) {
-  if (!shadowAskOn(env) || isPrPreviewEnv(env) || !(await listenerKeyFor(env))) return json({ error: "not found" }, 404);
+  if (!shadowAskOn(env) || isPrPreviewEnv(env) || !(await shadowKeyFor(env))) return json({ error: "not found" }, 404);
   const raw = await readBounded(req, SHADOW_MAX_BODY);
   if (raw === null) return json({ error: "too large" }, 413);
-  const ok = await verifyListen(await listenerKeyFor(env), req.headers.get("X-Listen-Timestamp"), raw, req.headers.get("X-Listen-Signature"), Math.floor(Date.now() / 1000));
+  const ok = await verifyListen(await shadowKeyFor(env), req.headers.get("X-Listen-Timestamp"), raw, req.headers.get("X-Listen-Signature"), Math.floor(Date.now() / 1000));
   if (!ok) return json({ error: "unauthorized" }, 401);
   let research = false;
   try { research = Boolean(await researchModeOn(env, { preview: false })); } catch { research = false; }
@@ -70,9 +70,13 @@ export async function handleShadowAsk(req, env, deps = {}) {
   if (!body.ok) return json({ error: body.error }, 400);
   const { question, as, channel, priv } = body.ok;
   if (scanSecrets(question, env).length) return json({ error: "question holds a secret-shaped value" }, 400); // refused before any spend, and never stored
-  let localAnswer = body.ok.localAnswer === null ? null : Array.from(body.ok.localAnswer).slice(0, SHADOW_LOCAL_CHARS).join("");
+  // The WHOLE submitted local answer is scanned before it is cut: a secret that straddles the cut must not survive as a half-matched prefix.
+  let localAnswer = null;
   let localDropped = false;
-  if (localAnswer !== null && scanSecrets(localAnswer, env).length) { localAnswer = null; localDropped = true; }
+  if (body.ok.localAnswer !== null) {
+    if (scanSecrets(body.ok.localAnswer, env).length) localDropped = true;
+    else localAnswer = Array.from(body.ok.localAnswer).slice(0, SHADOW_LOCAL_CHARS).join("");
+  }
 
   let asker = { slug: undefined, name: "Friend" };
   if (as) {
@@ -86,21 +90,22 @@ export async function handleShadowAsk(req, env, deps = {}) {
   const nowMs = nowFn().getTime();
   let replay = false;
   let wait = 0;
-  // The signature hash (SHA-256 of the lower-cased hex, never the signature) is kept for the 120 s the signature stays valid, in the limiter row itself (compare-and-set), so a repeat is refused (409) before anything is run.
-  // A call counts against the limits when it is let through; a limited call (429) is recorded as seen but does not count.
+  // Accepted signatures only: the SHA-256 of the lower-cased signature (never the signature) is kept in the limiter row (compare-and-set) until the moment the verifier would stop accepting it (its timestamp plus the 120 s window),
+  // so a repeat is refused (409) before anything runs. A call refused for any reason (400, 429) is NOT recorded, so a flood of rejected signed requests cannot push an accepted signature out of the cache; entries are pruned
+  // by expiry only, never by count (the rate limits bound the list: at most 20 accepted calls a day, each kept for 2 minutes).
   const sigHash = await sha256Hex(String(req.headers.get("X-Listen-Signature") || "").toLowerCase());
+  const expiresAt = Number(req.headers.get("X-Listen-Timestamp")) * 1000 + REPLAY_WINDOW_MS;
   try {
     await updateKvJson(env, SHADOW_RATE_KEY, (cur) => {
-      const seen = (cur && Array.isArray(cur.seen) ? cur.seen : []).filter((e) => e && typeof e.h === "string" && Number.isFinite(e.t) && nowMs - e.t <= REPLAY_WINDOW_MS);
+      const seen = (cur && Array.isArray(cur.seen) ? cur.seen : []).filter((e) => e && typeof e.h === "string" && Number.isFinite(e.x) && e.x > nowMs);
       const hits = (cur && Array.isArray(cur.hits) ? cur.hits : []).filter((t) => Number.isFinite(t) && nowMs - t < DAY_MS);
       if (seen.some((e) => e.h === sigHash)) { replay = true; return { skip: true }; }
-      const seenNow = [...seen, { h: sigHash, t: nowMs }].slice(-MAX_SEEN);
       const lastHour = hits.filter((t) => nowMs - t < HOUR_MS).sort((a, b) => a - b);
       let left = 0;
       if (lastHour.length >= SHADOW_PER_HOUR) left = Math.ceil((lastHour[lastHour.length - SHADOW_PER_HOUR] + HOUR_MS - nowMs) / 1000);
       if (hits.length >= SHADOW_PER_DAY) left = Math.max(left, Math.ceil(([...hits].sort((a, b) => a - b)[hits.length - SHADOW_PER_DAY] + DAY_MS - nowMs) / 1000));
-      if (left > 0) { wait = left; return { doc: { seen: seenNow, hits } }; }
-      return { doc: { seen: seenNow, hits: [...hits, nowMs] } };
+      if (left > 0) { wait = left; return { skip: true }; } // a limited call writes nothing
+      return { doc: { seen: [...seen, { h: sigHash, x: expiresAt }], hits: [...hits, nowMs] } };
     }, { now: () => new Date(nowMs).toISOString() });
   } catch {
     return json({ error: "unavailable" }, 503); // the limiter could not be written: nothing runs (fail closed)

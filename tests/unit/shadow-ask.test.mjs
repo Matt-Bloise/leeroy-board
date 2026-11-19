@@ -20,7 +20,7 @@ import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { resetResearchClaudeForTests, privacyBudget, counterKey, monthTag } from "../../infrastructure/worker/research/claude.js";
-import { signListen, listenerKey, resetListenerKeyCacheForTests } from "../../infrastructure/worker/listener-config.js";
+import { signListen, listenerKey, shadowKey, SHADOW_KEY_LABEL, resetListenerKeyCacheForTests } from "../../infrastructure/worker/listener-config.js";
 import { handleShadowAsk, parseShadowBody, safeReason, shadowSubCounterKey, SHADOW_RATE_KEY, SHADOW_PER_HOUR, SHADOW_PER_DAY, SHADOW_SUBCAP_FRACTION, SHADOW_MAX_BODY } from "../../infrastructure/worker/shadow-ask.js";
 import { MAX_QUESTION_CHARS } from "../../infrastructure/worker/limits.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
@@ -30,7 +30,8 @@ const read = (rel) => readFileSync(new URL(rel, ROOT), "utf8");
 const FAKE_KEY = ["sk", "ant", "FAKE", "TEST", "0000"].join("-");
 const BOT = ["bot", "token", "for", "shadow", "0123456789"].join("-");
 const USER_SALT = "user-salt-for-tests-0123456789";
-const KEY = await listenerKey(BOT);
+const KEY = await shadowKey(BOT); // the route's own key; the listener key must not work here (see the cross-key test)
+const LISTEN_KEY = await listenerKey(BOT);
 const HOOK = ["https://discord.test/api/webhooks", "123", "hookpart"].join("/");
 const realFetch = globalThis.fetch;
 let anth = [];
@@ -51,7 +52,7 @@ globalThis.fetch = async (url, init) => {
 };
 const fakeAi = { run: async () => { throw new Error("Workers AI must not be called for a member"); } };
 test.after(() => { globalThis.fetch = realFetch; });
-test.beforeEach(() => { resetListenerKeyCacheForTests(); resetKeyCacheForTests(); resetResearchClaudeForTests(); privacyBudget.ms = 1000; anth = []; others = []; claude = () => ({ status: 200, text: OK }); rooms = []; });
+test.beforeEach(() => { resetListenerKeyCacheForTests(); resetKeyCacheForTests(); resetResearchClaudeForTests(); privacyBudget.ms = 1000; anth = []; others = []; claude = () => ({ status: 200, text: OK }); rooms = []; usedTs.clear(); });
 
 const f = (value) => ({ value, visible: true, source: "board", at: "2026-11-01T00:00:00.000Z" });
 const SHEETS = [
@@ -79,7 +80,7 @@ async function freshDb() { invalidatePersonaCache(); invalidatePagesCache(); inv
 const BODY = { purpose: "shadow-ask", question: "who tanks tonight", as: "red-fox", channel: CH };
 let seq = 0; // each call signs a different second (inside the 120 s window), so a repeat of the SAME signature is the only replay
 const usedTs = new Set(); // (second, body) pairs already signed: a clock tick between two calls must never make two calls share a signature
-const freshTs = (raw) => { let ts = Math.floor(Date.now() / 1000) - (seq++ % 100); while (usedTs.has(`${ts}|${raw}`)) ts--; usedTs.add(`${ts}|${raw}`); return ts; };
+const freshTs = (raw) => { const now = Math.floor(Date.now() / 1000); for (let k = 0; k < 200; k++) { const ts = now - (k % 2 ? (k + 1) >> 1 : -(k >> 1)); if (!usedTs.has(`${ts}|${raw}`)) { usedTs.add(`${ts}|${raw}`); return ts; } } throw new Error("no free timestamp"); }; // 0, -1, +1, -2, +2 ... all inside the +-120 s window
 async function post(env, obj = BODY, { key = KEY, ts = null, sig = null, raw = null, headers = true, path = "/api/shadow/ask" } = {}) {
   const body = raw ?? JSON.stringify(obj);
   if (ts === null) ts = freshTs(body);
@@ -122,7 +123,7 @@ test("the signature gate: missing headers, a wrong key, a wrong body, a stale or
   const DB = await freshDb();
   const env = mkEnv(DB);
   const now = Math.floor(Date.now() / 1000);
-  const wrongKey = await listenerKey(["another", "bot", "token", "0123456789"].join("-"));
+  const wrongKey = await shadowKey(["another", "bot", "token", "0123456789"].join("-"));
   const cases = [
     await post(env, BODY, { headers: false }),
     await post(env, BODY, { key: wrongKey }),
@@ -203,6 +204,61 @@ test("an exact repeat of an accepted signature inside the window is 409 with no 
   const doc = DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(SHADOW_RATE_KEY).json;
   assert.ok(!doc.toLowerCase().includes(sig), "the signature itself is not stored");
   assert.match(JSON.parse(doc).seen[0].h, /^[0-9a-f]{64}$/);
+});
+
+test("the key is its own: a listener-key signature is refused for the shadow route, and a shadow-key signature is refused by /api/listen and the self-test", async () => {
+  assert.notDeepEqual([...KEY], [...LISTEN_KEY], "the two derived keys differ");
+  assert.equal(SHADOW_KEY_LABEL, "leeroy-shadow-v1");
+  const enc = new TextEncoder();
+  const ref = new Uint8Array(await crypto.subtle.sign("HMAC", await crypto.subtle.importKey("raw", enc.encode(BOT), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]), enc.encode("leeroy-shadow-v1")));
+  assert.deepEqual([...KEY], [...ref], "HMAC-SHA256(bot token, 'leeroy-shadow-v1'), raw 32 bytes");
+  assert.equal(KEY.length, 32);
+  const DB = await freshDb();
+  const env = mkEnv(DB, { LISTENER: "dry" });
+  const viaListener = await post(env, BODY, { key: LISTEN_KEY });
+  assert.equal(viaListener.status, 401, "the forwarder's listener key cannot read shadow answers");
+  assert.equal(anth.length, 0);
+  assert.equal(count(DB, "SELECT COUNT(*) AS c FROM shadow_answers"), 0);
+  assert.equal(count(DB, "SELECT COUNT(*) AS c FROM kv_state WHERE key = ?", SHADOW_RATE_KEY), 0);
+  const ok = await quiet(() => post(env, BODY));
+  assert.equal(ok.value.status, 200, "the shadow key works");
+  // the other direction: a shadow-key signature on the listener route and on the self-test
+  const ev = JSON.stringify({ id: "600000000000000001", guild_id: "800000000000000001", channel_id: CH, author_id: "700000000000000001", kind: "mention", content: "who tanks tonight" });
+  const ts = String(Math.floor(Date.now() / 1000));
+  const l = await worker.fetch(new Request("https://worker.test/api/listen", { method: "POST", headers: { "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(KEY, ts, ev) }, body: ev }), env, { waitUntil() {} });
+  assert.equal(l.status, 401);
+  const st = JSON.stringify({ purpose: "claude-selftest" });
+  const n = anth.length;
+  const t = await worker.fetch(new Request("https://worker.test/api/selftest/claude", { method: "POST", headers: { "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(KEY, ts, st) }, body: st }), env, { waitUntil() {} });
+  assert.equal(t.status, 401);
+  assert.equal(anth.length, n, "the self-test sent nothing");
+});
+
+test("rejected and rate-limited signed requests never enter or evict the accepted-signature cache: 70 limited calls later, the accepted one is still a replay", async () => {
+  const DB = await freshDb();
+  const env = mkEnv(DB, { RESEARCH_CLAUDE_MONTHLY_TOKENS: "900000000" });
+  const ts = Math.floor(Date.now() / 1000) - 2;
+  const sig = await signListen(KEY, String(ts), JSON.stringify(BODY));
+  usedTs.add(`${ts}|${JSON.stringify(BODY)}`);
+  assert.equal((await quiet(() => post(env, BODY, { ts, sig }))).value.status, 200);
+  for (let i = 1; i < SHADOW_PER_HOUR; i++) assert.equal((await quiet(() => post(env))).value.status, 200);
+  const n = anth.length;
+  for (let i = 0; i < 70; i++) assert.equal((await post(env)).status, 429, `limited ${i}`);
+  for (let i = 0; i < 5; i++) assert.equal((await post(env, { ...BODY, question: "" })).status, 400);
+  assert.equal(anth.length, n);
+  const doc = JSON.parse(DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(SHADOW_RATE_KEY).json);
+  assert.equal(doc.seen.length, SHADOW_PER_HOUR, "only the accepted signatures are kept, each with its verifier expiry");
+  assert.ok(doc.seen.every((e) => /^[0-9a-f]{64}$/.test(e.h) && Number.isFinite(e.x)));
+  assert.equal(doc.seen.some((e) => e.x === ts * 1000 + 120000), true, "kept until the timestamp window closes");
+  assert.equal((await post(env, BODY, { ts, sig })).status, 409, "the accepted signature is still refused as a replay");
+  // pruned by expiry only: a live entry stays however many there are
+  DB.raw.prepare("UPDATE kv_state SET json = ? WHERE key = ?").run(JSON.stringify({ hits: [], seen: Array.from({ length: 80 }, (_, i) => ({ h: String(i).padStart(64, "0"), x: Date.now() + 60000 })) }), SHADOW_RATE_KEY);
+  assert.equal((await quiet(() => post(env))).value.status, 200);
+  const after = JSON.parse(DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(SHADOW_RATE_KEY).json);
+  assert.equal(after.seen.length, 81, "80 live entries kept (no count cap) plus the new one");
+  DB.raw.prepare("UPDATE kv_state SET json = ? WHERE key = ?").run(JSON.stringify({ hits: [], seen: [{ h: "f".repeat(64), x: Date.now() - 1000 }] }), SHADOW_RATE_KEY);
+  assert.equal((await quiet(() => post(env))).value.status, 200);
+  assert.ok(!JSON.parse(DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(SHADOW_RATE_KEY).json).seen.some((e) => e.h === "f".repeat(64)), "an expired entry is pruned");
 });
 
 // ---- the compose path is the real one ------------------------------------------------------------------------------------------------------------
@@ -328,6 +384,20 @@ test("the local answer is cut to 1500 characters, and a secret-shaped one is dro
   assert.equal(row.local_answer, null);
   assert.equal(JSON.parse(row.meta).local_dropped, true);
   assert.ok(!JSON.stringify(row).includes(secret));
+});
+
+test("the local answer is scanned whole before it is cut: a secret that straddles the 1500-character cut drops the local answer", async () => {
+  const secret = ["sk", "ant", "api03"].join("-") + "-" + "Z9".repeat(24);
+  const DB = await freshDb();
+  const local = "a".repeat(1490) + secret + " tail";
+  const cut = Array.from(local).slice(0, 1500).join("");
+  assert.ok(cut.includes(secret.slice(0, 10)) && !cut.includes(secret), "the cut lands inside the secret");
+  const r = (await quiet(() => post(mkEnv(DB), { ...BODY, local_answer: local }))).value;
+  assert.equal(r.status, 200);
+  const row = shadowRows(DB)[0];
+  assert.equal(row.local_answer, null);
+  assert.equal(JSON.parse(row.meta).local_dropped, true);
+  assert.ok(!JSON.stringify(row).includes(secret.slice(0, 12)));
 });
 
 // ---- the degraded path -----------------------------------------------------------------------------------------------------------------------------
@@ -646,6 +716,26 @@ test("tools/shadow-ask.mjs: signs the exact body, never prints the token, prints
       const bad = await stubServer(() => ({ status: 200, json: { id: "i3", ok: false, status: "degraded", model: "m", latency_ms: 3000, reason: "claude:cap", answer: "x" } }));
       try { assert.equal((await runToolAsync([tokenFile, "--question", "q", "--base", bad.base])).status, 1); } finally { bad.srv.close(); }
     } finally { srv.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("tools/shadow-ask.mjs refuses a redirect: a 307 is an error, the signed body is never sent to the Location, and the token is not printed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "shadow-"));
+  try {
+    const tokenFile = join(dir, "tok.txt"); writeFileSync(tokenFile, BOT);
+    const target = await stubServer(() => ({ status: 200, json: { id: "x", ok: true, status: "answered", latency_ms: 1 } }));
+    const redirector = await new Promise((resolve) => {
+      const seen = [];
+      const srv = http.createServer((req, res) => { req.resume(); req.on("end", () => { seen.push(req.url); res.writeHead(307, { Location: `${target.base}/api/shadow/ask` }); res.end(); }); });
+      srv.listen(0, "127.0.0.1", () => resolve({ srv, seen, base: `http://127.0.0.1:${srv.address().port}` }));
+    });
+    try {
+      const r = await runToolAsync([tokenFile, "--question", "q", "--base", redirector.base]);
+      assert.equal(r.status, 1);
+      assert.equal(redirector.seen.length, 1);
+      assert.equal(target.seen.length, 0, "the redirect target received nothing");
+      assert.ok(!r.stdout.includes(BOT) && !r.stderr.includes(BOT));
+    } finally { redirector.srv.close(); target.srv.close(); }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

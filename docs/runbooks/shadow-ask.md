@@ -8,11 +8,17 @@ A shadow call runs one question through the same compose path an `/ask` turn fro
 node tools/shadow-ask.mjs <path-to-file-holding-the-bot-token> --question "who tanks tonight" --as <roster-slug> [--local-answer-file <file>] [--base https://api.leeroy.party]
 ```
 
-- The token file is read and never printed. The script derives the listener signing key from it (same derivation as `docs/runbooks/listener.md`), signs the body with `X-Listen-Timestamp` / `X-Listen-Signature` and prints the JSON plus one timing line. Exit 0 only when the call came back `status: answered`.
+- The token file is read and never printed. The script derives the shadow signing key from it (below), signs the body with `X-Listen-Timestamp` / `X-Listen-Signature` and prints the JSON plus one timing line. Exit 0 only when the call came back `status: answered`.
 - The question is `--question`, or stdin when that is absent. At most `MAX_QUESTION_CHARS` (2000) characters.
 - `--as` is a roster slug (`discord_members`). The run then uses that member's real name, build and group memory exactly as that member's own `/ask` would. Without it the run has a placeholder name, no build and no member group memory, and the row's `asker_slug` is NULL. An unknown slug is refused (400).
-- `--local-answer-file` stores the local bot's answer beside the Worker's (cut to 1500 characters; the whole body is limited to 4 KB, so a long local answer is cut, and a body that is still over 4 KB is refused by the script before sending).
-- The base URL must be https (http only for localhost or 127.0.0.1), no credentials in it; anything else exits 2 without sending. Output carries `http_status` (the HTTP code) next to the Worker's own `status`.
+- `--local-answer-file` stores the local bot's answer beside the Worker's. It is sent whole: the Worker scans all of it for secrets (a secret anywhere in it drops the local answer, so one that straddles the cut cannot survive as a prefix) and then keeps the first 1500 characters. A body over 4 KB is refused by the script before sending.
+- The base URL must be https (http only for localhost or 127.0.0.1), no credentials in it; anything else exits 2 without sending. Redirects are refused (`redirect: "error"`): the signed body is never replayed to another host, and a 3xx answer is a failed request (exit 1). Output carries `http_status` (the HTTP code) next to the Worker's own `status`.
+
+## The signing key
+
+The shadow route has its own key, separate from the listener key the PC forwarder holds: `key = HMAC-SHA256(key = the bot token as UTF-8 bytes, message = "leeroy-shadow-v1")`, 32 raw bytes (`shadowKey` in `listener-config.js`). The signature and headers are the listener's (`HMAC-SHA256(key, "<timestamp>.<raw body>")` in lower-case hex, `X-Listen-Timestamp`, `X-Listen-Signature`). A signature made with the listener key never verifies on this route, and a shadow-key signature is refused by `/api/listen` and the self-test (tests cover both directions).
+
+The shadow key can read answers as any roster member (build and group memory included). Derive it only on the owner's machine: `tools/shadow-ask.mjs` is the only place it is derived outside the Worker. Do not copy it to the PC forwarder or put the token file anywhere the forwarder can read it.
 
 ## The route
 
@@ -24,7 +30,7 @@ Gate, in order:
 2. Signature (the listener's HMAC, 120 s window): missing or wrong 401. Body over 4 KB: 413.
 3. `ASK_RESEARCH` off: 409 (the research path is what is compared).
 4. The body must be exactly the known keys with `"purpose":"shadow-ask"`: `question` (required), `as`, `channel` (a Discord channel id, so group memory reads that channel as an ask there would), `private` (true runs the member's private path), `local_answer`. Anything else, including a validly signed `/api/listen` event or self-test body, is 400 before any spend. A question that holds a secret-shaped value is refused (400) and never stored.
-5. A signature already accepted in the last 120 s: 409 (SHA-256 of the lower-cased signature kept in the limiter row, never the signature itself).
+5. A signature already accepted: 409. The SHA-256 of the lower-cased signature (never the signature) is kept in the limiter row from acceptance until its verifier expiry (its timestamp plus 120 s), pruned by expiry only. Only accepted calls are recorded: rejected (400) and rate-limited (429) requests never enter or evict the cache, however many arrive. At most 20 accepted calls a day exist, so the list stays small.
 6. Rate limit: 6 an hour and 20 a day: 429 with `Retry-After`. The limiter row is `kv_state` key `shadow_ask_rate`; if it cannot be written: 503 and nothing runs. Refused calls (401, 400, 409) do not use up the allowance.
 
 Then `answerWithAi` runs with a record-only sink (the `sink` parameter; every other caller passes none and is unchanged, which `tests/unit/shadow-ask.test.mjs` proves with a differential trace recorded on master before the sink existed). With the sink: no Discord message, no interaction followup, no webhook, no socket message, no card, no stats entry, no group-memory write, no `answer_details`, no `ask_turns` row. The only writes are the row in `shadow_answers` (migration `0014_shadow_answers.sql`, also in `schema.sql`), the limiter row and the Claude spend counters. The table is private: no route reads it back; the signed caller gets the answer in the response of the call itself, and the admin export (`GET /api/admin/export`) can read it.
@@ -87,4 +93,4 @@ This change ships the flag `off`. Turning it on is a one-line change, `SHADOW_AS
 
 ## Privacy
 
-`shadow_answers` holds a mirrored question and answers, so it is as private as `ask_turns` and `group_log`: private D1 only, never exported to a page, never on the socket. `asker_slug` is its only link to a person; a member's erase deletes their rows by it (`DATA_MAP`, `data-rights.js`). The rows are the owner's own test data and are not in the member export.
+`shadow_answers` holds a mirrored question and answers, so it is as private as `ask_turns` and `group_log`: private D1 only, never exported to a page, never on the socket. `asker_slug` is its only link to a person; a member's erase deletes their rows by it (`DATA_MAP`, `data-rights.js`); the erase checks that the table exists first, so a deploy that runs before migration 0014 does not break erase. The rows are the owner's own test data and are not in the member export.

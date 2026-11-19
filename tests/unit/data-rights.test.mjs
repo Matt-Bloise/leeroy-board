@@ -18,7 +18,7 @@ const TOKEN = "A".repeat(43);
 const CTX = { waitUntil() {}, passThroughOnException() {} };
 
 // Stub D1: all() answers by table name in the SQL; run/batch statements are recorded in order; selects are recorded too.
-async function makeEnv({ flag = "on", webLogin = "on", roster = [{ slug: "red-fox", name: "Red Fox", match: [], id: ID }], missing = null } = {}) {
+async function makeEnv({ flag = "on", webLogin = "on", roster = [{ slug: "red-fox", name: "Red Fox", match: [], id: ID }], missing = null, shadowTable = true } = {}) {
   invalidateConfigCache(); // the roster is cached per isolate for 60 s
   const memberHash = await sha256Hex(`${KEY_SALT}:${MEMBER_KEY}`);
   const tokenHash = await webSessionHash(TOKEN);
@@ -43,6 +43,7 @@ async function makeEnv({ flag = "on", webLogin = "on", roster = [{ slug: "red-fo
       all: async () => {
         hit();
         selects.push(sql);
+        if (/sqlite_master/.test(sql) && /shadow_answers/.test(sql)) return { results: shadowTable ? [{ name: "shadow_answers" }] : [] }; // migration 0014 applied or not
         if (/FROM sessions\b/.test(sql)) return { results: [{ created_at: 1, expires_at: 2, last_seen: 3 }] };
         const t = /FROM (\w+)/i.exec(sql)[1];
         if (t === "members") return { results: /WHERE slug/.test(sql) ? [{ slug: "red-fox", created_at: "x" }] : [{ slug: "red-fox", key_hash: memberHash }] }; // a real D1 returns only the columns asked for
@@ -167,6 +168,14 @@ test("erase needs an Origin header: 403 without it, nothing deleted", async () =
   const res = await go(env, "POST", "/api/me/erase", KEY, JSON.stringify({ confirm: CONFIRM_PHRASE }));
   assert.equal(res.status, 403);
   assert.deepEqual(env.executed, []);
+});
+
+test("erase before migration 0014: with no shadow_answers table the erase has no statement for it and still goes through", async () => {
+  const env = await makeEnv({ shadowTable: false });
+  const res = await erase(env, KEY);
+  assert.equal(res.status, 200);
+  assert.ok(!env.executed.some((e) => /shadow_answers/.test(e.sql)));
+  assert.ok(env.executed.some((e) => e.sql.startsWith("DELETE FROM members")));
 });
 
 test("erase by member key: one atomic batch in the safe order, then the audit row last", async () => {
