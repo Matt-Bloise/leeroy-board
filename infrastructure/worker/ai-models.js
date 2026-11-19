@@ -1314,8 +1314,11 @@ export async function answerWithAi({
   channel = "", // the Discord channel id of the ask ("" for the website): group memory (GROUP_MEMORY) files and reads by channel
   noFanout = false, // the listener: a turn that is shared in the reply channel only. No webhook post, no stats.recent, no site broadcast of the question or answer
   messageTarget = null, // the right-click "Ask Leeroy": { authorSlug } of the message asked about; group memory files that text as the author's message, not as this asker's ask
+  sink = null, // SHADOW_ASK (shadow-ask.js) only: { shadow: true, record(result), subSpend }. Every production caller passes nothing and gets exactly the behaviour below. With a shadow sink the compose path runs unchanged but nothing is
+  // written or sent anywhere (no ask_turns, answer_details, group log, stats, cache purge, socket message or webhook): the result goes to sink.record, and sink.subSpend is the Claude hop's own sub-cap counter.
 }) {
   const t0 = Date.now();
+  const shadow = Boolean(sink && sink.shadow === true);
   const nowIso = () => new Date().toISOString();
   const isCoach = journey === "guided" && share !== true;
   let budgetCode = null;
@@ -1328,7 +1331,7 @@ export async function answerWithAi({
     memberNoWall = research && isMember === true; // only an explicit true opens the no-wall path; an omitted isMember is a guest here (buildAnswerInputs keeps its own name rule for the prompt)
     // 0. The same member asking the same question again within 10 minutes gets the same answer text, with no new model call.
     // Not in research mode: a stored refusal or abstain row from before the flag was turned on must never come back as the answer (W5 decides what reuse means for research).
-    const prior = research ? null : await findRecentSameAnswer(env, { intentId, question, share });
+    const prior = research || shadow ? null : await findRecentSameAnswer(env, { intentId, question, share });
     if (prior) {
       const reusedAt = nowIso();
       // Bad stored JSON must not turn a good stored answer into an error row.
@@ -1423,6 +1426,7 @@ export async function answerWithAi({
       libOnly = guestLibraryOnly(research, verdict); // research guest over the share, the global cap or unreadable counters: library facts, no model, no refusal text
       if (verdict && !libOnly) {
         budgetCode = verdict.code;
+        if (shadow) { await sink.record({ status: "refused", reason: budgetCode, latencyMs: Date.now() - t0 }); return { code: budgetCode }; }
         const limitedAt = nowIso();
         const retryAfter = verdict.retryAfter;
         const limitText = pickLine(persona, "errorLines", intentId);
@@ -1448,7 +1452,7 @@ export async function answerWithAi({
         const hardEnd = t0 + hardEndMs(askDeadlineMs(env));
         const viaClaude = hardEnd - Date.now() < 2500
           ? { reason: "claude:no-time" }
-          : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, real: namesReal ? { system: systemPrompt, user: userPrompt, friend: [question, previousQuestion, by, ...(Array.isArray(priorTurns) ? priorTurns.flatMap((t) => [t.q, t.a]) : [])] } : null, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
+          : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, real: namesReal ? { system: systemPrompt, user: userPrompt, friend: [question, previousQuestion, by, ...(Array.isArray(priorTurns) ? priorTurns.flatMap((t) => [t.q, t.a]) : [])] } : null, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }), ...(shadow && sink.subSpend ? { subSpend: sink.subSpend } : {}) });
         if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
@@ -1587,6 +1591,12 @@ export async function answerWithAi({
     const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener, research });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
+    // The model column exactly as an ask_turns row carries it. A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
+    const modelLabel = degraded ? `${provider}:${model}+research${researchNote}`.slice(0, 120 - DEGRADED_SUFFIX.length) + DEGRADED_SUFFIX : `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120);
+    if (shadow) { // record-only: the same text and the same model label an ask would have stored, and nothing else happens
+      await sink.record({ status: degraded ? "degraded" : "answered", answer, cites, model: modelLabel, reason: (/\[([^\]]{1,60})\]/.exec(researchNote) || [])[1] || null, latencyMs, groupMemory: groupOn && Boolean(inputs.groupMember), research: Boolean(research) });
+      return;
+    }
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.
     if (uxOn && storeDetails && (parts.more || parts.sources)) {
       try {
@@ -1602,8 +1612,7 @@ export async function answerWithAi({
     await env.DB.prepare(
       "UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
     )
-      // A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
-      .bind(answer, JSON.stringify(cites), degraded ? `${provider}:${model}+research${researchNote}`.slice(0, 120 - DEGRADED_SUFFIX.length) + DEGRADED_SUFFIX : `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
+      .bind(answer, JSON.stringify(cites), modelLabel, latencyMs, answeredAt, intentId)
       .run();
 
     // GROUP_MEMORY: a roster member's answered ask goes into the group log, one INSERT, never failing the ask (appendGroupLog swallows its own errors). Claude's own answer only is filed as Leeroy's:
@@ -1689,6 +1698,7 @@ export async function answerWithAi({
     // The turn is read back by its asker (a guest included) and, for a shared ask, by member sockets: it gets the public text only. The log line carries
     // no provider text either: shortProviderError is a fixed message plus the error name and status.
     console.error("ask failed:", shortProviderError(err));
+    if (shadow) { try { await sink.record({ status: "error", reason: "ask:error", latencyMs: Date.now() - t0 }); } catch {} return; }
     let msg = publicAskError(err);
     // Research mode, member: the stored error text is shown on the board and in Discord, so it is an in-voice line, never a message that could read as a wall.
     if (memberNoWall) msg = memberLine(null, intentId);

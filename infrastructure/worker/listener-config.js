@@ -68,7 +68,28 @@ export async function listenerKeyFor(env) {
   keyCache = { token, key };
   return key;
 }
-export function resetListenerKeyCacheForTests() { keyCache = { token: null, key: null }; }
+export function resetListenerKeyCacheForTests() { keyCache = { token: null, key: null }; shadowKeyCache = { token: null, key: null }; }
+
+// SHADOW KEY (POST /api/shadow/ask, shadow-ask.js). The listener key signs events that cannot read anything back; the shadow route returns answers as any roster member, so it has a key of its own:
+//   key = HMAC-SHA256(key = the bot token as UTF-8 bytes, message = the ASCII string "leeroy-shadow-v1")   -> 32 raw bytes
+// Signature and headers are exactly the listener's (signListen / verifyListen). A signature made with the listener key never verifies under this key, and the reverse, so a holder of the forwarder's
+// listener key (the PC forwarder) cannot call the shadow route. The shadow key is derived only on the owner's machine (tools/shadow-ask.mjs) and in the Worker.
+export const SHADOW_KEY_LABEL = "leeroy-shadow-v1";
+export async function shadowKey(botToken) {
+  if (typeof botToken !== "string" || botToken.length < LISTEN_MIN_TOKEN_CHARS) return null;
+  const enc = new TextEncoder();
+  const k = await crypto.subtle.importKey("raw", enc.encode(botToken), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(SHADOW_KEY_LABEL)));
+}
+let shadowKeyCache = { token: null, key: null };
+export async function shadowKeyFor(env) {
+  const token = env && env.DISCORD_BOT_TOKEN;
+  if (typeof token !== "string" || token.length < LISTEN_MIN_TOKEN_CHARS) return null;
+  if (shadowKeyCache.token === token && shadowKeyCache.key) return shadowKeyCache.key;
+  const key = await shadowKey(token);
+  shadowKeyCache = { token, key };
+  return key;
+}
 
 // key: the 32 derived bytes from listenerKey (a string is not a key). The compare in verifyListen is constant time (equal length first, then every byte).
 export async function signListen(key, timestamp, rawBody) {

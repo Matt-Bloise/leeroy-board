@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync, spawn } from "node:child_process";
 import http from "node:http";
 import worker from "../../infrastructure/worker/index.js";
-import { signListen, listenerKey, heartbeatKey, resetListenerKeyCacheForTests, resetHeartbeatKeyCacheForTests, HEARTBEAT_KEY_LABEL } from "../../infrastructure/worker/listener-config.js";
+import { signListen, listenerKey, heartbeatKey, shadowKey, resetListenerKeyCacheForTests, resetHeartbeatKeyCacheForTests, HEARTBEAT_KEY_LABEL } from "../../infrastructure/worker/listener-config.js";
 import { handleHeartbeat, handleHeartbeatStatus, runDeadmanCheck, staleSeconds, expectedSources, parseHeartbeatBody, notifyIncident, HEARTBEAT_ROW, HEARTBEAT_MIN_WRITE_MS } from "../../infrastructure/worker/deadman.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
@@ -21,7 +21,7 @@ const BOT = ["bot", "token", "for", "deadman", "0123456789"].join("-");
 const KEY = await heartbeatKey(BOT);
 const LISTEN_KEY = await listenerKey(BOT);
 const hmac = async (token, label) => { const enc = new TextEncoder(); const k = await crypto.subtle.importKey("raw", enc.encode(token), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(label))); };
-const SHADOW_KEY = await hmac(BOT, "leeroy-shadow-v1"); // what PR 391's shadowKey derives; computed here so this test does not depend on that branch
+const SHADOW_KEY = await shadowKey(BOT);
 
 const realFetch = globalThis.fetch;
 let fetchCalls = [];

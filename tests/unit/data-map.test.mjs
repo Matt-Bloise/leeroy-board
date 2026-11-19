@@ -87,6 +87,10 @@ async function seeded() {
     run("INSERT INTO group_log (at, channel, author_slug, kind, text, source) VALUES (?, 'c1', ?, 'ask', ?, 'ask')", NOWISO, slug, `What should ${name} play?`);
     run("INSERT INTO group_wiki (page_key, title, body_md, updated_at) VALUES (?, ?, ?, ?)", `person-${slug}`, name, `${name} plays a mage.`, NOWISO);
   }
+  // shadow compare rows (migration 0014, flag SHADOW_ASK): the mirrored question and answer, linked to the person only by asker_slug
+  for (const [slug, name] of [[SLUG, NAME], [OTHER_SLUG, OTHER_NAME]]) {
+    run("INSERT INTO shadow_answers (id, created_at, asker_slug, question, answer, model, latency_ms, status, local_answer, meta) VALUES (?, ?, ?, ?, ?, 'claude:m+research', 9, 'answered', ?, '{}')", `sh-${slug}`, NOWISO, slug, `What should ${name} play?`, `${name} should try a mage.`, `${name} local`);
+  }
   run("INSERT INTO group_wiki (page_key, title, body_md, updated_at) VALUES ('group', 'The group', ?, ?)", `${NAME} and ${OTHER_NAME} share a running bit (${SLUG} starts it).`, NOWISO);
   // answer buttons: one detail row bound to the person as asker (private answer), a vote by each person
   run("INSERT INTO answer_details (intent_id, more, asker_hash, created_at) VALUES ('q-private-me', 'private', ?, ?), ('q-private-other', 'private', ?, ?)", ids.answerHash, NOWISO, ids.otherAnswerHash, NOWISO);
@@ -138,7 +142,7 @@ test("member key erase: zero rows keyed by this member's ids or hashes in any co
   const before = scan(db, needles(ids));
   assert.ok(before.length >= 20, `the seed must reach many tables, got ${before.length}`);
   const hitTables = new Set(before.map((h) => h.split(".")[0]));
-  for (const t of ["ask_turn_askers", "users", "identities", "sessions_v2", "provider_tokens", "memberships", "characters", "signups_v2", "audit_log", "members", "sheet_events", "dispatches", "intents", "fact_fixes", "ask_turns", "answer_details", "answer_feedback", "user_state", "sessions", "kv_state", "group_log", "group_wiki"]) assert.ok(hitTables.has(t), `seed misses ${t}`);
+  for (const t of ["ask_turn_askers", "users", "identities", "sessions_v2", "provider_tokens", "memberships", "characters", "signups_v2", "audit_log", "members", "sheet_events", "dispatches", "intents", "fact_fixes", "ask_turns", "answer_details", "answer_feedback", "user_state", "sessions", "kv_state", "group_log", "group_wiki", "shadow_answers"]) assert.ok(hitTables.has(t), `seed misses ${t}`);
 
   const res = await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asKey }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
   assert.equal(res.status, 200);
@@ -187,9 +191,18 @@ test("member key erase: zero rows keyed by this member's ids or hashes in any co
     ["SELECT COUNT(*) AS c FROM members WHERE slug = ?", OTHER_SLUG], ["SELECT COUNT(*) AS c FROM ask_turns WHERE by_name = ?", OTHER_NAME],
     ["SELECT COUNT(*) AS c FROM answer_details WHERE intent_id = ?", `q-${OTHER_SLUG}`], ["SELECT COUNT(*) AS c FROM sheet_events WHERE slug = ?", OTHER_SLUG],
     ["SELECT COUNT(*) AS c FROM dispatches WHERE slug = ?", OTHER_SLUG], ["SELECT COUNT(*) AS c FROM fact_fixes WHERE by_name = ?", OTHER_NAME], ["SELECT COUNT(*) AS c FROM intents WHERE slug = ?", OTHER_SLUG],
-    ["SELECT COUNT(*) AS c FROM group_log WHERE author_slug = ?", OTHER_SLUG], ["SELECT COUNT(*) AS c FROM group_wiki WHERE page_key = ?", `person-${OTHER_SLUG}`], ["SELECT COUNT(*) AS c FROM group_wiki WHERE page_key = 'group'"],
+    ["SELECT COUNT(*) AS c FROM group_log WHERE author_slug = ?", OTHER_SLUG], ["SELECT COUNT(*) AS c FROM shadow_answers WHERE asker_slug = ?", OTHER_SLUG], ["SELECT COUNT(*) AS c FROM group_wiki WHERE page_key = ?", `person-${OTHER_SLUG}`], ["SELECT COUNT(*) AS c FROM group_wiki WHERE page_key = 'group'"],
   ];
   for (const [sql, ...a] of keep) assert.equal(count(db, sql, ...a), 1, sql);
+});
+
+test("member key erase before migration 0014 (no shadow_answers table): the erase still succeeds and still clears everything else", async () => {
+  const { db } = await seeded(), e = env(db);
+  db.raw.exec("DROP TABLE shadow_answers");
+  const res = await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asKey }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
+  assert.equal(res.status, 200);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM group_log WHERE author_slug = ?", SLUG), 0);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM members WHERE slug = ?", SLUG), 0);
 });
 
 test("web session erase: everything keyed by the Discord id or its hashes is gone; rows found only by name stay (stated)", async () => {

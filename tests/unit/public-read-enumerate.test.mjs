@@ -43,7 +43,7 @@ const quiet = async (fn) => { const e = console.error, w = console.warn, l = con
 // ---- the allow-list ---------------------------------------------------------------------------------------------------------------------------
 const P = "projected", N = "none", R = "refused";
 const ROUTE_KIND = {
-  "POST /discord": P, "POST /listen": R, "POST /selftest/claude": N, "POST /heartbeat": N, "POST /heartbeat/status": N, "GET /discord/commands": N, "GET /votes": N, "GET /me": R, "POST /probe": N, "ANY /sheet": P,
+  "POST /discord": P, "POST /listen": R, "POST /selftest/claude": N, "POST /shadow/ask", "POST /heartbeat", "POST /heartbeat/status": N, "GET /discord/commands": N, "GET /votes": N, "GET /me": R, "POST /probe": N, "ANY /sheet": P,
   "POST /announce": R, "PUT /vocab": R, "PUT /config/:key": R, "POST /admin/members": R, "POST /admin/sheet": R, "POST /admin/cards/post": R,
   "GET /admin/feedback": R, "GET /admin/export": R, "GET /admin/requests": R, "PUT /persona": R, "POST /dispatch": R, "POST /admin/events/sync": R,
   "GET /admin/moments": R, "POST /admin/eval": R, "GET /intents": R, "POST /ack": R, "POST /answer": R, "GET /signups": N, "POST /signups": R,
