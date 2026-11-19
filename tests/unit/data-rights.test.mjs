@@ -182,7 +182,7 @@ test("erase by member key: one atomic batch in the safe order, then the audit ro
     "DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details",
     "DELETE FROM kv_state", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_legacy",
     "DELETE FROM sheet_events", "DELETE FROM dispatches", "DELETE FROM intents",
-    "DELETE FROM fact_fixes", "DELETE FROM members", "DELETE FROM sessions_v2", "DELETE FROM humans",
+    "DELETE FROM fact_fixes", "DELETE FROM members", "DELETE FROM shadow_answers", "DELETE FROM sessions_v2", "DELETE FROM humans",
     "UPDATE audit_log", "DELETE FROM users", "INSERT INTO audit_log",
   ]);
   const at = (table, n = 0) => env.executed.filter((e) => e.sql.startsWith(`DELETE FROM ${table}`))[n];

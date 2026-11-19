@@ -84,6 +84,7 @@ export const DATA_MAP = Object.freeze({
   listen_events: { links: null, erase: null, member: null }, // the listener (migration 0012): message id, channel, kind, decision, ask_turns id; no text and no author (the question and answer sit in ask_turns, which the asker's erase reaches)
   listen_quiet: { links: null, erase: null, member: null }, // the listener (migration 0012): channels where /quiet is on; a channel id and a time, no person
   group_log: { links: "author_slug = the member's roster slug (the slug of the member key, or the roster entry whose Discord id is the web session's); migration 0011, flag GROUP_MEMORY", erase: "DELETE by author_slug, in the erase batch; skipped while the table does not exist", member: "legacy.group_log" },
+  shadow_answers: { links: "asker_slug = the member's roster slug (nullable); migration 0014, flag SHADOW_ASK. Owner-only diagnostic rows: a mirrored question, the compose answer and the local answer for the comparison", erase: "DELETE by asker_slug, in the erase batch", member: null }, // not in the member export: the rows are the owner's test data, readable only through the signed call and the admin export, and gone on an erase
   group_wiki: { links: "page_key person-<slug> or <slug>, and any page whose title or text mentions the member's slug or name; migration 0011, flag GROUP_MEMORY", erase: "pages keyed to the person deleted; pages that mention the slug or name have those spellings replaced by 'a former member' and are flagged note = 'rebuild:erase' for the next refresh", member: "legacy.group_wiki" },
 });
 // Durable Object state: BoardRoom (room.js) is a pure relay. It never touches ctx.storage and keeps no state between messages, so there is nothing to erase.
@@ -384,6 +385,7 @@ async function eraseData(request, env, who, now) {
     st.push(db.prepare("DELETE FROM intents WHERE slug = ?").bind(who.slug));
     st.push(db.prepare("DELETE FROM fact_fixes WHERE by_name IN (?, ?)").bind(who.slug, who.name));
     st.push(db.prepare("DELETE FROM members WHERE slug = ?").bind(who.slug));
+    st.push(db.prepare("DELETE FROM shadow_answers WHERE asker_slug = ?").bind(who.slug)); // SHADOW_ASK rows (migration 0014)
   }
   // Group memory: the person's log rows and their own pages go; a page that merely mentions them keeps its other content with their slug and name replaced, and waits for a rewrite (note rebuild:erase).
   // The rewrite is done here with a case-insensitive, whole-word regex (nameRegexes), only for the pages that actually match, each guarded by the revision it was read at.
