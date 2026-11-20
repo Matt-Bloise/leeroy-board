@@ -27,10 +27,15 @@ import fs from "node:fs";
 import { startFixtureServer } from "../helpers/probe-fixture-server.mjs";
 import { createBudget, guardContext } from "../helpers/probe-budget.mjs";
 import { DEFAULT_CLOCK } from "../helpers/clock-arg.mjs";
+import { parseShard } from "../helpers/shard.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm ci in tests/"); process.exit(2); });
 const here = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2), only = argv.includes("--only") ? argv[argv.indexOf("--only") + 1].split(",") : null;
 let pass = 0, fail = 0;
+// --shard i/n (CI): this run takes every n-th CASE; the two sections after the cases (redirect modes, request budget) run in shard 0 only, so the shards together prove exactly what one whole run proves.
+let SHARD = null;
+try { SHARD = parseShard(argv); } catch (e) { console.error(e.message); process.exit(2); }
+const shard0 = !SHARD || SHARD.index === 0;
 // A rejection nobody awaits must never be silent and must never be a surprise: the default is a Node stack trace, exit 1 and no FAIL line, so a real failure looks like a crash and a
 // harmless one ends the run before the summary. Here every one prints a FAIL line and ends the run with exit 1, EXCEPT one narrow case: a closed-target error (TargetClosedError) that
 // arrives while a browser is being closed on purpose (`tearingDown`), from a call that was still in flight when it closed. That one is logged as INFO and the run goes on.
@@ -113,7 +118,16 @@ async function runCase([mode, want, re, extra, label, musts, env, opts]) {
   return { mode: label || mode, want, re, code, out, lines, m, srv, musts };
 }
 const results = [];
-for (let i = 0; i < CASES.length; i += 3) results.push(...(await Promise.all(CASES.slice(i, i + 3).map(runCase))));
+// A rolling pool of 3 (the same load as the earlier fixed batches of 3, without idling behind the slowest case of each batch) that prints one progress line per finished case, so a long run never looks hung.
+const MY_CASES = SHARD ? CASES.filter((_, p) => p % SHARD.count === SHARD.index) : CASES;
+{
+  const slots = new Array(MY_CASES.length), t0 = Date.now();
+  let next = 0, done = 0;
+  const worker = async () => { while (next < MY_CASES.length) { const at = next++; slots[at] = await runCase(MY_CASES[at]); done++; console.log(`INFO progress ${done}/${MY_CASES.length} cases finished after ${Math.round((Date.now() - t0) / 1000)} s: ${slots[at].mode} exit ${slots[at].code}`); } };
+  await Promise.all([worker(), worker(), worker()]);
+  results.push(...slots);
+}
+if (SHARD) console.log(`INFO selftest shard ${SHARD.index}/${SHARD.count}: ${MY_CASES.length} of ${CASES.length} cases`);
 // Every roster token (full name, slug, each word of the name, each component of a compound slug, 3+ characters, any case) the fixture serves. The extra member is the one wrong-count adds.
 const ROSTER_TOKENS = [...new Set([...JSON.parse(fs.readFileSync(path.join(here, "..", "fixtures", "six-members", "party.json"), "utf8")).members.map((x) => x.name), "Zephyrine Quax"].flatMap((n) => [n, n.toLowerCase().replace(/[^a-z0-9]+/g, "-"), ...n.split(/[^A-Za-z0-9]+/), ...n.toLowerCase().split(/[^a-z0-9]+/)]).filter((t) => t.length >= 3))];
 for (const { mode, want, re, code, out, lines, m, srv, musts } of results) {
@@ -132,7 +146,7 @@ for (const { mode, want, re, code, out, lines, m, srv, musts } of results) {
 }
 
 for (const mode of ["browser", "fetch"]) {
-  if (only && !only.includes("redirect")) break;
+  if ((only && !only.includes("redirect")) || !shard0) break;
   // a 12-hop redirect chain answered by the API. Default mode "browser": the browser follows it, every hop is COUNTED and RECORDED (the probe fails on any redirect) and the count is
   // honest. Older mode "fetch": the probe refuses the 3xx before the page sees it, so the server sees exactly one request.
   const srv = await startFixtureServer({ mode: "green" });
@@ -158,7 +172,7 @@ for (const mode of ["browser", "fetch"]) {
   await tearDown(page, ctx, browser, srv);
 }
 
-if (!only || only.includes("budget")) {
+if (shard0 && (!only || only.includes("budget"))) {
   const srv = await startFixtureServer({ mode: "green" });
   const browser = await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
   tearingDown = false;
