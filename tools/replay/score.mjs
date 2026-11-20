@@ -20,10 +20,10 @@ const OTHER_AFTER = /^\s*(?:%|percent\b|gold\b|silver\b|copper\b|g\b|yards?\b|yd
 const DIFFERENT_FACT = /\b(?:max(?:imum)?|cap(?:ped)?|ranks?|upgrade[sd]?|improved)\b/i;
 // Negation just before a number's phrase, inside its clause: "not level 20", "isn't 20", "no longer 20", "never level 20". Up to three words may sit between.
 const NEG_BEFORE = /(?:n['\u2019]t\b|\bnot\b|\bnever\b|\bno longer\b)(?:\s+[\w'\u2019-]+){0,3}\s*$/i;
-const negatedAt = (text, idx) => NEG_BEFORE.test(text.slice(Math.max(0, idx - 60), idx).split(/[.,;:!?\n]/).pop());
+export const negatedAt = (text, idx) => NEG_BEFORE.test(text.slice(Math.max(0, idx - 60), idx).split(/[.,;:!?\n]/).pop());
 
-const near = (a, b) => Math.abs(a - b) < 1e-9;
-const tail = (text, idx) => text.slice(Math.max(0, idx - 32), idx);
+export const near = (a, b) => Math.abs(a - b) < 1e-9;
+export const tail = (text, idx) => text.slice(Math.max(0, idx - 32), idx);
 
 export function extractNumbers(text) {
   const s = String(text ?? "");
@@ -51,7 +51,7 @@ export function extractNumberWords(text) {
 const RANK_AFTER = /^\s*-?\s*ranks?\b/i;
 const RANK_BEFORE = /\b(?:max(?:imum)?\s+ranks?|ranks)\s*(?:of|is|was|:|=)?\s*$/i;
 const POINT_AFTER = /^\s*-?\s*(?:talent\s+)?points?\b/i;
-function unitOf(text, t, ku = null) {
+export function unitOf(text, t, ku = null) {
   const before = tail(text, t.index);
   const after = text.slice(t.end, t.end + 28);
   const next = text.slice(t.end, t.end + 28); // right after the token: a glued s/ms/m/min suffix shows here
@@ -77,14 +77,14 @@ function unitOf(text, t, ku = null) {
 }
 
 export const KIND_UNIT = Object.freeze({ spell_level: "level", item_level_req: "level", spell_cooldown: "seconds", spell_cast_time: "seconds", spell_mana_cost: "mana", trait_max_ranks: "ranks", trait_points_required: "points", trait_prereq: "name" });
-const unitForExpected = (expected) => (expected && expected.unit) || "level";
+export const unitForExpected = (expected) => (expected && expected.unit) || "level";
 // A numeric expectation. A "name" expectation (trait_prereq) is a string and never goes through the number paths.
-const isNumeric = (expected) => Boolean(expected) && expected.unit !== "name" && typeof expected.value !== "string" && Number.isFinite(Number(expected.value));
+export const isNumeric = (expected) => Boolean(expected) && expected.unit !== "name" && typeof expected.value !== "string" && Number.isFinite(Number(expected.value));
 // "a single rank" / "single point" state the number one. Only for the ranks and points units.
 const SINGLE_RE = /\b(?:single|only\s+one)\s+(?:talent\s+)?(?:rank|point)\b/gi;
 
 // Tokens of one answer that carry the question's unit, normalised to that unit. Word forms count here only.
-function unitTokens(text, unit) {
+export function unitTokens(text, unit) {
   const toks = [...extractNumbers(text), ...extractNumberWords(text)];
   const out = [];
   for (const t of toks) {

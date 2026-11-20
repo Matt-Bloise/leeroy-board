@@ -7,6 +7,8 @@ tools/replay/truth-gen.mjs   build a seeded question set from the client's data 
 tools/replay/run.mjs         send items to the shadow route, score, summarize
 tools/replay/score.mjs       pure scoring functions
 tools/replay/pass-bar.mjs    the pass numbers (constants; tests/unit/replay-harness.test.mjs pins them)
+tools/replay/score-normalised.mjs  the NORMALISED scorer (a second reading of the same answers; the strict scorer is not changed)
+tools/replay/rescore.mjs     re-scores a results file with both and lists every difference (read-only)
 tools/replay/grade-pack.mjs  blind grading packets and the unblinding merge
 ```
 
@@ -127,6 +129,27 @@ The honest baseline above was measured on a Worker without table facts (producti
 - `degraded_rate` and `within_budget_rate` should not move: the reader adds at most two bounded D1 reads beside the persona load (300 ms timeout) and about 560 input tokens (measured offline, `docs/runbooks/game-facts.md`). If they move, look for `game-facts:lookup-failed` first.
 - Keep the flag-off baseline file: the same run with the flag off is the control. A run that passes with the flag off means the questions are not about table facts.
 - Not proven here: that the table's rows are the client's real rows (the loader's counts and manifest check that), and anything about questions the truth kinds do not cover.
+
+## Rescoring with the normalised scorer (read-only second opinion)
+
+The strict scorer (`score.mjs`) is the scorer of record and is not changed. It counts the model's bracketed row ids (`[spelllevels:98572]`) and neighbouring supported figures as "unsupported numbers", and it reads only a few spellings of a number. Changing the grader after seeing the grades would manufacture a pass, so the second reading is a separate module and a separate command, and every difference it makes is printed for a human to re-derive.
+
+```
+node tools/replay/rescore.mjs <results.jsonl> --truth <truth.jsonl> [--tables <dir>] [--traits <traits.json>] [--library <dir>] [--max-misses N]
+```
+
+The results file must come from a run with `--keep-answers`. `--tables` and `--traits` are the folders the truth set was built from (outside the repo, read only; the tables are checked against MANIFEST.json and the facts rows are rebuilt with `tools/facts-load.mjs` `deriveTableRows` / `deriveTraitRows`, so a cited id such as `spelllevels:98572` maps to its claim, value and rank). Without `--tables` only the ids are exempted and no cited-row support or other-entity check is possible. `--library` defaults to `data/library` of the checkout. Nothing is written or sent.
+
+What the normalised scorer may change is how a number is WRITTEN, nothing else:
+
+- bracketed row ids are removed before reading; markdown wrappers (`**`, `*`, backticks) are removed; dash variants become `-`
+- thousands groups: commas (`82,800`) and thin or no-break space groups of exactly three digits. A plain space or a dot is never a separator (`82 800` is two numbers, `82.800` is 82.8): ambiguous, refused
+- hyphenated units (`15-second`, `level-18`), unit words (seconds, minutes, hours, ms) as in the strict reader; composite durations (`1 hour 30 minutes` = 5400 seconds). A unit is converted only inside the question's own unit: `4 hours` states 14400 seconds, `4 minutes` does not, and an `18 mana` is not a level
+- it REFUSES: a range (`level 18-20`, `18 to 20`, `between 18 and 20`, `18 or 20`), a number that is only in the question (an echo; `Rank N` is never a level, cooldown or mana figure), a match in a sentence about another rank (the sentence says another `Rank N`, or cites a row whose rank is not the asked one) or another entity (it cites a row of another subject, or, with `--tables`, names another known subject and not the asked one), negation, and the strict contradiction rule (a different number in the question's unit, per clause). A degraded response is never exact. Name kinds (`trait_prereq`) keep the strict reading unchanged.
+
+**Unsupported has one meaning in the new report:** a figure (a number with its optional unit) that is not (a) in the claim or value of a row the answer cites, (b) in the truth record's `allowed_numbers` (the expected value and the numbers of the rows the question rests on), or (c) in the library facts for the entity. Also supported: a number in the question, and the same figure after a unit conversion. Not figures: bracketed ids, dotted versions (`1.60.1.70959`), a number after `build`, `client`, `version` or `patch`, a year with no unit, list markers, and `Rank N` where N is a rank the entity's rows carry. The strict scorer's small-counter exemption (integers 0 to 10 with no unit) is NOT used, so a stray "3" is reported. The library match is an approximation: a page mentions the entity when its title or one fact's key or value holds the entity's name as whole words; the numbers of every fact of a page whose title mentions it, and of any fact that mentions it, are supported. That is page-level, so it errs toward supported.
+
+The report prints, per kind, strict and normalised exact counts and rates, the old and the new unsupported answers (and figures), the miss classes, BOTH pass-bar verdicts (`evaluateBar` on the strict scores and on the normalised ones; the numbers in `PASS_BAR` are not touched), every FLIP (not exact under strict, exact under normalised) with the matched text and 40 characters of context each side, every ANOMALY (exact under strict, not under normalised), three unsupported examples, and every normalised miss with an automatic CLASS: `abstained` (the answer says the figure is not in the client table or the library), `wrong-number` (a different number, or a range, in the expected unit), `right-number-wrong-entity-or-rank`, `no-figure`, plus `degraded` and `wrong-name`. The class is a help for the human reading of the misses, not a verdict. The strict verdict stays the one of record until a human has read the flips.
 
 ## Not proven by this harness
 
