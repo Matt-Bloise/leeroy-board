@@ -522,6 +522,14 @@ test("the rule says a LIBRARY figure keeps its library source and a GAME_FACTS f
   assert.match(GAME_FACTS_RULE, /A figure from a LIBRARY fact keeps its library source and needs no row id/);
 });
 
+test("the rule asks for the first sentence to be the asked figure and its row id alone, no restating in a second unit, no second figure of the asked kind", () => {
+  assert.match(GAME_FACTS_RULE, /the FIRST sentence states the asked figure and its row id and nothing else/);
+  assert.match(GAME_FACTS_RULE, /never restate it in another unit/);
+  assert.match(GAME_FACTS_RULE, /another figure ONLY when a GAME_FACTS row or a LIBRARY fact holds it, each with its own row id or library source/);
+  assert.match(GAME_FACTS_RULE, /never add a second figure of the kind that was asked/);
+  assert.ok(GAME_FACTS_RULE.length < 3200, "the rules stay short: " + GAME_FACTS_RULE.length);
+});
+
 test("one shared prompt budget: when the block and the rules would push the request past MAX_PROMPT_CHARS they are dropped (never the question or the library) and the ask is the flag-off ask", async () => {
   const mkPage = (k) => ({ id: "spells/zorbo-bolt", category: "spells", title: "Zorbo Bolt", blurb: "A Tinker bolt spell", facts: Array.from({ length: 20 }, (_, i) => ({ key: "zorbo.f" + i, value: ("Zorbo Bolt lightning spell Tinker class level fact " + i + " ").padEnd(k, "z") })) });
   const BQ = "what level is the Zorbo Bolt lightning spell of the Tinker class";

@@ -102,6 +102,8 @@ The Reader (next section) runs `lookupGameFacts` in the research path, passes th
 
 ## Reader (flag GAME_FACTS_READ)
 
+**Answer shape (rule added after the 2026-11-19 replay).** The first sentence of a one-figure table answer states the asked figure and its row id and nothing else; other figures follow only when a row or library fact holds them, each with its id; no second figure of the asked kind and no restating in another unit. Why: in the 239-item replay 58 of the 67 misses were the right, cited number wrapped in other same-unit figures, and the friend cannot tell the asked fact from the decoration. Flag off: the prompts are byte-identical to before (tests/unit/game-facts-read-off.test.mjs).
+
 ### What the flag does
 
 `GAME_FACTS_READ = "on"` (a single `[vars]` entry, shipped `"off"`; only the word `on`, any case, trimmed) changes one thing: a **research-mode `/ask` that will go to Claude** (ASK_RESEARCH on, so never in a PR preview; a member asker, `isMember === true`; an Anthropic key present) of a question that is not a greeting or a pure build question runs one bounded lookup (below) and the Worker then:
