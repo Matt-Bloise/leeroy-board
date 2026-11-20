@@ -36,7 +36,8 @@ test("push still deploys master, and workflow_dispatch exists", () => {
 
 test("paths-ignore is a list of known-safe globs", () => {
   assert.ok(Array.isArray(ignore) && ignore.length > 5);
-  for (const g of ["docs/**", "tests/**", "**/*.md", ".github/ISSUE_TEMPLATE/**", ".claude/**"]) assert.ok(ignore.includes(g), g);
+  for (const g of ["docs/**", "tests/unit/**", "tests/api/**", "**/*.md", ".github/ISSUE_TEMPLATE/**", ".claude/**"]) assert.ok(ignore.includes(g), g);
+  assert.ok(!ignore.includes("tests/**"), "the production probe job reads tests/browser, tests/helpers and tests/package*.json: not a blanket tests/**");
   for (const g of ignore) assert.ok(!g.startsWith("!"), "no negation: " + g);
 });
 
@@ -46,6 +47,7 @@ test("nothing the deploy, the Pages bundle or wrangler reads is ignored", () => 
     "infrastructure/package.json", "infrastructure/package-lock.json", "infrastructure/flagship-flags.txt", "infrastructure/worker/index.js", "infrastructure/migrations/0001_x.sql",
     "infrastructure/scripts/seed-d1.mjs", "pages-worker/index.js", "pages-worker/private-paths.mjs", "js/brain.js", "css/shell.css", "scenes/sheet.js", "data/client.json", "data/library/a.json",
     "tools/pages-bundle.mjs", "tools/d1-row-count.mjs", "tools/flagship-ensure-flags.mjs", "tools/sync-discord-commands.mjs", "tools/strip-flagship-binding.mjs", "tools/static-server.mjs",
+    "tests/browser/prod-probe.mjs", "tests/helpers/probe-checks.mjs", "tests/helpers/page-url.mjs", "tests/helpers/probe-budget.mjs", "tests/helpers/private-path-probe.mjs", "tests/helpers/clock-arg.mjs", "tests/package.json", "tests/package-lock.json",
     "landing/index.html", "privacy/index.html", "terms/index.html", "vendor/x.js", "fonts/a.woff2", "img/a.png", "room/index.html", "rate/index.html", "next/index.html", "atlas/a.json", "cloth/a.js",
   ];
   for (const p of must) assert.equal(ignored(p), false, p);

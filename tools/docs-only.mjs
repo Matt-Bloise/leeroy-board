@@ -6,7 +6,7 @@
 // LIGHT PATH (the CLI answer): docs paths, plus tests/unit/ and the tools that no CI job and no deploy runs (LIGHT_TOOL_FILES, LIGHT_TOOL_DIRS).
 // Those changes are fully covered by the unit job, which always runs, so the preview, api, browser and layout jobs add nothing. Tools that a
 // workflow, the deploy, the Pages bundle, the browser tests or the scope classifiers run (pages-bundle, static-server, ci-*, api-scope, stamps, ...) are NOT here.
-// tests/unit/ci-light-paths.test.mjs pins this list against the deploy workflow's paths-ignore so neither can drift.
+// tests/unit/deploy-trigger.test.mjs pins this list against the deploy workflow's paths-ignore so neither can drift.
 // Usage: <list of paths, one per line> | node tools/docs-only.mjs   (prints "true" or "false", the light-path answer)
 import { pathToFileURL } from "node:url";
 
