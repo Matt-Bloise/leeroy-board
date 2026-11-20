@@ -326,15 +326,16 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('tests/package-lock.json') }}
 
       - name: Install test dependencies
-        # Infrastructure only (no test has run yet), so it gets ONE automatic retry; a test step never does. Two legs of the first ci-full proof hung here for the whole 30-minute job (apt-get update or the Playwright
-        # download stalled, nothing printed): each attempt is cut at 7 minutes, the step at 16. With the cache restored the browsers are not downloaded again (install skips what is present).
-        timeout-minutes: 16
+        # Infrastructure only (no test has run yet), so it gets ONE automatic retry; a test step never does. Proof run 3 showed what NOT to do: a 7-minute `timeout` around the install killed apt mid-run on a slow mirror
+        # and the retry then failed on the dpkg lock. So apt is told to be patient and resilient instead (per-connection timeout, retries, wait for the lock), nothing is killed mid-install, and the step as a whole is cut at 20 minutes.
+        timeout-minutes: 20
         working-directory: tests
         run: |
+          printf '%s\n' 'Acquire::http::Timeout "20";' 'Acquire::https::Timeout "20";' 'Acquire::Retries "3";' 'DPkg::Lock::Timeout "300";' | sudo tee /etc/apt/apt.conf.d/99ci-resilient >/dev/null
           install() { sudo apt-get update && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium webkit; }
           for attempt in 1 2; do
-            if timeout 420 bash -c "$(declare -f install); install"; then exit 0; fi
-            echo "::warning::Install attempt $attempt failed or stalled (7-minute limit)."
+            if install; then exit 0; fi
+            echo "::warning::Install attempt $attempt failed."
           done
           echo "::error::Installing the test dependencies failed twice."
           exit 1

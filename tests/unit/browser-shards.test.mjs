@@ -114,7 +114,9 @@ test("the install step of the browser legs: bounded attempts, one automatic retr
   const step = steps.find((s) => /^Install test dependencies$/.test(s.name));
   assert.ok(step["timeout-minutes"] <= 20 && step["timeout-minutes"] < wf.jobs.browser["timeout-minutes"], "a stalled install is cut well before the job limit");
   assert.match(step.run, /for attempt in 1 2; do/);
-  assert.match(step.run, /timeout 420 bash -c/);
+  assert.ok(!/timeout\s+\d+\s+bash/.test(step.run), "nothing is killed mid-install: a kill left apt holding the dpkg lock and the retry failed on it");
+  assert.match(step.run, /DPkg::Lock::Timeout "300"/);
+  assert.match(step.run, /Acquire::Retries "3"/);
   assert.match(step.run, /playwright install --with-deps chromium webkit/);
   const cache = steps.find((s) => s.uses && /actions\/cache@[0-9a-f]{40}/.test(s.uses));
   assert.ok(cache, "the cache action is pinned to a full sha");
