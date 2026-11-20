@@ -364,7 +364,8 @@ jobs:
           # The preview gets a derived admin secret in the next step.
           DEPLOY_OUT=$(npx wrangler deploy 2>&1)
           DEPLOY_EXIT=$?
-          echo "$DEPLOY_OUT"
+          # The account workers.dev subdomain carries a personal name: it is never printed. The raw output stays in the variable, only the redacted text reaches the log.
+          echo "$DEPLOY_OUT" | sed -E 's#\.[a-z0-9-]+\.workers\.dev#.<account-subdomain>.workers.dev#g'
           if [ $DEPLOY_EXIT -ne 0 ]; then
             echo "::error::wrangler deploy failed with exit code $DEPLOY_EXIT"
             exit $DEPLOY_EXIT
@@ -377,6 +378,9 @@ jobs:
             exit 1
           fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+          # The Worker URL goes to the Preview Tests workflow as the preview-urls workflow artifact (uploaded below), not in the public PR comment: its host carries a personal name.
+          mkdir -p "$RUNNER_TEMP/preview-urls"
+          printf '%s\n' "$WORKER_URL" > "$RUNNER_TEMP/preview-urls/worker.txt"
 
       - name: Set Preview Salt Secrets (derived per preview)
         working-directory: infrastructure
@@ -430,6 +434,14 @@ jobs:
           PREVIEW_URL="https://${PAGES_BRANCH}.${PAGES_PROJECT_NAME}.pages.dev"
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
+      - name: Keep the Worker URL for the Preview Tests workflow (artifact, not the public comment)
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: preview-urls
+          path: ${{ runner.temp }}/preview-urls/worker.txt
+          retention-days: 3
+          if-no-files-found: error
+
       - name: Post / Update Sticky PR Preview Comment
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
@@ -438,7 +450,7 @@ jobs:
             const prNumber = context.payload.pull_request.number;
             const sha = context.payload.pull_request.head.sha.slice(0, 7);
             const previewUrl = "${{ steps.pages.outputs.preview_url }}";
-            const workerUrl = "${{ steps.worker.outputs.worker_url }}";
+            const workerName = "${{ env.WORKER_NAME }}"; // the host (the account's workers.dev subdomain) is NOT printed: it carries a personal name
             const dbName = "${{ env.D1_DATABASE_NAME }}";
 
             const body = [
@@ -448,7 +460,7 @@ jobs:
               "| Layer | Isolated Resource | Status |",
               "| :--- | :--- | :--- |",
               `| **Frontend (Cloudflare Pages)** | [${previewUrl}](${previewUrl}) | 🟢 Live (\`${sha}\`) |`,
-              `| **API & WebSockets (Worker + DO)** | [\`${workerUrl}/api/health\`](${workerUrl}/api/health) | 🟢 Isolated \`BoardRoom\` |`,
+              `| **API & WebSockets (Worker + DO)** | \`${workerName}\` on the account's workers.dev host (host not printed here) | 🟢 Isolated \`BoardRoom\` |`,
               `| **Database (Cloudflare D1)** | \`${dbName}\` | 🟢 Seeded & Isolated |`,
               `| **AI Model (Zero Keys)** | Cloudflare Workers AI (\`@cf/meta/llama-3.3-70b-instruct-fp8-fast\`) | 🟢 Free Tier (No External Keys) |`,
               "",

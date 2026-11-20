@@ -20,6 +20,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  actions: read # the preview job downloads the preview-urls artifact of the pr-preview run
 
 env:
   # Pinned action SHAs (tag in the comment on each use):
@@ -171,11 +172,19 @@ jobs:
             # Only the Actions bot (user.type Bot, login github-actions[bot]) counts. The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
             if echo "$BODY" | grep -q "$SHORT" && ! echo "$BODY" | grep -q "Torn Down"; then
               PAGES=$(echo "$BODY" | grep -oE "https://pr-${PR_NUMBER}\.leeroy-board\.pages\.dev" | head -n 1 || true)
-              WORKER=$(echo "$BODY" | grep -oE "https://leeroy-brain-pr-${PR_NUMBER}\.[a-z0-9-]+\.workers\.dev" | head -n 1 || true)
+              # The Worker URL is not in the (public) comment any more: its host carries a personal name. It comes from the preview-urls artifact of the pr-preview run for this commit and is never printed.
+              RID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=50" --jq '[.workflow_runs[] | select(.path == ".github/workflows/pr-preview-cloudflare.yml" and .conclusion == "success")] | sort_by(.created_at) | last | .id // empty' || true)
+              WORKER=""
+              if [ -n "$RID" ]; then
+                rm -rf "$RUNNER_TEMP/pu"
+                if gh run download "$RID" -R "$GITHUB_REPOSITORY" -n preview-urls -D "$RUNNER_TEMP/pu" >/dev/null 2>&1; then
+                  WORKER=$(grep -oE "^https://leeroy-brain-pr-${PR_NUMBER}\.[a-z0-9-]+\.workers\.dev$" "$RUNNER_TEMP/pu/worker.txt" | head -n 1 || true)
+                fi
+              fi
               if [ -n "$PAGES" ] && [ -n "$WORKER" ]; then
                 echo "pages=$PAGES" >> "$GITHUB_OUTPUT"
                 echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
-                echo "Preview found: $PAGES and $WORKER (commit $SHORT)"
+                echo "Preview found: $PAGES and the Worker (host not printed) (commit $SHORT)"
                 exit 0
               fi
             fi
