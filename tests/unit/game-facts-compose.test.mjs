@@ -19,7 +19,7 @@ const row = (id, kind, subject, claim, value, note = "") => ({ id, kind, subject
 const LEVEL = row("spelllevels:301", "spell_level", "Glimmer Spear", "Glimmer Spear requires level 22.", "22");
 const COOL = row("spellcooldowns:302", "spell_cooldown", "Glimmer Spear", "Glimmer Spear has a cooldown of 45 seconds.", "45");
 const MANA = row("spellmana:303", "spell_mana_cost", "Glimmer Spear", "Glimmer Spear costs 120 mana.", "120");
-const ITEM = row("items:9", "item_level_req", "Glimmer Blade", "Glimmer Blade requires level 22.", "22");
+const ITEM = row("items:9", "item_level_req", "Glimmer Blade", "Glimmer Blade has a required level of 22.", "22");
 
 // Through the real reader and lookup over fixture rows: what the ask path would see.
 async function compose(q, rows) {
@@ -35,7 +35,7 @@ test("one plain question in a known shape, one row of the asked kind: the row's 
   assert.equal(text(await compose("what level is Glimmer Spear?", [LEVEL, COOL, MANA])), "**Glimmer Spear requires level 22.** [spelllevels:301]");
   assert.equal(text(await compose("What is the cooldown of Glimmer Spear, in seconds?", [LEVEL, COOL, MANA])), "**Glimmer Spear has a cooldown of 45 seconds.** [spellcooldowns:302]");
   assert.equal(text(await compose("How much mana does Glimmer Spear cost?", [LEVEL, COOL, MANA])), "**Glimmer Spear costs 120 mana.** [spellmana:303]");
-  assert.equal(text(await compose("What level do you need to be to equip Glimmer Blade?", [ITEM])), "**Glimmer Blade requires level 22.** [items:9]");
+  assert.equal(text(await compose("What level do you need to be to equip Glimmer Blade?", [ITEM])), "**Glimmer Blade has a required level of 22.** [items:9]");
 });
 
 test("every digit of an answer is in the claim or the id (a property over the happy shapes)", async () => {
@@ -209,16 +209,16 @@ test("6: the claim must name the row's subject and contain no number word or non
 });
 
 test("7: a level template belongs to one entity type: learn/get for a spell row, equip/requirement for an item row", async () => {
-  const item = [row("items:9", "item_level_req", "Glimmer Blade", "Glimmer Blade requires level 40.", "40")];
+  const item = [row("items:9", "item_level_req", "Glimmer Blade", "Glimmer Blade has a required level of 40.", "40")];
   assert.equal(await compose("when do I learn Glimmer Blade", item), null);
   assert.equal(await compose("at what level does a player learn Glimmer Blade?", item), null);
-  assert.equal(text(await compose("what level do you need to be to equip Glimmer Blade?", item)), "**Glimmer Blade requires level 40.** [items:9]");
+  assert.equal(text(await compose("what level do you need to be to equip Glimmer Blade?", item)), "**Glimmer Blade has a required level of 40.** [items:9]");
   assert.equal(await compose("what level do you need to be to equip Glimmer Spear", [LEVEL]), null, "equip a spell");
   assert.equal(await compose("what is the required level for Glimmer Spear", [LEVEL]), null);
-  const both = [LEVEL, row("items:10", "item_level_req", "Glimmer Spear", "Glimmer Spear requires level 40.", "40")];
+  const both = [LEVEL, row("items:10", "item_level_req", "Glimmer Spear", "Glimmer Spear has a required level of 40.", "40")];
   assert.equal(await compose("what level is Glimmer Spear", both), null, "the neutral template with a spell row and an item row of the name");
-  assert.equal(text(await compose("when do I learn Glimmer Spear", both)), "**Glimmer Spear requires level 22.** [spelllevels:301]");
-  assert.equal(text(await compose("what level do you need to be to equip Glimmer Spear", both)), "**Glimmer Spear requires level 40.** [items:10]");
+  assert.equal(await compose("when do I learn Glimmer Spear", both), null, "round 3: a name that is a spell and an item is two entities; no template picks one");
+  assert.equal(await compose("what level do you need to be to equip Glimmer Spear", both), null, "round 3: same, the other way");
   assert.equal(text(await compose("what level is Glimmer Spear", [LEVEL])), "**Glimmer Spear requires level 22.** [spelllevels:301]");
 });
 
@@ -338,5 +338,5 @@ test("GAME_FACTS_COMPOSE is one declared [vars] entry, off, documented, and the 
   assert.ok(read("docs/runbooks/game-facts.md").includes("Composed table answer"));
   const src = read("infrastructure/worker/game-facts-compose.js");
   assert.ok(!/\bfetch\(|\.DB\b|env\.|Date\.now|crypto\./.test(src), "pure: no I/O, no clock");
-  assert.match(read("infrastructure/worker/ai-models.js"), /composeTableAnswer\(question, gf\.res\)/);
+  assert.match(read("infrastructure/worker/ai-models.js"), /composeTableAnswer\(question, gfForCompose\.res\)/);
 });

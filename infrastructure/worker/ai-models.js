@@ -1212,9 +1212,10 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     let userPrompt = userFor(gfActive && gf.block ? `${gf.block}\n\n` : "", libraryFor(gfActive));
     if (gfActive) systemPrompt = `${systemBase}\n\n${GAME_FACTS_RULE}`;
     // One shared budget (research/claude.js MAX_PROMPT_CHARS): when the block and the rules would push the request over it, they go (never the question or the library) and the ask is the one it would be without the flag.
+    const gfForCompose = gf; // the budget below drops the table block from the MODEL prompt; a code-written answer calls no model and has no prompt to fit
     if (gfActive && systemPrompt.length + userPrompt.length > MAX_PROMPT_CHARS) { gf = null; gfActive = false; systemPrompt = systemBase; userPrompt = userFor("", libraryFor(false)); if (gfTrace) gfTrace.dropped = "prompt-budget"; }
     if (gfTrace) gfTrace.used = gfActive;
-    const tableAnswer = gf && gf.res && gameFactsComposeOn(env) ? composeTableAnswer(question, gf.res) : null; // GAME_FACTS_COMPOSE: the row is the answer; null = the model answers as before
+    const tableAnswer = gfForCompose && gfForCompose.res && gameFactsComposeOn(env) ? composeTableAnswer(question, gfForCompose.res) : null; // GAME_FACTS_COMPOSE: the row is the answer; null = the model answers as before
 
     return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, ...(systemCachePrefix ? { systemCachePrefix } : {}), userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, ...(gfActive ? { gameFactIds: gf.ids, gameFactGround: gf.ground } : {}), ...(gfTrace ? { gfTrace } : {}), ...(tableAnswer ? { tableAnswer } : {}), abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
 }
@@ -1230,10 +1231,12 @@ const eggFor = (persona) => {
 
 export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "", research = false, factIds = null, factGround = "", tableCites = null }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
-    let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap, ...(research ? { keepAdvice: true } : {}) });
+    // GAME_FACTS_COMPOSE: a composed table answer is the row's own text. The house-voice repair (name_map, Skippy to Leeroy, snowflake strip) and the egg and intro strips are for model prose and could change a name or a digit of it, so the
+    // text leaves the worker byte-identical to the row-derived text apart from the Sources line; link and mention neutralising below still runs.
+    const composedTable = research && trusted && Array.isArray(tableCites);
+    let repaired = composedTable ? String(rawAnswer || "").trim() : repairHouseVoice(rawAnswer, { isCoach, nameMap, ...(research ? { keepAdvice: true } : {}) });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
-    repaired = stripEggLine(repaired, eggFor(persona).line);
-    repaired = stripPersonaIntro(repaired);
+    if (!composedTable) { repaired = stripEggLine(repaired, eggFor(persona).line); repaired = stripPersonaIntro(repaired); }
     // A spell, place or item the library never gave is replaced by the honest line.
     // Research mode (ASK_RESEARCH on) replaces these deleters with labellers (research/label.js): the same checks tag a sentence "Classic value, not confirmed for Forever" instead of cutting it.
     if (typeof groundingText === "string" && !trusted && !research) {

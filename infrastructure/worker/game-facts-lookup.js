@@ -50,7 +50,7 @@ export function candidateKeys(windows) {
 
 // Visible: the row's load is done, it is not superseded, and no NEWER done load holds the same id (the build preference is applied here, in the query, before any LIMIT; finish supersedes older rows too, this is the second guard).
 const VISIBLE = "l.status = 'done' AND g.superseded = 0 AND g.verdict IN ('holds', 'wrong') AND NOT EXISTS (SELECT 1 FROM game_facts g2 JOIN game_fact_loads l2 ON l2.id = g2.load_id WHERE g2.id = g.id AND g2.load_id <> g.load_id AND l2.status = 'done' AND (l2.finished_at > l.finished_at OR (l2.finished_at = l.finished_at AND l2.started_at > l.started_at)))";
-const COLS = "g.id AS id, g.kind AS kind, g.subject AS subject, g.subject_norm AS subject_norm, g.subject_base AS subject_base, g.claim AS claim, g.value AS value, g.unit AS unit, g.source_table AS source_table, g.row_id AS row_id, g.build AS build, g.note AS note, g.verdict AS verdict";
+const COLS = "g.id AS id, g.kind AS kind, g.subject AS subject, g.subject_norm AS subject_norm, g.subject_base AS subject_base, g.claim AS claim, g.value AS value, g.unit AS unit, g.source_table AS source_table, g.row_id AS row_id, g.build AS build, g.note AS note, g.verdict AS verdict, g.load_id AS load_id";
 const FROM = "FROM game_facts g JOIN game_fact_loads l ON l.id = g.load_id";
 const marks = (n) => Array.from({ length: n }, () => "?").join(", ");
 
@@ -62,7 +62,9 @@ export function buildNameSql(keys, column, fetch, kindList = KIND_LIST, longestF
 }
 // Rows of the given names that exist and are not superseded but whose verdict is neither holds nor wrong (unverifiable): counted, never shown.
 export function buildSiblingSql(norms) {
-  return { sql: `SELECT COUNT(*) AS c FROM game_facts g JOIN game_fact_loads l ON l.id = g.load_id WHERE g.kind IN (${ALL_KIND_LIST}) AND g.subject_norm IN (${marks(norms.length)}) AND g.verdict NOT IN ('holds', 'wrong') AND g.superseded = 0 AND l.status = 'done'`, binds: [...norms] };
+  // by the name itself and by base name ("Bite II" is hidden next to "Bite": its subject_base is "bite"); two indexed counts in one statement
+  const one = (col, extra) => `SELECT COUNT(*) FROM game_facts g JOIN game_fact_loads l ON l.id = g.load_id WHERE g.kind IN (${ALL_KIND_LIST}) AND g.${col} IN (${marks(norms.length)})${extra} AND g.verdict NOT IN ('holds', 'wrong') AND g.superseded = 0 AND l.status = 'done'`;
+  return { sql: `SELECT (${one("subject_norm", "")}) + (${one("subject_base", " AND g.subject_base <> ''")}) AS c`, binds: [...norms, ...norms] };
 }
 export function buildCuratedSql(fetch) {
   return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind = 'curated' AND ${VISIBLE} LIMIT ?`, binds: [fetch] };
@@ -128,6 +130,8 @@ export function chooseNames(windows, rows) {
     for (const x of mine) used.add(x.r.id + "|" + x.r.kind);
     groups.push({ len: w.len, start: w.start, rows: mine.map((x) => x.r) });
   }
+  // Rows that matched a name window of the question but lost to a longer overlapping name: the chosen name is then one reading of a question that has another ("Ember and Ash" next to "Ember" and "Ash").
+  Object.defineProperty(groups, "overlap", { value: items.filter((x) => !used.has(x.r.id + "|" + x.r.kind)).length, enumerable: false });
   return groups;
 }
 
@@ -151,9 +155,9 @@ async function runAll(env, q) {
 export async function lookupGameFactsChecked(env, question, { limit = 5, reader = false, siblings = false } = {}) {
   const empty = { rows: [], doNotSay: [], ambiguous: false, via: "none" };
   const n = Number.isInteger(limit) ? Math.min(20, Math.max(1, limit)) : 5;
-  const { tokens, windows } = questionWindows(question);
-  const { exact, byBase } = candidateKeys(windows);
   try {
+    const { tokens, windows } = questionWindows(question); // inside the try: a question whose coercion throws is a failed lookup, not a rejection
+    const { exact, byBase } = candidateKeys(windows);
     const fetched = new Map();
     const add = (list) => { for (const r of list) fetched.set(`${r.id}|${r.load_id || ""}|${r.build}`, r); };
     const fetchN = reader ? READER_ROW_LIMIT : 400;
@@ -186,13 +190,13 @@ export async function lookupGameFactsChecked(env, question, { limit = 5, reader 
     // index-ranged statement, only when exactly one name matched; reader callers without the option never run it.
     let unverifiable = 0;
     if (reader && siblings && named.length === 1) {
-      const norms = [...new Set(named[0].rows.map((r) => r.subject_norm).filter(Boolean))].slice(0, 12);
+      const norms = [...new Set([...named[0].rows.map((r) => r.subject_norm).filter(Boolean), ...exact])].slice(0, 48); // the chosen name and every other name window of the question
       if (norms.length) { const got = await runAll(env, buildSiblingSql(norms)); unverifiable = Number(got[0] && got[0].c) || 0; }
     }
     const cur = reader ? [] : curatedMatches(question, await runAll(env, buildCuratedSql(300)));
     for (const r of cur) { if (r.verdict === "holds" && holds.length < n) holds.push(r); else if (r.verdict === "wrong") wrong.push(r); }
     const rank = (r) => r.id;
-    return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, ...(rankMissing ? { rankMissing: true } : {}), ...(reader ? { cut, groups: named.length, ...(siblings ? { unverifiable } : {}) } : {}), via: "names" };
+    return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, ...(rankMissing ? { rankMissing: true } : {}), ...(reader ? { cut, groups: named.length, overlap: named.overlap || 0, ...(siblings ? { unverifiable } : {}) } : {}), via: "names" };
   } catch {
     return { ...empty, failed: true };
   }

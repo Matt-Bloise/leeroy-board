@@ -2,11 +2,11 @@
 // Run: node --test tests/unit/game-facts-compose-round3.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { answerWithAi, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
+import { answerWithAi, invalidatePagesCache, buildAnswerInputs } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
-import { resetResearchClaudeForTests, privacyBudget } from "../../infrastructure/worker/research/claude.js";
+import { resetResearchClaudeForTests, privacyBudget, MAX_PROMPT_CHARS } from "../../infrastructure/worker/research/claude.js";
 import { composeTableAnswer } from "../../infrastructure/worker/game-facts-compose.js";
 import { readGameFacts } from "../../infrastructure/worker/game-facts-read.js";
 import { lookupGameFactsChecked } from "../../infrastructure/worker/game-facts-lookup.js";
@@ -170,4 +170,72 @@ test("H4 a question whose toString throws gives a failed lookup, not a rejection
   const DB = await schemaDb();
   const r = await lookupGameFactsChecked({ DB }, { toString() { throw new Error("no"); } }, { reader: true });
   assert.equal(r.failed, true);
+});
+
+// ---- H2: the model prompt budget must not suppress a code answer ------------------------------------------------------------------------------------------
+test("H2 a prompt over the model budget drops the table block from the MODEL prompt only; the composed answer is still there", async () => {
+  const DB = await schemaDb(); loadFacts(DB, [LEVEL]);
+  const env = { DB, AI: {}, USER_SALT: "user-salt-for-tests-0123456789", ANTHROPIC_API_KEY: FAKE_KEY, ASK_RESEARCH: "on", RESEARCH_NAMES: "real", GROUP_MEMORY: "off", GAME_FACTS_READ: "on", GAME_FACTS_COMPOSE: "on" };
+  invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache();
+  DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('persona', ?, 'x')").run(JSON.stringify({ system: "p".repeat(MAX_PROMPT_CHARS) })); // a persona pack that alone is over the model prompt budget
+  const inputs = await buildAnswerInputs(env, { question: "What level is Glimmer Spear?", by: "Red Fox", memberSlug: "red-fox", isMember: true, research: true, researchReal: true, gameFacts: true, });
+  assert.ok(!/<<<GAME_FACTS/.test(inputs.userPrompt), "the block is out of the over-budget model prompt");
+  assert.equal(inputs.tableAnswer && inputs.tableAnswer.text, POS);
+});
+
+// ---- T: talents (VAREN's own finding): the table's spell level of a talent is not when a player can take it ------------------------------------------------------
+test("T1 a talent composes no level answer: a name with a trait row, and a talent the loader has no trait row for (spell level 1)", async () => {
+  const cruelty = row("spelllevels:101180", "spell_level", "Cruelty", "Cruelty requires level 1.", "1");
+  const trait = row("trait_max_ranks:1117-105939", "trait_max_ranks", "Cruelty", "Cruelty is a Warrior talent with 5 ranks.", "5");
+  for (const q of ["What level is Cruelty?", "At what level does a player learn Cruelty?", "When do I learn Cruelty?", "Cruelty: what level is it available from?"]) assert.equal(await compose(q, [cruelty, trait]), null, q);
+  assert.equal(await compose("What level is Cruelty?", [cruelty]), null, "no trait row: a level-1 spell row is not composed");
+  assert.equal(text(await compose("How many ranks can you put into the Warrior talent Cruelty?", [cruelty, trait])), "**Cruelty is a Warrior talent with 5 ranks.** [trait_max_ranks:1117-105939]", "the talent's own rank question still composes");
+  assert.equal(text(await compose("What level is Glimmer Spear?", [LEVEL])), POS, "a spell above level 1 with no talent row still composes");
+});
+test("T2 a talent prerequisite composes only in the loader's own sentence (the value is a talent name; checked as one)", async () => {
+  const pre = row("trait_prereq:3-9", "trait_prereq", "Deep Focus", "Deep Focus (Rogue talent) has Quiet Mind as its prerequisite talent.", "Quiet Mind");
+  assert.equal(text(await compose("What is the prerequisite talent for Deep Focus?", [pre])), "**Deep Focus (Rogue talent) has Quiet Mind as its prerequisite talent.** [trait_prereq:3-9]");
+  for (const claim of ["Deep Focus (Rogue talent) has Quiet Mind as its prerequisite talent after patch 2.", "Deep Focus (Rogue talent) has Quiet Mind 5 as its prerequisite talent."]) {
+    assert.equal(await compose("What is the prerequisite talent for Deep Focus?", [{ ...pre, claim }]), null, claim);
+  }
+  assert.equal(await compose("What is the prerequisite talent for Deep Focus?", [{ ...pre, value: "Quiet Mind 2", claim: "Deep Focus (Rogue talent) has Quiet Mind 2 as its prerequisite talent." }]), null, "a digit in a name value");
+});
+
+// ---- ADV: adversarial questions and rows that must return null ---------------------------------------------------------------------------------------------------
+// The 240-question set is built from the same tables the composer reads; these are not: each is a way to be wrong that the set cannot contain.
+const BITE = row("spellcooldowns:41", "spell_cooldown", "Bite", "Bite has a cooldown of 6 seconds.", "6");
+const rk = (id, kind, claim, value, rank) => row(id, kind, "Shadeburn", claim, value, `rank=${rank}`);
+const CASES = [
+  ["ADV01 name shared by two classes, cooldown asked", "What is the cooldown of Glimmer Spear?", [COOL, { ...LEVEL, note: "class=Mage" }, row("spelllevels:305", "spell_level", "Glimmer Spear", "Glimmer Spear requires level 28.", "28", "class=Priest")]],
+  ["ADV02 spell and item, neutral level", "What level is Glimmer Spear?", [LEVEL, ITEM]],
+  ["ADV03 spell and item, equip template", "What level do you need to be to equip Glimmer Spear?", [LEVEL, ITEM]],
+  ["ADV04 spell and item, learn template", "At what level does a player learn Glimmer Spear?", [LEVEL, ITEM]],
+  ["ADV05 spell and talent, mana cost", "How much mana does Glimmer Spear cost?", [row("spellmana:303", "spell_mana_cost", "Glimmer Spear", "Glimmer Spear costs 120 mana.", "120"), row("trait_max_ranks:4-9", "trait_max_ranks", "Glimmer Spear", "Glimmer Spear is a Priest talent with 5 ranks.", "5")]],
+  ["ADV06 claim with a different subject that starts with the name", "What level is Glimmer Spear?", [{ ...LEVEL, claim: "Glimmer Spear Mastery requires level 22." }]],
+  ["ADV07 claim with a trailing second sentence", "What level is Glimmer Spear?", [{ ...LEVEL, claim: "Glimmer Spear requires level 22. It was level 30 before." }]],
+  ["ADV08 claim with a decimal figure that is not the value", "What level is Glimmer Spear?", [{ ...LEVEL, claim: "Glimmer Spear requires level 22.5." }]],
+  ["ADV09 claim of another property", "What is the cooldown of Glimmer Spear?", [{ ...COOL, claim: "Glimmer Spear costs 45 mana." }]],
+  ["ADV10 unit field that contradicts the kind", "What is the cooldown of Glimmer Spear?", [{ ...COOL, unit: "mana" }]],
+  ["ADV11 value with trailing text", "What is the cooldown of Glimmer Spear?", [{ ...COOL, value: "45 seconds" }]],
+  ["ADV12 value with a leading sign", "What is the cooldown of Glimmer Spear?", [{ ...COOL, value: "+45", claim: "Glimmer Spear has a cooldown of +45 seconds." }]],
+  ["ADV13 value written as a number word", "What is the cooldown of Glimmer Spear?", [{ ...COOL, value: "forty", claim: "Glimmer Spear has a cooldown of forty seconds." }]],
+  ["ADV14 name is the stem of a longer asked name", "What level is Glimmer Spear Mastery?", [LEVEL]],
+  ["ADV15 asked name followed by a bang the row lacks", "What level is Glimmer Spear!?", [LEVEL]],
+  ["ADV16 unit words with no delimiter", "What is the cooldown of Glimmer Spear in seconds?", [COOL]],
+  ["ADV17 the long name with a connector, and its two halves", "What is the cooldown of Ember and Ash?", [EMBER, ASH, row("spellcooldowns:48", "spell_cooldown", "Ember and Ash", "Ember and Ash has a cooldown of 45 seconds.", "45")]],
+  ["ADV18 the long name with 'with', and its first half", "What is the cooldown of Ember with Ash?", [EMBER, row("spellcooldowns:55", "spell_cooldown", "Ember with Ash", "Ember with Ash has a cooldown of 45 seconds.", "45")]],
+  ["ADV19 a base-name sibling that holds", "What is the cooldown of Bite?", [BITE, row("spellcooldowns:43", "spell_cooldown", "Bite II", "Bite II has a cooldown of 30 seconds.", "30")]],
+  ["ADV20 a ranked ladder of the asked kind", "How much mana does Shadeburn cost?", [rk("spellmana:41", "spell_mana_cost", "Shadeburn (Rank 1) costs 50 mana.", "50", 1), rk("spellmana:42", "spell_mana_cost", "Shadeburn (Rank 2) costs 90 mana.", "90", 2)]],
+  ["ADV21 two cast-time rows of one name", "What is the cast time of Glimmer Spear?", [row("spellmisc:41", "spell_cast_time", "Glimmer Spear", "Glimmer Spear has a cast time of 2 seconds.", "2"), row("spellmisc:42", "spell_cast_time", "Glimmer Spear", "Glimmer Spear has a cast time of 3 seconds.", "3")]],
+  ["ADV22 class in the question that is not the row's class slot", "How many ranks can you put into the Rogue talent Mage Armor?", [row("trait_max_ranks:4-5", "trait_max_ranks", "Mage Armor", "Mage Armor is a Priest talent with 5 ranks.", "5")]],
+  ["ADV23 class slot that is not a class", "How many ranks can you put into the Mage talent Mage Armor?", [row("trait_max_ranks:4-5", "trait_max_ranks", "Mage Armor", "Mage Armor is a Dragon talent with 5 ranks.", "5")]],
+  ["ADV24 level-1 spell row", "What level is Glimmer Spear?", [{ ...LEVEL, claim: "Glimmer Spear requires level 1.", value: "1" }]],
+  ["ADV25 empty claim and value", "What level is Glimmer Spear?", [{ ...LEVEL, claim: "", value: "" }]],
+];
+for (const [name, q, rows] of CASES) test(name, async () => { assert.equal(await compose(q, rows), null, q); });
+test("ADV positive controls: the same fixtures, asked plainly, still compose", async () => {
+  assert.equal(text(await compose("What is the cooldown of Glimmer Spear, in seconds?", [COOL])), "**Glimmer Spear has a cooldown of 45 seconds.** [spellcooldowns:302]");
+  assert.equal(text(await compose("What level is Glimmer Spear?", [LEVEL])), POS);
+  const bw = [row("spellcooldowns:61", "spell_cooldown", "Bestial Wrath", "Bestial Wrath has a cooldown of 120 seconds.", "120"), row("spellcooldowns:62", "spell_cooldown", "Wrath", "Wrath has a cooldown of 6 seconds.", "6")];
+  assert.equal(text(await compose("What is the cooldown of Bestial Wrath?", bw)), "**Bestial Wrath has a cooldown of 120 seconds.** [spellcooldowns:61]", "a longer name without a connector wins over its shorter part");
 });

@@ -119,7 +119,11 @@ function composeInput(res, b) {
   const dropped = [...uniq].some((id) => !shown.has(id));
   const seen = new Set();
   const rows = (Array.isArray(res.rows) ? res.rows : []).filter((r) => r && shown.has(r.id) && !seen.has(r.id) && seen.add(r.id));
-  return { rows, doNotSay: Array.isArray(res.doNotSay) ? res.doNotSay : [], rankMissing: res.rankMissing === true, ambiguous: res.ambiguous === true, cut: res.cut === true || dropped || b.omitted > 0, groups: Number.isInteger(res.groups) ? res.groups : 0, unverifiable: Number.isInteger(res.unverifiable) ? res.unverifiable : -1 };
+  // One id on two physical rows (two builds, or a holds row and a wrong row, or a row this reader filtered and one it showed) is a contested row: the id-keyed collapse above must not pick one of them silently.
+  const ids = new Map();
+  for (const r of [...(Array.isArray(res.rows) ? res.rows : []), ...(Array.isArray(res.doNotSay) ? res.doNotSay : [])]) if (r && typeof r.id === "string") ids.set(r.id, (ids.get(r.id) || 0) + 1);
+  const duplicated = [...ids.values()].some((c) => c > 1);
+  return { rows, doNotSay: Array.isArray(res.doNotSay) ? res.doNotSay : [], rankMissing: res.rankMissing === true, ambiguous: res.ambiguous === true, overlap: Number.isInteger(res.overlap) ? res.overlap : -1, cut: res.cut === true || dropped || duplicated || b.omitted > 0, groups: Number.isInteger(res.groups) ? res.groups : 0, unverifiable: Number.isInteger(res.unverifiable) ? res.unverifiable : -1 };
 }
 
 // Never throws and never waits longer than timeoutMs. -> null (a failed, stalled or junk lookup: nothing changes for the ask, one fixed code is logged) or
@@ -128,7 +132,7 @@ function composeInput(res, b) {
 // trace (optional, the shadow recorder's): an object this fills with { ms, outcome: "timeout" | "failed" | "empty" | "rows", block } and nothing else; it changes no result.
 export async function readGameFacts(env, question, { lookup = lookupGameFactsChecked, timeoutMs = GAME_FACTS_TIMEOUT_MS, trace = null } = {}) {
   const t0 = Date.now();
-  const note = (outcome, block = null) => { if (trace) { trace.ms = Math.max(0, Date.now() - t0); trace.outcome = outcome; trace.block = block; } };
+  const note = (outcome, block = null) => { try { if (trace) { trace.ms = Math.max(0, Date.now() - t0); trace.outcome = outcome; trace.block = block; } } catch { /* a frozen or hostile trace object: the read still goes on */ } };
   let timer = null;
   const STALL = Symbol("stall");
   const log = (code) => { try { console.error(code); } catch { /* a console that throws */ } };
