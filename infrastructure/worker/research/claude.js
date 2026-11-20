@@ -105,12 +105,15 @@ export function measuredUsage(usage) {
   if (!usage || typeof usage !== "object") return null;
   const ok = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0;
   if (!ok(usage.input_tokens) || !ok(usage.output_tokens)) return null;
-  return { input_tokens: Math.min(MEASURED_CLAMP, Math.floor(usage.input_tokens)), output_tokens: Math.min(MEASURED_CLAMP, Math.floor(usage.output_tokens)) };
+  // Anthropic reports input_tokens WITHOUT the cached part: the cache write and read counts come in two more fields. Counts only; an absent or invalid field is 0 (never a guess).
+  const n = (v) => (ok(v) ? Math.min(MEASURED_CLAMP, Math.floor(v)) : 0);
+  return { input_tokens: n(usage.input_tokens), output_tokens: n(usage.output_tokens), cache_creation_input_tokens: n(usage.cache_creation_input_tokens), cache_read_input_tokens: n(usage.cache_read_input_tokens) };
 }
 export function sumMeasured(list) {
   const got = list.map(measuredUsage).filter(Boolean);
   if (!got.length) return null;
-  return { input_tokens: Math.min(MEASURED_CLAMP, got.reduce((a, u) => a + u.input_tokens, 0)), output_tokens: Math.min(MEASURED_CLAMP, got.reduce((a, u) => a + u.output_tokens, 0)) };
+  const sum = (k) => Math.min(MEASURED_CLAMP, got.reduce((a, u) => a + u[k], 0));
+  return { input_tokens: sum("input_tokens"), output_tokens: sum("output_tokens"), cache_creation_input_tokens: sum("cache_creation_input_tokens"), cache_read_input_tokens: sum("cache_read_input_tokens") };
 }
 
 export function estimateTokens(systemText, userText) {

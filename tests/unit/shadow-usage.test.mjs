@@ -15,7 +15,7 @@ test.beforeEach(() => resetResearchClaudeForTests());
 
 test("a compose reports its measured usage", async () => {
   const r = await run(async () => ({ answer: OKTXT, model: "m", usage: { input_tokens: 1200, output_tokens: 340, cache_read_input_tokens: 5 } }));
-  assert.deepEqual(r.usage, { input_tokens: 1200, output_tokens: 340 });
+  assert.deepEqual(r.usage, { input_tokens: 1200, output_tokens: 340, cache_creation_input_tokens: 0, cache_read_input_tokens: 5 });
 });
 
 test("compose + retry send: the usage of both sends is summed", async () => {
@@ -26,7 +26,7 @@ test("compose + retry send: the usage of both sends is summed", async () => {
     return { answer: OKTXT, model: "m", usage: { input_tokens: 900, output_tokens: 300 } };
   });
   assert.equal(n, 2);
-  assert.deepEqual(r.usage, { input_tokens: 1900, output_tokens: 307 });
+  assert.deepEqual(r.usage, { input_tokens: 1900, output_tokens: 307, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 });
 });
 
 test("no usable usage: the field is absent, never zero", async () => {
@@ -39,8 +39,8 @@ test("no usable usage: the field is absent, never zero", async () => {
 
 test("hostile values are clamped to 0..1e7 and floored to integers", () => {
   assert.deepEqual(measuredUsage({ input_tokens: 1e12, output_tokens: Infinity }), null);
-  assert.deepEqual(measuredUsage({ input_tokens: 1e12, output_tokens: 12.9 }), { input_tokens: MEASURED_CLAMP, output_tokens: 12 });
-  assert.deepEqual(sumMeasured([{ input_tokens: 9e6, output_tokens: 1 }, { input_tokens: 9e6, output_tokens: 2 }]), { input_tokens: MEASURED_CLAMP, output_tokens: 3 });
+  assert.deepEqual(measuredUsage({ input_tokens: 1e12, output_tokens: 12.9 }), { input_tokens: MEASURED_CLAMP, output_tokens: 12, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 });
+  assert.deepEqual(sumMeasured([{ input_tokens: 9e6, output_tokens: 1 }, { input_tokens: 9e6, output_tokens: 2 }]), { input_tokens: MEASURED_CLAMP, output_tokens: 3, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 });
   assert.equal(sumMeasured([null, {}]), null);
   assert.equal(MEASURED_CLAMP, 1e7);
 });
