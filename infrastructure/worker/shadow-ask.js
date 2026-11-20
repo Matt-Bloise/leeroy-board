@@ -174,6 +174,9 @@ export async function handleShadowAsk(req, env, deps = {}) {
   if (gt && typeof gt === "object") meta.gf = { ms: mu(gt.ms), outcome: ["timeout", "failed", "empty", "rows"].includes(gt.outcome) ? gt.outcome : null, timed_out: gt.outcome === "timeout", used: gt.used === true, dropped: gt.dropped === "prompt-budget" ? "prompt-budget" : null, block: typeof gt.block === "string" && gt.used === true ? gt.block.slice(0, 4000) : null };
   meta.input_tokens = usageKnown ? inputTokens : null;
   meta.output_tokens = usageKnown ? outputTokens : null;
+  // Cache counts (Anthropic input_tokens excludes the cached part): integers when the usage is known, else null. Counts only; no new column (meta is JSON).
+  meta.cache_creation_input_tokens = usageKnown ? mu(ru.cache_creation_input_tokens) ?? 0 : null;
+  meta.cache_read_input_tokens = usageKnown ? mu(ru.cache_read_input_tokens) ?? 0 : null;
   const createdAt = nowFn().toISOString();
   try {
     await env.DB.prepare("INSERT INTO shadow_answers (id, created_at, asker_slug, question, answer, model, latency_ms, status, reason, local_answer, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
