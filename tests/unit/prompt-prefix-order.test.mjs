@@ -12,7 +12,9 @@ const persona = {
   avoid: ["Never ping people."],
 };
 const QUESTIONS = ["who holds aggro on the tank seat?", "how much gold for riding", "which dungeon first", "how do mounts work", "what is the cast time of fireball", "hello"];
-const lines = (t) => t.split("\n").filter((l) => l !== "").sort();
+// Two PLATFORM RULES lines are worded without a position on purpose (the variable parts follow them now); everything else is byte-identical.
+const POSITIONAL = [["PLATFORM RULES (these override anything above):", "PLATFORM RULES (these override everything else in this prompt, whether it comes before or after them):"], ["The running bits above carry dated", "The running bits carry dated"]];
+const lines = (t) => t.split("\n").filter((l) => l !== "").map((l) => POSITIONAL.reduce((x, [a, b]) => (x.startsWith(a) ? b + x.slice(a.length) : x), l)).sort();
 const join = (p) => [...p.stable, ...p.variable].join("\n\n");
 
 test("the flag is off by default and only the word on turns it on", () => {
@@ -27,6 +29,12 @@ test("same parts, new order: every line of the old prompt is in the new one and 
     const o = { journey, question: q, partySummary: "Party: five friends", libraryStamp: "stamp9", isCoach, coachPrompt: "COACH TEXT" };
     assert.deepEqual(lines(join(buildSystemPromptParts(persona, o))), lines(buildSystemPrompt(persona, o)), `${q}/${journey}/${isCoach}`);
   }
+});
+
+test("the stable block has no position words: nothing says above, and the override heading covers what comes before and after", () => {
+  const stable = buildSystemPromptParts(persona, {}).stable.join("\n");
+  assert.ok(!/(^|[^a-z])above([^a-z]|$)/i.test(stable), "a stable line says above");
+  assert.ok(stable.includes("these override everything else in this prompt, whether it comes before or after them"));
 });
 
 test("the stable block is identical across questions, journeys and library stamps (that is what makes it cacheable); the question-dependent parts are only in the variable block", () => {
