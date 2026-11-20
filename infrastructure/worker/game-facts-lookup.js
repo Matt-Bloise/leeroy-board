@@ -74,6 +74,7 @@ export function buildCuratedSql(fetch) {
 export function parseNote(note) {
   const out = {};
   for (const part of String(note || "").split(";")) {
+    if (part === "talent=1") { out.talent = true; continue; }
     const m = /^(rank|class)=(.{1,40})$/.exec(part);
     if (!m) continue;
     if (m[1] === "rank" && /^[0-9]{1,3}$/.test(m[2])) out.rank = Number(m[2]);

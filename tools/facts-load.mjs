@@ -233,6 +233,20 @@ const count = (rows) => rows.reduce((m, r) => (m[r.kind] = (m[r.kind] || 0) + 1,
 const fileMeta = (p) => { const b = readFileSync(p); return { sha256: sha256(b), bytes: b.length, rows: b.toString("utf8").split("\n").filter((l) => l.trim()).length }; };
 
 // Everything the run will do, with no network. -> { build, manifest_sha256, loads: [{kind, files, rows, batches}], skipped, counts }. Throws (no row text in the message) when a table fails its manifest check.
+// A spell row whose name is the name of a talent (trait node) gets "talent=1" in its note. The client's spelllevels value of a talent spell is its BaseLevel (Cruelty: 1), not when a player can take the talent (points spent in a tree),
+// so the composed table answer (game-facts-compose.js) declines a level question about it. Matching is by name, lower case: a real spell that shares a talent's name is marked too, which only makes the composer decline. Pure; ids and every other field are unchanged.
+export function markTalentSpells(rows, traits) {
+  const names = new Set();
+  for (const tree of Object.values((traits && traits.trees) || {})) for (const n of (tree && Array.isArray(tree.nodes) ? tree.nodes : [])) if (n && typeof n.name === "string") names.add(n.name.toLowerCase());
+  let marked = 0;
+  const out = rows.map((r) => {
+    if (!r || typeof r.kind !== "string" || !r.kind.startsWith("spell_") || !names.has(String(r.subject).toLowerCase()) || /(^|;)talent=1(;|$)/.test(r.note || "")) return r;
+    marked++;
+    return { ...r, note: [r.note, "talent=1"].filter(Boolean).join(";") };
+  });
+  return { rows: out, marked };
+}
+
 export function buildPlan({ tables, traits = null, facts = null, clientFacts = null, scope = "both", kinds = null }) {
   if (kinds && (!Array.isArray(kinds) || !kinds.length || kinds.some((k) => !FACT_KINDS.includes(k)))) throw new Error("--kinds names fact kinds: " + FACT_KINDS.join(", "));
   const manifestBytes = readFileSync(path.join(tables, "MANIFEST.json"));
@@ -255,7 +269,7 @@ export function buildPlan({ tables, traits = null, facts = null, clientFacts = n
       if (parsed.build !== manifest.build) throw new Error("the traits file build differs from the MANIFEST build");
       const d = deriveTraitRows(parsed, manifest.build);
       if (!d.treesUsed) throw new Error("the traits file holds none of the known class trees");
-      rows = rows.concat(d.rows);
+      rows = markTalentSpells(rows, parsed).rows.concat(d.rows);
       files["traits.json"] = { sha256: sha256(tb), bytes: tb.length, rows: d.rows.length };
     }
     rows = dedupe(reject("client", rows), skipped.client).filter((r) => !kinds || kinds.includes(r.kind));
