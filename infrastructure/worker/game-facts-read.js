@@ -119,7 +119,7 @@ function composeInput(res, b) {
   const dropped = [...uniq].some((id) => !shown.has(id));
   const seen = new Set();
   const rows = (Array.isArray(res.rows) ? res.rows : []).filter((r) => r && shown.has(r.id) && !seen.has(r.id) && seen.add(r.id));
-  return { rows, doNotSay: Array.isArray(res.doNotSay) ? res.doNotSay : [], rankMissing: res.rankMissing === true, ambiguous: res.ambiguous === true, cut: res.cut === true || dropped || b.omitted > 0, groups: Number.isInteger(res.groups) ? res.groups : 0 };
+  return { rows, doNotSay: Array.isArray(res.doNotSay) ? res.doNotSay : [], rankMissing: res.rankMissing === true, ambiguous: res.ambiguous === true, cut: res.cut === true || dropped || b.omitted > 0, groups: Number.isInteger(res.groups) ? res.groups : 0, unverifiable: Number.isInteger(res.unverifiable) ? res.unverifiable : -1 };
 }
 
 // Never throws and never waits longer than timeoutMs. -> null (a failed, stalled or junk lookup: nothing changes for the ask, one fixed code is logged) or
@@ -134,7 +134,7 @@ export async function readGameFacts(env, question, { lookup = lookupGameFactsChe
   const log = (code) => { try { console.error(code); } catch { /* a console that throws */ } };
   try {
     const stall = new Promise((resolve) => { timer = setTimeout(() => resolve(STALL), timeoutMs); });
-    const work = Promise.resolve().then(() => lookup(env, question, { limit: GAME_FACTS_LIMIT, reader: true }));
+    const work = Promise.resolve().then(() => lookup(env, question, { limit: GAME_FACTS_LIMIT, reader: true, ...(gameFactsComposeOn(env) ? { siblings: true } : {}) }));
     work.catch(() => {}); // a lookup that fails after the timeout won must not become an unhandled rejection
     const res = await Promise.race([work, stall]);
     if (res === STALL) { note("timeout"); log(GAME_FACTS_TIMEOUT_CODE); return null; }
