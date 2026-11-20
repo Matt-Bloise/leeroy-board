@@ -58,13 +58,13 @@ export async function handleSelftestClaude(req, env, deps = {}) {
   if (isPrPreviewEnv(env) || !(await listenerKeyFor(env))) return json({ error: "not found" }, 404);
   const raw = await readBounded(req, SELFTEST_MAX_BODY);
   if (raw === null) return json({ error: "too large" }, 413);
-  const ok = await verifyListen(await listenerKeyFor(env), req.headers.get("X-Listen-Timestamp"), raw, req.headers.get("X-Listen-Signature"), Math.floor(Date.now() / 1000));
+  const nowFn = deps.now || (() => new Date()); // one clock for the signature window and for the limiter (tests inject it: no wall-clock second boundary)
+  const ok = await verifyListen(await listenerKeyFor(env), req.headers.get("X-Listen-Timestamp"), raw, req.headers.get("X-Listen-Signature"), Math.floor(nowFn().getTime() / 1000));
   if (!ok) return json({ error: "unauthorized" }, 401);
   let parsed;
   try { parsed = JSON.parse(raw); } catch { return json({ error: "bad json" }, 400); }
   if (!isSelftestBody(parsed)) return json({ error: "bad body" }, 400); // after the signature: a signed listener event is refused here, before anything is stored or sent
 
-  const nowFn = deps.now || (() => new Date());
   const nowMs = nowFn().getTime();
   let wait = 0;
   let replay = false;
