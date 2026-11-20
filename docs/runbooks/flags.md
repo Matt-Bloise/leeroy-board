@@ -171,7 +171,7 @@ ONE `[vars]` value, `SHADOW_ASK_LIMITS = "hourly/daily/percent"` (for example `"
 |---|---|---|---|
 | part 1 (hourly) | `6` | integer 1 to 120 | accepted calls per rolling hour |
 | part 2 (daily) | `20` | integer 1 to 600 | accepted calls per rolling day; never below the hourly value |
-| part 3 (percent) | `2` | number 0.1 to 60 | the shadow's own share of `RESEARCH_CLAUDE_MONTHLY_TOKENS`, in percent |
+| part 3 (percent) | `2` | number 0.1 to 70 (raised from 60 for the 2026-11-19 re-run, back to 60 in the revert) | the shadow's own share of `RESEARCH_CLAUDE_MONTHLY_TOKENS`, in percent |
 
 Unset, empty, non-numeric, `NaN`, `Infinity`, zero, negative or exponent-form (`1e3`) values fall back to the default, never to unlimited. A positive value outside the range is clamped to the nearest edge. The monthly cap and the always-on guards apply regardless.
 
