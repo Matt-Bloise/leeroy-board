@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# Rebuilds the preview Worker host for the CURRENT JOB from the hex of the account subdomain, and keeps it out of every log.
+# Rebuilds the preview Worker host for the CURRENT JOB from the ENCRYPTED account subdomain, and keeps it out of every log.
 # The account's workers.dev subdomain carries a personal name, so it is never passed between jobs in clear (a job output that contains a MASKED value is dropped by GitHub; artifacts are downloadable by any signed-in user).
-# The preview-secrets job (the only job of Preview Tests that holds the Cloudflare token) reads it from the Cloudflare API, masks it, and hands on only its hex as a job output; each job that needs the host
+# The preview-secrets job (the only job of Preview Tests that holds the Cloudflare token) reads it from the Cloudflare API, masks it, and hands on only its AES-256 encryption (key: the preview-only secret BOARD_PREVIEW_ADMIN_TOKEN) as a job output; base64 and hex do not work: the runner masks base64 and drops the output, and hex shows in clear in the env block of every step; each job that needs the host
 # decodes it here, masks the subdomain and the host BEFORE anything else, and writes (to $GITHUB_ENV, this job only)
 #   PREVIEW_API=https://leeroy-brain-pr-<N>.<subdomain>.workers.dev   and   PREVIEW_SUBDOMAIN=<subdomain>
-# usage: tools/preview-worker-url.sh <pr-number>      env: PREVIEW_SUBDOMAIN_HEX (needs.preview.outputs.sub_hex)
+# usage: tools/preview-worker-url.sh <pr-number>      env: PREVIEW_SUBDOMAIN_ENC (needs.preview.outputs.sub_enc), PREVIEW_KEY (secrets.BOARD_PREVIEW_ADMIN_TOKEN)
 set +x
 set -u
 PR="${1:-}"
 case "$PR" in ''|*[!0-9]*) echo "::error::usage: preview-worker-url.sh <pr-number>"; exit 2;; esac
-HEXIN="${PREVIEW_SUBDOMAIN_HEX:-}"
-if printf '%s' "$HEXIN" | grep -qE '^([0-9a-f][0-9a-f])+$'; then SUB=$(printf "$(printf '%s' "$HEXIN" | sed 's/../\\x&/g')"); else SUB=""; fi
+SUB=$(printf '%s' "${PREVIEW_SUBDOMAIN_ENC:-}" | openssl enc -d -aes-256-cbc -pbkdf2 -a -A -pass env:PREVIEW_KEY 2>/dev/null) || SUB=""
 if ! printf '%s' "$SUB" | grep -qE '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'; then
-  echo "::error::The account workers.dev subdomain did not arrive from the preview-secrets job (it reads it with the Cloudflare token: the permission Workers Scripts: Read is needed). Nothing was guessed."
+  echo "::error::The account workers.dev subdomain did not arrive from the preview-secrets job (it reads it with the Cloudflare token: the permission Workers Scripts: Read is needed; it hands it on encrypted with BOARD_PREVIEW_ADMIN_TOKEN). Nothing was guessed."
   exit 1
 fi
 echo "::add-mask::$SUB"

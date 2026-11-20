@@ -129,7 +129,7 @@ jobs:
       contents: none
     outputs:
       enabled: ${{ steps.check.outputs.enabled }}
-      sub_hex: ${{ steps.sub.outputs.hex }}
+      sub_enc: ${{ steps.sub.outputs.enc }}
     env:
       PREVIEW_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       PREVIEW_ADMIN_TOKEN: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
@@ -149,18 +149,18 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Read the account workers.dev subdomain (masked here; handed on only hex-encoded, never in clear)
+      - name: Read the account workers.dev subdomain (masked here; handed on only ENCRYPTED, never in clear)
         id: sub
         if: steps.check.outputs.enabled == 'true'
         run: |
           set +x
-          # The subdomain carries a personal name. The API response is never printed; the value is masked before anything else; only its hex leaves this job, as an output (outputs are not artifacts and are not in the logs). Hex, not base64: the runner also masks the base64 form of a masked value and then drops the output.
+          # The subdomain carries a personal name. The API response is never printed; the value is masked before anything else; only its AES-256 encryption (key: the preview-only secret) leaves this job, as an output. Encoded forms (base64, hex) do not work: the runner masks base64 and drops the output, and hex is printed in clear in the env block of every step that receives it.
           RESP=$(curl -fsS --max-time 30 -H "Authorization: Bearer $PREVIEW_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$PREVIEW_ACCOUNT_ID/workers/subdomain" 2>/dev/null) || RESP=""
           SUB=$(printf '%s' "$RESP" | jq -r '.result.subdomain // empty' 2>/dev/null) || SUB=""
           RESP=""
           if printf '%s' "$SUB" | grep -qE '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'; then
             echo "::add-mask::$SUB"
-            echo "hex=$(printf '%s' "$SUB" | od -An -tx1 | tr -d ' \n')" >> "$GITHUB_OUTPUT"
+            echo "enc=$(printf '%s' "$SUB" | openssl enc -aes-256-cbc -pbkdf2 -salt -a -A -pass env:PREVIEW_ADMIN_TOKEN)" >> "$GITHUB_OUTPUT"
           else
             echo "::error::Could not read the account workers.dev subdomain from the Cloudflare API (GET accounts/<id>/workers/subdomain). The token needs the account permission Workers Scripts: Read (the deploy token has Edit). Nothing was guessed."
             exit 1
@@ -175,7 +175,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       pages: ${{ steps.urls.outputs.pages }}
-      sub_hex: ${{ needs.preview-secrets.outputs.sub_hex }}
+      sub_enc: ${{ needs.preview-secrets.outputs.sub_enc }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -184,7 +184,8 @@ jobs:
 
       - name: Resolve the preview Worker host (masked, this job only)
         env:
-          PREVIEW_SUBDOMAIN_HEX: ${{ needs.preview-secrets.outputs.sub_hex }}
+          PREVIEW_SUBDOMAIN_ENC: ${{ needs.preview-secrets.outputs.sub_enc }}
+          PREVIEW_KEY: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
         run: bash tools/preview-worker-url.sh "$PR_NUMBER"
 
       - name: Find the preview URLs in the PR comment
@@ -238,7 +239,8 @@ jobs:
 
       - name: Resolve the preview Worker host (masked, this job only)
         env:
-          PREVIEW_SUBDOMAIN_HEX: ${{ needs.preview.outputs.sub_hex }}
+          PREVIEW_SUBDOMAIN_ENC: ${{ needs.preview.outputs.sub_enc }}
+          PREVIEW_KEY: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
         run: bash tools/preview-worker-url.sh "$PR_NUMBER"
 
       - name: Setup Node.js 22
@@ -275,7 +277,8 @@ jobs:
 
       - name: Resolve the preview Worker host (masked, this job only)
         env:
-          PREVIEW_SUBDOMAIN_HEX: ${{ needs.preview.outputs.sub_hex }}
+          PREVIEW_SUBDOMAIN_ENC: ${{ needs.preview.outputs.sub_enc }}
+          PREVIEW_KEY: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
         run: bash tools/preview-worker-url.sh "$PR_NUMBER"
 
       - name: Setup Node.js 22
@@ -334,7 +337,8 @@ jobs:
 
       - name: Resolve the preview Worker host (masked, this job only)
         env:
-          PREVIEW_SUBDOMAIN_HEX: ${{ needs.preview.outputs.sub_hex }}
+          PREVIEW_SUBDOMAIN_ENC: ${{ needs.preview.outputs.sub_enc }}
+          PREVIEW_KEY: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
         run: bash tools/preview-worker-url.sh "$PR_NUMBER"
 
       - name: Setup Node.js 22
@@ -396,7 +400,8 @@ jobs:
 
       - name: Resolve the preview Worker host (masked, this job only)
         env:
-          PREVIEW_SUBDOMAIN_HEX: ${{ needs.preview.outputs.sub_hex }}
+          PREVIEW_SUBDOMAIN_ENC: ${{ needs.preview.outputs.sub_enc }}
+          PREVIEW_KEY: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
         run: bash tools/preview-worker-url.sh "$PR_NUMBER"
 
       - name: Setup Node.js 22
@@ -477,7 +482,8 @@ jobs:
 
       - name: Resolve the preview Worker host (masked, this job only)
         env:
-          PREVIEW_SUBDOMAIN_HEX: ${{ needs.preview.outputs.sub_hex }}
+          PREVIEW_SUBDOMAIN_ENC: ${{ needs.preview.outputs.sub_enc }}
+          PREVIEW_KEY: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
         run: bash tools/preview-worker-url.sh "$PR_NUMBER"
 
       - name: Setup Node.js 22
@@ -536,7 +542,8 @@ jobs:
 
       - name: Resolve the preview Worker host (masked, this job only)
         env:
-          PREVIEW_SUBDOMAIN_HEX: ${{ needs.preview.outputs.sub_hex }}
+          PREVIEW_SUBDOMAIN_ENC: ${{ needs.preview.outputs.sub_enc }}
+          PREVIEW_KEY: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
         run: bash tools/preview-worker-url.sh "$PR_NUMBER"
 
       - name: Setup Node.js 22
