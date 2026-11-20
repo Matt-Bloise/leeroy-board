@@ -9,6 +9,9 @@ import { normaliseText, secretShaped } from "./research/group-memory.js";
 
 export const GAME_FACTS_READ_FLAG = "GAME_FACTS_READ";
 export const gameFactsReadOn = (env) => legacyOn(env, GAME_FACTS_READ_FLAG);
+// GAME_FACTS_COMPOSE: "on" (only together with GAME_FACTS_READ on) answers a plain one-figure table question from the row by code, no model call (game-facts-compose.js). Anything else, or unset: off.
+export const GAME_FACTS_COMPOSE_FLAG = "GAME_FACTS_COMPOSE";
+export const gameFactsComposeOn = (env) => legacyOn(env, GAME_FACTS_COMPOSE_FLAG) && gameFactsReadOn(env);
 
 export const GAME_FACTS_LABEL = "GAME_FACTS";
 export const GAME_FACTS_BLOCK_CHARS = 1800; // the whole fenced block, fence lines included (about 450 tokens at most)
@@ -127,7 +130,7 @@ export async function readGameFacts(env, question, { lookup = lookupGameFactsChe
     if (!res || typeof res !== "object" || res.failed === true) { note("failed"); log(GAME_FACTS_FAIL_CODE); return null; }
     const b = renderGameFactsBlock(res, { env });
     note(b.block ? "rows" : "empty", b.block || null);
-    return { ...b, tableFact: b.shown > 0 || b.doNot > 0 || looksLikeTableFact(question) };
+    return { ...b, tableFact: b.shown > 0 || b.doNot > 0 || looksLikeTableFact(question), res: { rows: res.rows, doNotSay: res.doNotSay, rankMissing: res.rankMissing === true } }; // res: only for the composed table answer (game-facts-compose.js)
   } catch {
     note("failed");
     log(GAME_FACTS_FAIL_CODE);

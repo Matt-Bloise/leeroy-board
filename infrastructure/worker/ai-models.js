@@ -31,7 +31,8 @@ import { researchEnabled, researchAnswer } from "./research/index.js";
 import { assertAnthropicUrl, namesAreReal } from "./research/real-names.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_LENGTH_OVERRIDE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { findAskerTurns, renderTurns, PRIOR_TURNS_RULE } from "./research/turns.js";
-import { gameFactsReadOn, readGameFacts, GAME_FACTS_RULE, GAME_FACTS_NOTHING_RULE, addClientTableSources, isTableAbstention } from "./game-facts-read.js";
+import { composeTableAnswer } from "./game-facts-compose.js";
+import { gameFactsReadOn, gameFactsComposeOn, readGameFacts, GAME_FACTS_RULE, GAME_FACTS_NOTHING_RULE, addClientTableSources, isTableAbstention } from "./game-facts-read.js";
 import { groupMemoryOn, buildGroupMemoryBlock, groupRowsForAsk, appendGroupLog, isGroupSlug, GROUP_MEMORY_RULE } from "./research/group-memory.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER, degradedLines, DEGRADED_SUFFIX } from "./research/provider.js";
@@ -1195,8 +1196,9 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     // One shared budget (research/claude.js MAX_PROMPT_CHARS): when the block and the rules would push the request over it, they go (never the question or the library) and the ask is the one it would be without the flag.
     if (gfActive && systemPrompt.length + userPrompt.length > MAX_PROMPT_CHARS) { gf = null; gfActive = false; systemPrompt = systemBase; userPrompt = userFor("", libraryFor(false)); if (gfTrace) gfTrace.dropped = "prompt-budget"; }
     if (gfTrace) gfTrace.used = gfActive;
+    const tableAnswer = gf && gf.res && gameFactsComposeOn(env) ? composeTableAnswer(question, gf.res) : null; // GAME_FACTS_COMPOSE: the row is the answer; null = the model answers as before
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, ...(gfActive ? { gameFactIds: gf.ids, gameFactGround: gf.ground } : {}), ...(gfTrace ? { gfTrace } : {}), abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, ...(gfActive ? { gameFactIds: gf.ids, gameFactGround: gf.ground } : {}), ...(gfTrace ? { gfTrace } : {}), ...(tableAnswer ? { tableAnswer } : {}), abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1208,7 +1210,7 @@ const eggFor = (persona) => {
   return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
 };
 
-export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "", research = false, factIds = null, factGround = "" }) {
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "", research = false, factIds = null, factGround = "", tableCites = null }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
     let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap, ...(research ? { keepAdvice: true } : {}) });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
@@ -1240,6 +1242,8 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
       repaired = rp.text;
       researchBasis = rp.basis;
       factCites = rp.factCites || [];
+    } else if (research && trusted && Array.isArray(tableCites)) {
+      factCites = tableCites; // GAME_FACTS_COMPOSE: the composed answer's own row id, for the "client table" item of the Sources line
     }
     const libPages = parsedPages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
     const known = new Set(libPages.map((p) => p.id));
@@ -1425,7 +1429,7 @@ export async function answerWithAi({
     let guestUntokenised = false; // a guest whose prompt could not be tokenised: library facts only, labelled +degraded
     let degraded = false; // ASK_RESEARCH member: Claude could not answer, so the row is marked +degraded (never silent)
     let libOnly = false; // research guest with a spent budget: library facts only
-    const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
+    const composed = inputs.abstainAnswer || (inputs.tableAnswer ? inputs.tableAnswer.text : null); // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
     // ASK_RESEARCH seam (off by default; never in a PR preview). The stub handles nothing; any error, empty answer or "not handled" runs the path below unchanged.
     let researched = null;
     if (!composed && !isPrPreviewEnv(env)) {
@@ -1440,7 +1444,7 @@ export async function answerWithAi({
     }
     if (composed) {
       rawAnswer = composed;
-      model = "abstain";
+      model = inputs.abstainAnswer ? "abstain" : "table";
       provider = "library";
     } else if (researched) {
       rawAnswer = researched;
@@ -1617,7 +1621,7 @@ export async function answerWithAi({
 
     // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
     const uxOn = answerUxEnabled(env);
-    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener, research, ...(inputs.gameFactIds ? { factIds: inputs.gameFactIds, factGround: inputs.gameFactGround } : {}) });
+    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener, research, ...(inputs.gameFactIds ? { factIds: inputs.gameFactIds, factGround: inputs.gameFactGround } : {}), ...(inputs.tableAnswer && !inputs.abstainAnswer ? { tableCites: inputs.tableAnswer.ids } : {}) });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
     // The model column exactly as an ask_turns row carries it. A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
