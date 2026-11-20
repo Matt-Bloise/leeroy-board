@@ -58,6 +58,31 @@ test("stampTexts refuses a bad URL and any replacement that does not apply", () 
   assert.throws(() => stampTexts({ ...src, headers: "/*\n  X-Test: 1\n" }, WORKER), /connect-src/);
 });
 
+test("stampTexts: exactly once is enforced (a duplicated constant fails), and a connect-src that cannot be stamped fails the build", () => {
+  const src = { brain: read("js/brain.js"), board: read("js/board.js"), headers: read("_headers") };
+  assert.throws(() => stampTexts({ ...src, brain: src.brain + '\nconst WORKER = "https://api.leeroy.party";' }, WORKER), /found 2 times, expected exactly once/);
+  assert.throws(() => stampTexts({ ...src, board: src.board + '\nconst PREVIEW_WORKER = "";' }, WORKER), /found 2 times, expected exactly once/);
+  assert.throws(() => stampTexts({ ...src, brain: src.brain.replace(/const WORKER = "[^"]*";/, "") }, WORKER), /found 0 times/);
+  // a Content-Security-Policy line whose connect-src is not followed by a space still gets stamped; none is left silently unchanged
+  const tab = "/*\n  Content-Security-Policy-Report-Only: default-src 'self'; connect-src\t'self'; img-src 'self'\n";
+  const t = stampTexts({ ...src, headers: tab }, WORKER).headers;
+  assert.ok(t.includes("connect-src https://leeroy-brain-pr-9.example-account.workers.dev wss://leeroy-brain-pr-9.example-account.workers.dev\t'self'"), t);
+  const semi = "/*\n  Content-Security-Policy: default-src 'self'; connect-src; img-src 'self'\n";
+  assert.ok(stampTexts({ ...src, headers: semi }, WORKER).headers.includes("connect-src https://leeroy-brain-pr-9.example-account.workers.dev wss://leeroy-brain-pr-9.example-account.workers.dev; img-src"));
+  // a longer directive name is not connect-src
+  assert.throws(() => stampTexts({ ...src, headers: "/*\n  Content-Security-Policy: default-src 'self'; connect-srcx 'self'\n" }, WORKER), /no Content-Security-Policy line with connect-src/);
+});
+
+test("production deploy stamps api.leeroy.party and nothing else: no workers.dev host is parsed, accepted or stamped", () => {
+  const wf = read(".github/workflows/deploy-cloudflare.yml");
+  const deploy = wf.slice(wf.indexOf("Deploy Cloudflare Worker + Durable Object"), wf.indexOf("Create missing Flagship flags"));
+  assert.match(deploy, /WORKER_URL="https:\/\/api\.leeroy\.party"/);
+  assert.ok(!/grep -oE "https:\/\/leeroy-brain/.test(deploy) && !/workers\\\.dev\)\$'/.test(wf), "no workers.dev fallback or shape in the production deploy");
+  const stage = wf.slice(wf.indexOf("Stage Static Site"));
+  assert.match(stage, /if \[ "\$WORKER_URL" != "https:\/\/api\.leeroy\.party" \]; then/);
+  assert.ok(!/accept only https:\/\/api\.leeroy\.party or/.test(wf));
+});
+
 test("stampDist writes the three staged files, and refuses without writing anything when one does not apply", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "stamp-"));
   mkdirSync(path.join(dir, "js"));

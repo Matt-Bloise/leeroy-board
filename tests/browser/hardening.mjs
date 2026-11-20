@@ -16,7 +16,10 @@ let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const here = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "testkeytestkeytestkey12";
-const ALLOWED = /^(https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:example-owner|example-account)\.workers\.dev|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/;
+/* The page's allowlist: the production API, a local Worker, and (in CI, on a stamped preview) exactly the preview Worker origin, taken from PREVIEW_API (set and masked by the workflow: no host is written in this file). */
+const PREVIEW_ORIGIN = (() => { try { return process.env.PREVIEW_API ? new URL(process.env.PREVIEW_API).origin : ""; } catch (e) { return ""; } })();
+const ALLOWED_RE = /^(https:\/\/api\.leeroy\.party|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/;
+const ALLOWED = { test: (o) => ALLOWED_RE.test(o) || (PREVIEW_ORIGIN !== "" && o === PREVIEW_ORIGIN) };
 const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*", "content-type": "application/json" };
 const PAGE_ORIGIN = new URL(BASE).origin;
 /* The suite must behave the same against a local server and against the deployed PR preview (https://pr-N.leeroy-board.pages.dev), and must never need a live Worker or 127.0.0.1:8787:

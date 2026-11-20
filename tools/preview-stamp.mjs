@@ -14,17 +14,21 @@ const URL_RE = /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a
 export function stampTexts({ brain, board, headers }, workerUrl) {
   if (!URL_RE.test(String(workerUrl))) throw new Error("the Worker URL must be https://<name>[.<subdomain>].workers.dev");
   const host = workerUrl.replace(/^https:\/\//, "");
-  let n = 0;
-  const brain2 = brain.replace(/const WORKER = "[^"]*";/, () => { n++; return `const WORKER = "${workerUrl}";`; });
-  if (n !== 1) throw new Error("js/brain.js: the WORKER constant was not found exactly once");
-  n = 0;
-  const board2 = board.replace(/const PREVIEW_WORKER = "[^"]*";/, () => { n++; return `const PREVIEW_WORKER = "${workerUrl}";`; });
-  if (n !== 1) throw new Error("js/board.js: the PREVIEW_WORKER constant was not found exactly once");
+  const once = (text, re, what) => { const n = (text.match(re) || []).length; if (n !== 1) throw new Error(`${what}: found ${n} times, expected exactly once`); };
+  once(brain, /const WORKER = "[^"]*";/g, "js/brain.js: the WORKER constant");
+  once(board, /const PREVIEW_WORKER = "[^"]*";/g, "js/board.js: the PREVIEW_WORKER constant");
+  const brain2 = brain.replace(/const WORKER = "[^"]*";/, () => `const WORKER = "${workerUrl}";`);
+  const board2 = board.replace(/const PREVIEW_WORKER = "[^"]*";/, () => `const PREVIEW_WORKER = "${workerUrl}";`);
+  if (!brain2.includes(`const WORKER = "${workerUrl}";`) || !board2.includes(`const PREVIEW_WORKER = "${workerUrl}";`)) throw new Error("the stamp is not present in the output");
+  // Every Content-Security-Policy line with connect-src gets the exact origins right after the directive name; a line where that does not apply (connect-src followed by a tab or a semicolon) fails the build instead of staying silently unchanged.
+  const want = `connect-src https://${host} wss://${host}`;
   let lines = 0;
   const headers2 = headers.split("\n").map((l) => {
-    if (l.trim().startsWith("#") || !/Content-Security-Policy(-Report-Only)?:/i.test(l) || !/connect-src\b/.test(l)) return l;
+    if (l.trim().startsWith("#") || !/Content-Security-Policy(-Report-Only)?:/i.test(l) || !/connect-src(?![\w-])/.test(l)) return l;
     lines++;
-    return l.replace(/connect-src /, `connect-src https://${host} wss://${host} `);
+    const out = l.replace(/connect-src(?![\w-])/, () => want);
+    if (!out.includes(want) || out === l) throw new Error("_headers: a connect-src directive was not stamped");
+    return out;
   }).join("\n");
   if (lines < 1) throw new Error("_headers: no Content-Security-Policy line with connect-src");
   return { brain: brain2, board: board2, headers: headers2 };
