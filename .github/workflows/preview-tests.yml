@@ -40,6 +40,7 @@ jobs:
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       site_changed: ${{ steps.classify.outputs.site_changed }}
+      probe_changed: ${{ steps.classify.outputs.probe_changed }}
       api_needed: ${{ steps.classify.outputs.api_needed }}
       full: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
     steps:
@@ -61,6 +62,7 @@ jobs:
           cat "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
           echo "site_changed=$(node tools/ci-scope.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
+          echo "probe_changed=$(node tools/ci-scope.mjs --probe < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
           # B72: the API suite (the only job that calls the real preview Worker, about 117 requests) runs only when a Worker, API, schema, wrangler, dependency or CI file changed.
           echo "api_needed=$(node tools/api-scope.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
@@ -563,6 +565,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
           SITE_CHANGED: ${{ needs.scope.outputs.site_changed }}
+          PROBE_CHANGED: ${{ needs.scope.outputs.probe_changed }}
           API_NEEDED: ${{ needs.scope.outputs.api_needed }}
           PREVIEW_RESULT: ${{ needs.preview.result }}
           FULL: ${{ needs.scope.outputs.full }}
