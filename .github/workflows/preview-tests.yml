@@ -320,6 +320,8 @@ jobs:
           node-version: "22"
 
       - name: Install test dependencies
+        # Two legs of the first ci-full proof hung here for the whole 30-minute job (apt-get update or the Playwright download stalled, nothing printed): a stall now fails in 8 minutes, so a rerun costs 8 minutes, not 30.
+        timeout-minutes: 8
         working-directory: tests
         run: |
           sudo apt-get update

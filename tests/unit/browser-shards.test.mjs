@@ -108,3 +108,9 @@ test("a change to the production probe, its self-test, tests/helpers or tests/pa
   const { isSitePath } = await import("../../tools/ci-scope.mjs");
   for (const p of ["tests/browser/prod-probe.mjs", "tests/browser/prod-probe-selftest.mjs", "tests/helpers/probe-checks.mjs", "tests/helpers/shard.mjs", "tests/package.json", "tests/package-lock.json", ".github/workflows/preview-tests.yml"]) assert.equal(isSitePath(p), true, p);
 });
+
+test("the install step of the browser legs has its own timeout, so an apt or download stall fails fast instead of eating the whole job", () => {
+  const step = wf.jobs.browser.steps.find((s) => /^Install test dependencies$/.test(s.name));
+  assert.ok(step["timeout-minutes"] <= 10, "a stalled install is cut at 10 minutes or less");
+  assert.ok(step["timeout-minutes"] < wf.jobs.browser["timeout-minutes"]);
+});
