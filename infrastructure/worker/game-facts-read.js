@@ -9,6 +9,9 @@ import { normaliseText, secretShaped } from "./research/group-memory.js";
 
 export const GAME_FACTS_READ_FLAG = "GAME_FACTS_READ";
 export const gameFactsReadOn = (env) => legacyOn(env, GAME_FACTS_READ_FLAG);
+// GAME_FACTS_COMPOSE: "on" (only together with GAME_FACTS_READ on) answers a plain one-figure table question from the row by code, no model call (game-facts-compose.js). Anything else, or unset: off.
+export const GAME_FACTS_COMPOSE_FLAG = "GAME_FACTS_COMPOSE";
+export const gameFactsComposeOn = (env) => legacyOn(env, GAME_FACTS_COMPOSE_FLAG) && gameFactsReadOn(env);
 
 export const GAME_FACTS_LABEL = "GAME_FACTS";
 export const GAME_FACTS_BLOCK_CHARS = 1800; // the whole fenced block, fence lines included (about 450 tokens at most)
@@ -108,6 +111,17 @@ export function renderGameFactsBlock(res, { env = {}, cap = GAME_FACTS_BLOCK_CHA
   return { block, ids: shown.map((x) => x.id), ground: shown.map((x) => x.line).join(" "), shown: n, omitted, doNot: dn.length };
 }
 
+// What the composed table answer may see: the rows the reader itself shows (its secret-shaped and duplicate filters applied: a row the block would not show is not composed from), and whether anything may have been
+// hidden: a limit in the lookup (cut), a row the block dropped, a name group the lookup did not return as one (groups).
+function composeInput(res, b) {
+  const shown = new Set(b.ids);
+  const uniq = new Set((Array.isArray(res.rows) ? res.rows : []).filter((r) => r && typeof r.id === "string").map((r) => r.id));
+  const dropped = [...uniq].some((id) => !shown.has(id));
+  const seen = new Set();
+  const rows = (Array.isArray(res.rows) ? res.rows : []).filter((r) => r && shown.has(r.id) && !seen.has(r.id) && seen.add(r.id));
+  return { rows, doNotSay: Array.isArray(res.doNotSay) ? res.doNotSay : [], rankMissing: res.rankMissing === true, ambiguous: res.ambiguous === true, cut: res.cut === true || dropped || b.omitted > 0, groups: Number.isInteger(res.groups) ? res.groups : 0, unverifiable: Number.isInteger(res.unverifiable) ? res.unverifiable : -1 };
+}
+
 // Never throws and never waits longer than timeoutMs. -> null (a failed, stalled or junk lookup: nothing changes for the ask, one fixed code is logged) or
 // { block, ids, ground, shown, omitted, doNot, tableFact }. tableFact: a row matched, or the question asks for a table figure; the rules are added when it is true (or a block exists).
 // lookup and timeoutMs are injectable for tests only.
@@ -120,14 +134,14 @@ export async function readGameFacts(env, question, { lookup = lookupGameFactsChe
   const log = (code) => { try { console.error(code); } catch { /* a console that throws */ } };
   try {
     const stall = new Promise((resolve) => { timer = setTimeout(() => resolve(STALL), timeoutMs); });
-    const work = Promise.resolve().then(() => lookup(env, question, { limit: GAME_FACTS_LIMIT, reader: true }));
+    const work = Promise.resolve().then(() => lookup(env, question, { limit: GAME_FACTS_LIMIT, reader: true, ...(gameFactsComposeOn(env) ? { siblings: true } : {}) }));
     work.catch(() => {}); // a lookup that fails after the timeout won must not become an unhandled rejection
     const res = await Promise.race([work, stall]);
     if (res === STALL) { note("timeout"); log(GAME_FACTS_TIMEOUT_CODE); return null; }
     if (!res || typeof res !== "object" || res.failed === true) { note("failed"); log(GAME_FACTS_FAIL_CODE); return null; }
     const b = renderGameFactsBlock(res, { env });
     note(b.block ? "rows" : "empty", b.block || null);
-    return { ...b, tableFact: b.shown > 0 || b.doNot > 0 || looksLikeTableFact(question) };
+    return { ...b, tableFact: b.shown > 0 || b.doNot > 0 || looksLikeTableFact(question), res: composeInput(res, b) }; // res: only for the composed table answer (game-facts-compose.js)
   } catch {
     note("failed");
     log(GAME_FACTS_FAIL_CODE);

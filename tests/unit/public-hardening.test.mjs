@@ -5,7 +5,7 @@
 // Needs the `yaml` package (tests/package.json).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { parse } from "yaml";
@@ -162,8 +162,11 @@ test("docs and comments no longer say the repository is private", () => {
   const roster = read("docs/runbooks/roster-upsert.md");
   assert.equal(/The repository must be private\./.test(roster), false);
   assert.match(roster, /cannot run while the repository is public/);
-  const review = read("docs/roadmap/PRODUCT-REVIEW.md");
-  assert.match(review.split("\n").slice(0, 6).join("\n"), /made public on 2026-11-19/);
+  // The planning files moved to the private ops repo; the public tree must not carry them and the README must say where they went.
+  for (const rel of ["docs/roadmap/PRODUCT-REVIEW.md", "docs/roadmap/SYNTHESIS.md", "docs/roadmap/CRITIQUE-B-security-ops.md", "docs/roadmap/OWNER-VISION.md", "docs/roadmap/research/notes-R5-ip-commercial.md"]) {
+    assert.equal(existsSync(ROOT + rel), false, `${rel} must live in the private ops repo, not here`);
+  }
+  assert.match(read("docs/roadmap/README.md"), /moved to the private ops repo on 2026-11-19/);
 });
 
 test("the roster workflow still refuses to run in a public repository", () => {

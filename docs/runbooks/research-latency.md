@@ -25,8 +25,8 @@ The numbers 6 s and 3 s are the intended timeouts. Check the current constants b
 
 ## Who runs it
 
-- The latency run: whoever holds the Anthropic credential (Matt), from his own machine, with the credential in the environment of that one shell. Do not paste it into a file, a chat, a commit or a CI log. It costs about 40 calls of roughly 4k input and up to 700 output tokens at the defaults.
-- The CPU observation: whoever can deploy a preview and open Workers observability for it (Matt, or a session he has authorised). `ASK_RESEARCH` is forced off in a PR preview, so the research path does not run there as committed. Turning it on for a measurement is a flag decision: ask Matt first, use a throwaway branch deploy that is never merged, and do not touch production flags.
+- The latency run: whoever holds the Anthropic credential (the owner), from the owner's own machine, with the credential in the environment of that one shell. Do not paste it into a file, a chat, a commit or a CI log. It costs about 40 calls of roughly 4k input and up to 700 output tokens at the defaults.
+- The CPU observation: whoever can deploy a preview and open Workers observability for it (the owner, or a session the owner has authorised). `ASK_RESEARCH` is forced off in a PR preview, so the research path does not run there as committed. Turning it on for a measurement is a flag decision: ask the owner first, use a throwaway branch deploy that is never merged, and do not touch production flags.
 
 ## Steps
 
@@ -54,7 +54,7 @@ The numbers 6 s and 3 s are the intended timeouts. Check the current constants b
 | Many calls over 6 s or 3 s but p95 passes | The tail is the problem: keep the timeouts, do not raise them, and check the fallback chain still answers inside the 24 s ask deadline. |
 | `http-404` or `http-400` | The model id is wrong. Fix `RESEARCH_CLAUDE_MODEL_*`, re-run. |
 | `http-429` or `http-529` | Not a latency result, and the phase fails (any failed call fails it). Slow `--pause-ms`, re-run later, do not count it as a pass. |
-| CPU median or p95 over 10 ms in observability | 1. Replace the clock-based `privacyBudget` with a size check before tokenising (workerd timers freeze in compute). 2. Cut prompt size going through tokenise. 3. Strict-guard fewer segments or tokenise once per isolate. 4. If still over, the Workers Free plan cannot carry the path: the flag stays off until the plan limit changes (Matt's decision). |
+| CPU median or p95 over 10 ms in observability | 1. Replace the clock-based `privacyBudget` with a size check before tokenising (workerd timers freeze in compute). 2. Cut prompt size going through tokenise. 3. Strict-guard fewer segments or tokenise once per isolate. 4. If still over, the Workers Free plan cannot carry the path: the flag stays off until the plan limit changes (the owner's decision). |
 | Node proxy over budget but observability under | Observability wins; note both. |
 | Node proxy under budget but observability over | Observability wins; the flag stays off. |
 

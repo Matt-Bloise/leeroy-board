@@ -60,6 +60,10 @@ export function buildNameSql(keys, column, fetch, kindList = KIND_LIST, longestF
   const base = column === "subject_base" ? " AND g.subject_base <> ''" : ""; // the partial index is usable only when the query says so
   return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind IN (${kindList}) AND g.${column} IN (${marks(keys.length)})${base} AND ${VISIBLE}${longestFirst ? ` ORDER BY LENGTH(g.${column}) DESC, g.id` : ""} LIMIT ?`, binds: [...keys, fetch] };
 }
+// Rows of the given names that exist and are not superseded but whose verdict is neither holds nor wrong (unverifiable): counted, never shown.
+export function buildSiblingSql(norms) {
+  return { sql: `SELECT COUNT(*) AS c FROM game_facts g JOIN game_fact_loads l ON l.id = g.load_id WHERE g.kind IN (${ALL_KIND_LIST}) AND g.subject_norm IN (${marks(norms.length)}) AND g.verdict NOT IN ('holds', 'wrong') AND g.superseded = 0 AND l.status = 'done'`, binds: [...norms] };
+}
 export function buildCuratedSql(fetch) {
   return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind = 'curated' AND ${VISIBLE} LIMIT ?`, binds: [fetch] };
 }
@@ -144,7 +148,7 @@ async function runAll(env, q) {
 // lookupGameFacts, plus failed: true when a database error was swallowed (the reader, game-facts-read.js, tells an error from an empty table; lookupGameFacts below drops the field, so its result is unchanged).
 // reader: true is the per-ask bounded mode of the reader: each candidate query has a SQL LIMIT of READER_ROW_LIMIT (so at most two index-ranged queries and 2 x 24 rows), a name keeps at most READER_PER_NAME rows, and curated rows are
 // found by NAME through the same index (no scan of the curated kind). Without it (the default) nothing changes: 400-row fetches and the curated word match.
-export async function lookupGameFactsChecked(env, question, { limit = 5, reader = false } = {}) {
+export async function lookupGameFactsChecked(env, question, { limit = 5, reader = false, siblings = false } = {}) {
   const empty = { rows: [], doNotSay: [], ambiguous: false, via: "none" };
   const n = Number.isInteger(limit) ? Math.min(20, Math.max(1, limit)) : 5;
   const { tokens, windows } = questionWindows(question);
@@ -154,8 +158,9 @@ export async function lookupGameFactsChecked(env, question, { limit = 5, reader 
     const add = (list) => { for (const r of list) fetched.set(`${r.id}|${r.load_id || ""}|${r.build}`, r); };
     const fetchN = reader ? READER_ROW_LIMIT : 400;
     const kinds = reader ? ALL_KIND_LIST : KIND_LIST;
-    if (exact.length) add(await runAll(env, buildNameSql(exact, "subject_norm", fetchN, kinds, reader)));
-    if (byBase.length) add(await runAll(env, buildNameSql(byBase, "subject_base", fetchN, kinds, reader)));
+    let cut = false; // reader mode: true when ANY limit may have hidden a row (the SQL LIMIT, the per-name cap, the row budget); the composed table answer declines on it
+    if (exact.length) { const got = await runAll(env, buildNameSql(exact, "subject_norm", fetchN, kinds, reader)); if (got.length >= fetchN) cut = true; add(got); }
+    if (byBase.length) { const got = await runAll(env, buildNameSql(byBase, "subject_base", fetchN, kinds, reader)); if (got.length >= fetchN) cut = true; add(got); }
     const named = chooseNames(windows, [...fetched.values()]);
     const holds = [], wrong = [];
     let ambiguous = false, rankMissing = false;
@@ -169,18 +174,25 @@ export async function lookupGameFactsChecked(env, question, { limit = 5, reader 
         if (!mine.some((r) => rankOfRow(r) !== undefined)) { rankMissing = true; mine = []; }
       }
       mine = [...mine].sort((a, b) => (rankOfRow(a) ?? 1e9) - (rankOfRow(b) ?? 1e9) || KIND_RANK.get(a.kind) - KIND_RANK.get(b.kind) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      if (reader) mine = capPerName(mine, READER_PER_NAME);
+      if (reader) { if (mine.length > READER_PER_NAME) cut = true; mine = capPerName(mine, READER_PER_NAME); }
       const gh = mine.filter((r) => r.verdict === "holds"), gw = mine.filter((r) => r.verdict === "wrong");
       const perKind = new Map();
       for (const r of gh) perKind.set(r.kind, (perKind.get(r.kind) || 0) + 1);
       if ([...perKind.values()].some((c) => c > 1)) ambiguous = true;
-      if (holds.length === 0 || holds.length + gh.length <= n) holds.push(...gh);
+      if (holds.length === 0 || holds.length + gh.length <= n) holds.push(...gh); else if (gh.length) cut = true;
       wrong.push(...gw);
+    }
+    // siblings (the composed table answer only): rows of the same name that the visible filter hides (verdict neither holds nor wrong, i.e. unverifiable) are still rows a person would call a second candidate. One more
+    // index-ranged statement, only when exactly one name matched; reader callers without the option never run it.
+    let unverifiable = 0;
+    if (reader && siblings && named.length === 1) {
+      const norms = [...new Set(named[0].rows.map((r) => r.subject_norm).filter(Boolean))].slice(0, 12);
+      if (norms.length) { const got = await runAll(env, buildSiblingSql(norms)); unverifiable = Number(got[0] && got[0].c) || 0; }
     }
     const cur = reader ? [] : curatedMatches(question, await runAll(env, buildCuratedSql(300)));
     for (const r of cur) { if (r.verdict === "holds" && holds.length < n) holds.push(r); else if (r.verdict === "wrong") wrong.push(r); }
     const rank = (r) => r.id;
-    return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, ...(rankMissing ? { rankMissing: true } : {}), via: "names" };
+    return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, ...(rankMissing ? { rankMissing: true } : {}), ...(reader ? { cut, groups: named.length, ...(siblings ? { unverifiable } : {}) } : {}), via: "names" };
   } catch {
     return { ...empty, failed: true };
   }

@@ -32,14 +32,14 @@ The script fills in a spec of "Not chosen yet", no professions and a role from t
 
 | # | Step | Who | How |
 | :-- | :--- | :--- | :--- |
-| 1 | Collect the four facts above | Matt | Ask in the Discord. Do not write them down anywhere that is not private. |
-| 2 | Dry run | Matt, or anyone with the repo | `node tools/add-member.mjs --id <id> --name "<handle>" --class <class> --race <race>` prints the requests and sends nothing. Add `--party-file <saved copy of GET /api/data/party>` to see the member count and catch a duplicate. |
-| 3 | Apply | Matt (admin token) | `BOARD_ADMIN_TOKEN=... node tools/add-member.mjs ... --apply`. It saves the old party document to a backup file (path printed), writes the roster entry (`POST /api/admin/members`), then the party document (`PUT /api/data/party`). The token is read from the environment only. Keep the backup file until step 8. |
-| 4 | Make the member key | Matt, with the new member | See below. No route exists for this, so it is SQL. |
-| 5 | Check the live board | Matt | Open leeroy.party. The new name is in the name chips, on the front tile and in The five. Copy still says "five" while the flag is off; that is expected. |
+| 1 | Collect the four facts above | The owner | Ask in the Discord. Do not write them down anywhere that is not private. |
+| 2 | Dry run | The owner, or anyone with the repo | `node tools/add-member.mjs --id <id> --name "<handle>" --class <class> --race <race>` prints the requests and sends nothing. Add `--party-file <saved copy of GET /api/data/party>` to see the member count and catch a duplicate. |
+| 3 | Apply | The owner (admin token) | `BOARD_ADMIN_TOKEN=... node tools/add-member.mjs ... --apply`. It saves the old party document to a backup file (path printed), writes the roster entry (`POST /api/admin/members`), then the party document (`PUT /api/data/party`). The token is read from the environment only. Keep the backup file until step 8. |
+| 4 | Make the member key | The owner, with the new member | See below. No route exists for this, so it is SQL. |
+| 5 | Check the live board | The owner | Open leeroy.party. The new name is in the name chips, on the front tile and in The five. Copy still says "five" while the flag is off; that is expected. |
 | 6 | Built-in lists | Nobody | No longer needed: `/sheet` and the build thread names read the party document and roster from D1 (`infrastructure/worker/party-source.js`); `PARTY_MEMBERS` and `ROSTER_DATA` are only the fallback for the first five. The AI's own party summary fallback in `ai-models.js` is unchanged and still lists only the first five. |
-| 7 | Refresh the repository copy | Josh | `data/party.json` is generated and is the preview seed (it is not published as a static file or a fallback: see `member-data-worker-only.md`). The generator picks the member up from the live document. Do not hand-edit its members. Its `glossary` is not generated from the live document: the glossary comes from the bundled source `infrastructure/worker/party-glossary.js`, which the Worker serves instead of the stored row's glossary (so an old stored glossary is never shown). The generator must copy that source into `data/party.json` and the fixtures; `tests/unit/glossary-party-independent.test.mjs` fails when any copy differs. Edit the glossary only in `party-glossary.js`, with examples that name no race, class, spec, profession, zone or headcount. |
-| 8 | Turn on the real count | Matt | Set `"party.n": true` in the `flags` of `data/client.json`, the way the other flags are set (who edits that file is Josh's call; the flag is read by `js/board.js`). Copy that said "five" then says the real count and the scene tab reads "The party". Scene ids and links (`#five`) do not change. |
+| 7 | Refresh the repository copy | The account admin | `data/party.json` is generated and is the preview seed (it is not published as a static file or a fallback: see `member-data-worker-only.md`). The generator picks the member up from the live document. Do not hand-edit its members. Its `glossary` is not generated from the live document: the glossary comes from the bundled source `infrastructure/worker/party-glossary.js`, which the Worker serves instead of the stored row's glossary (so an old stored glossary is never shown). The generator must copy that source into `data/party.json` and the fixtures; `tests/unit/glossary-party-independent.test.mjs` fails when any copy differs. Edit the glossary only in `party-glossary.js`, with examples that name no race, class, spec, profession, zone or headcount. |
+| 8 | Turn on the real count | The owner | Set `"party.n": true` in the `flags` of `data/client.json`, the way the other flags are set (who edits that file is the account admin's call; the flag is read by `js/board.js`). Copy that said "five" then says the real count and the scene tab reads "The party". Scene ids and links (`#five`) do not change. |
 | 9 | Prove it | Anyone | Run `node browser/six-members.mjs --url <preview or live origin>` from `tests/` (the same suite runs in Preview Tests). |
 
 ### Step 4: the member key
@@ -51,7 +51,7 @@ node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))" >
 ```
 
 ```bash
-# on Matt's machine, with KEY_SALT set from the secret store (see docs/runbooks/secrets.md), key piped in:
+# on the owner's machine, with KEY_SALT set from the secret store (see docs/runbooks/secrets.md), key piped in:
 KEY_SALT="$KEY_SALT" node infrastructure/scripts/hash-key.mjs <slug> < key.txt
 ```
 
@@ -73,7 +73,7 @@ Pick the smallest one that undoes what went wrong.
 
 ## Privacy
 
-The board shows game handles only. Do not store a real name, an email address, a phone number or anything about a person's life outside the game, in the party document, the roster, a test or a commit message. The script refuses a name that contains `@`, a link or a publisher's mark, and takes no real name. The one place real first names may exist, `name_map`, is private, write-only, and is replaced as a whole object: Matt edits it by hand, and only if answers need it.
+The board shows game handles only. Do not store a real name, an email address, a phone number or anything about a person's life outside the game, in the party document, the roster, a test or a commit message. The script refuses a name that contains `@`, a link or a publisher's mark, and takes no real name. The one place real first names may exist, `name_map`, is private, write-only, and is replaced as a whole object: the owner edits it by hand, and only if answers need it.
 
 ## Known limits
 

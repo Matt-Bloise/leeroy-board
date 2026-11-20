@@ -36,7 +36,7 @@ What this does **not** protect:
 
 Names only, no values. Listed from the workflow files and from `gh secret list` (repository and environment `production`) on 2026-11-19. **Previews still use the production `CLOUDFLARE_API_TOKEN` for now.** Moving previews to the preview-scoped `CLOUDFLARE_PREVIEW_API_TOKEN` is pending in a separate draft pull request, which waits for the account owner to re-create that token (the stored value fails verification with Cloudflare error 1000).
 
-1. **Any user with write access can read repository-level secrets.** Anyone who can push a branch to this repository can edit a workflow file on that branch and make it print or send every repository-level secret. Only a job that declares `environment: production` is gated (master only). Today only `deploy-cloudflare.yml` and `roster-upsert.yml` declare it; `pages-prune.yml` does not, so it reads its Cloudflare token at repository level with no gate. Production secrets must therefore live as **environment secrets of `production`**, and the repository-level copies must be deleted by the account owner (owner / Josh action), keeping only what previews need. Repository-level secrets today, with the action:
+1. **Any user with write access can read repository-level secrets.** Anyone who can push a branch to this repository can edit a workflow file on that branch and make it print or send every repository-level secret. Only a job that declares `environment: production` is gated (master only). Today only `deploy-cloudflare.yml` and `roster-upsert.yml` declare it; `pages-prune.yml` does not, so it reads its Cloudflare token at repository level with no gate. Production secrets must therefore live as **environment secrets of `production`**, and the repository-level copies must be deleted by the account owner (owner / account admin action), keeping only what previews need. Repository-level secrets today, with the action:
 
    | Secret | Also in environment `production` today | Action |
    | :--- | :--- | :--- |
@@ -58,7 +58,7 @@ Names only, no values. Listed from the workflow files and from `gh secret list` 
 
 `tests/unit/workflow-secrets.test.mjs` fails if a PR-triggered workflow names any secret outside `CLOUDFLARE_API_TOKEN` (only in the four places above), `BOARD_PREVIEW_ADMIN_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `GITHUB_TOKEN`, or mentions `CLOUDFLARE_PREVIEW_API_TOKEN`.
 
-## 1. Create the `production` environment (Matt)
+## 1. Create the `production` environment (the owner)
 
 1. Open the repository on GitHub, **Settings**.
 2. In the left menu click **Environments**, then **New environment**.
@@ -66,7 +66,7 @@ Names only, no values. Listed from the workflow files and from `gh secret list` 
 4. Under **Deployment branches and tags** choose **Selected branches and tags**, click **Add deployment branch or tag rule**, set **Ref type** to *Branch*, name pattern `master`, and **Add rule**. Leave no other rule.
 5. Optional: under **Deployment protection rules** tick **Required reviewers** and add yourself, so every deploy waits for one click. Leave **Prevent self-review** off if you are the only reviewer.
 
-## 2. Move the secrets (Matt)
+## 2. Move the secrets (the owner)
 
 Do this for `BOARD_ADMIN_TOKEN` first, then the rest of the table's `production` rows. Four secrets are deliberately **not** moved and their repository-level copies are **kept**: `CLOUDFLARE_API_TOKEN` (previews read it, see "Previews share the production Cloudflare token"), and `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` (accepted residual risk, see the secret map).
 
@@ -88,7 +88,7 @@ It exits 0 only when no production credential other than the four accepted ones 
 
 Check: the **Actions** tab, **Deploy Site & Serverless Backend to Cloudflare (Production)**, **Run workflow** on `master`. The first step "Require the production environment secrets" must pass and the run must show "production" as its environment. A run from any other branch must be refused at the environment.
 
-## 3. Preview admin token (Matt)
+## 3. Preview admin token (the owner)
 
 There is no separate Cloudflare token for previews (see the decision above). Only `BOARD_PREVIEW_ADMIN_TOKEN` is new:
 

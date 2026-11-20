@@ -88,7 +88,7 @@ Goal: measure, on the real free plan, whether holding the Gateway is affordable 
 | Replay after resume | Handled-id list and cooldown. |
 | Bot token exposure | Read only from the existing secret binding; never logged, stored or returned. |
 
-## What the owner or Josh would do if the soak test passes
+## What the owner or the account admin would do if the soak test passes
 
 1. Verify the sources and run the soak test above; record results here.
 2. Enable the MESSAGE_CONTENT intent in the Discord Developer Portal (Bot tab).

@@ -44,7 +44,7 @@ Both salts were fixed constants committed to a repository that was once public (
 
 ## What the account owner runs
 
-**Freeze deploys first (review fix).** The moment the repository secrets change in step 1, any merge to master runs the production deploy and puts the new salts on the Worker before the member-key SQL is ready: members are locked out and nothing re-derived. So before step 1: stop all merges to master (the merge daemon, any auto-merge, Josh) and disable the deploy workflow (`gh workflow disable "Deploy Cloudflare" --repo Matt-Bloise/leeroy-board`, or the Actions page), and re-enable it only after step 3 and the Verify section pass. `cancel-in-progress: false` does not stop a deploy that has already started.
+**Freeze deploys first (review fix).** The moment the repository secrets change in step 1, any merge to master runs the production deploy and puts the new salts on the Worker before the member-key SQL is ready: members are locked out and nothing re-derived. So before step 1: stop all merges to master (the merge daemon, any auto-merge, the account admin) and disable the deploy workflow (`gh workflow disable "Deploy Cloudflare" --repo Matt-Bloise/leeroy-board`, or the Actions page), and re-enable it only after step 3 and the Verify section pass. `cancel-in-progress: false` does not stop a deploy that has already started.
 
 The Worker secret and the GitHub repository secret are two copies of one value. **The production deploy sets every Worker secret from the repository secret on each run** (`deploy-cloudflare.yml`, the `wrangler secret put` loop), so a bare `wrangler secret put` is overwritten by the old value at the next deploy. Do both, in this order:
 

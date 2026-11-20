@@ -92,7 +92,7 @@ The landing page https://brave.com/search/api/ claims "Structural ZDR vs contrac
 
 ## Decision status
 
-Open. The owner (Matt) chooses a provider and creates the key; no key exists, no account exists, and nothing was purchased. The shortlist stands as proposed below: Tavily leading with written confirmation outstanding, Brave second with no result caching, Exa out, Google unavailable. The provider-swappable interface in the Design section is unchanged and is the decision that does not depend on that choice.
+Open. The owner chooses a provider and creates the key; no key exists, no account exists, and nothing was purchased. The shortlist stands as proposed below: Tavily leading with written confirmation outstanding, Brave second with no result caching, Exa out, Google unavailable. The provider-swappable interface in the Design section is unchanged and is the decision that does not depend on that choice.
 
 ## Clause evidence
 
