@@ -110,7 +110,7 @@ const f = (value) => ({ value, visible: true, source: "board", at: "2026-11-01T0
 const CH = "900000000000000001";
 const quiet = async (fn) => { const real = { log: console.log, warn: console.warn, error: console.error, info: console.info }; for (const k of Object.keys(real)) console[k] = () => {}; try { return await fn(); } finally { Object.assign(console, real); } };
 let n = 0;
-async function ask(question, { read = "on", compose = "on", rows = [LEVEL, COOL] } = {}) {
+async function ask(question, { read = "on", compose = "on", rows = [LEVEL, COOL], isMember = true } = {}) {
   invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache();
   const DB = await schemaDb();
   DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify([{ slug: "red-fox", name: "Red Fox", fields: { class: f("paladin") }, updated: "x" }]));
@@ -120,7 +120,7 @@ async function ask(question, { read = "on", compose = "on", rows = [LEVEL, COOL]
   const id = `gfc${++n}`;
   DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, 'Red Fox', ?, 'groq', 'thinking', 1, '2026-11-18T10:00:00.000Z')").run(id, question);
   anth = [];
-  await quiet(() => answerWithAi({ env, origin: "https://worker.test", intentId: id, by: "Red Fox", memberSlug: "red-fox", question, provider: "claude", share: true, budget: null, isMember: true, channel: CH }));
+  await quiet(() => answerWithAi({ env, origin: "https://worker.test", intentId: id, by: "Red Fox", memberSlug: "red-fox", question, provider: "claude", share: true, budget: null, isMember, channel: CH }));
   return { row: { ...DB.raw.prepare("SELECT answer, model, status FROM ask_turns WHERE id = ?").get(id) }, anth: anth.slice() };
 }
 
@@ -153,6 +153,13 @@ test("flag off (\"off\", unset or junk), with the reader on: byte-identical requ
     assert.equal(a.row.answer, base.row.answer);
     assert.ok(!/^library:table/.test(a.row.model));
   }
+});
+
+test("a guest never gets a composed answer: the table is read for members only, so the guests' request rate limit (2 an hour per IP, in the POST /api/ask handler before answerWithAi) is never bypassed", async () => {
+  const a = await ask("what level is Glimmer Spear?", { isMember: false });
+  assert.ok(!/^library:table/.test(a.row.model), a.row.model);
+  const handler = read("infrastructure/worker/index.js");
+  assert.ok(handler.indexOf("Public guest access is limited to 2 questions per hour") < handler.indexOf("answerWithAi({"), "the request limit runs before the answer path, composed or not");
 });
 
 test("the compose flag does nothing without the reader", async () => {
