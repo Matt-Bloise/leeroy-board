@@ -414,14 +414,9 @@ jobs:
             echo "::error::The Worker URL does not have the shape https://<name>[.<subdomain>].workers.dev; refusing to stamp it into the site bundle."
             exit 1
           fi
-          # Stamp the exact PR Worker URL into .cloudflare-dist/js/brain.js so both the branch alias URL
-          # and the per-commit hash URL talk directly to this PR's isolated Worker + D1.
-          node -e '
-            const fs = require("fs");
-            const p = ".cloudflare-dist/js/brain.js";
-            const s = fs.readFileSync(p, "utf8");
-            const url = process.argv[1]; fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, () => `const WORKER = "${url}";`), "utf8");
-          ' "$WORKER_URL"
+          # Stamp the exact PR Worker URL into the STAGED copy only (.cloudflare-dist): js/brain.js (WORKER), js/board.js (PREVIEW_WORKER) and the connect-src of the CSP lines in _headers (tools/preview-stamp.mjs).
+          # The production sources carry no workers.dev host at all; both the branch alias URL and the per-commit hash URL talk directly to this PR's isolated Worker + D1.
+          node tools/preview-stamp.mjs .cloudflare-dist "$WORKER_URL"
 
           cd infrastructure
           npx wrangler pages project create "$PAGES_PROJECT_NAME" --production-branch=master >/dev/null 2>&1 || true

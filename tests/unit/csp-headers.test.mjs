@@ -48,7 +48,7 @@ test("the policy allows what normal pages use, so a report-only policy stays qui
   assert.deepEqual(dir("worker-src"), ["'self'", "blob:"]);
   assert.deepEqual(dir("font-src"), ["'self'"]);
   const c = dir("connect-src");
-  for (const h of ["https://*.joshbblaine.workers.dev", "wss://*.joshbblaine.workers.dev", "https://*.jmattbloise.workers.dev", "wss://*.jmattbloise.workers.dev"]) assert.ok(c.includes(h), h);
+  assert.ok(!/workers\.dev/.test(c.join(" ")), "no workers.dev origin in the production policy: a preview build adds its own exact Worker (tools/preview-stamp.mjs, tests/unit/preview-stamp.test.mjs)");
   assert.ok(!c.includes("*") && !c.includes("https:") && !c.includes("https://*.workers.dev"), "no blanket origin");
 });
 test("the Cloudflare Web Analytics beacon is allowed by exact host only: script host in script-src, report endpoint in connect-src, nothing wider", () => {
