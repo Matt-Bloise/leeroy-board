@@ -81,7 +81,7 @@ The limits are ONE Worker var, `SHADOW_ASK_LIMITS = "hourly/daily/percent"`, in 
 |---|---|---|---|
 | part 1 (hourly) | `6` | integer 1 to 120 | accepted calls in any rolling hour; the next is 429 |
 | part 2 (daily) | `20` | integer 1 to 600 | accepted calls in any rolling day; raised to the hourly value if set below it |
-| part 3 (percent) | `2` | number 0.1 to 70 (raised from 60 for the 2026-11-19 re-run, back to 60 in the revert) | the shadow counter's share of `RESEARCH_CLAUDE_MONTHLY_TOKENS`, in percent |
+| part 3 (percent) | `2` | number 0.1 to 60 | the shadow counter's share of `RESEARCH_CLAUDE_MONTHLY_TOKENS`, in percent |
 
 Unset, empty, non-numeric, `NaN`, `Infinity`, zero, negative or exponent-form values use the default, never unlimited. A positive value outside the range is clamped to the nearest edge. Raising them in production is a separate `wrangler.toml` change and deploy; the monthly cap still binds, and a shadow reservation past the sub-cap ends as `claude:subcap`.
 
