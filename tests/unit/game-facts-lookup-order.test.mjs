@@ -41,3 +41,41 @@ test("the per-name cap keeps one row of every kind before it fills in order, and
   assert.ok(r.rows.some((x) => x.id === "trait_max_ranks:9-2"));
   assert.ok(r.rows.length <= READER_PER_NAME);
 });
+
+// The five misses of the 2026-11-19 replay, as row SHAPES (synthetic ids and values; the shapes are the real counts).
+const ladder = (name, n, kind = "spell_level", base = 5000) => Array.from({ length: n }, (_, i) => row(`${kind === "spell_level" ? "spelllevels" : "spellpower"}:${base + i}`, kind, name, `${name} (Rank ${i + 1}) requires level ${i + 1}.`, String(i + 1), `rank=${i + 1};class=Zed`));
+const talent = (name, id, ranks) => [
+  row(`trait_max_ranks:${id}`, "trait_max_ranks", name, `${name} is a Zed talent with ${ranks} rank${ranks > 1 ? "s" : ""}.`, String(ranks)),
+  row(`trait_points_required:${id}`, "trait_points_required", name, `${name} (Zed talent) needs 30 points spent in its tree before it can be learned.`, "30"),
+  row(`trait_prereq:${id}`, "trait_prereq", name, `${name} (Zed talent) has Cinder Skin as its prerequisite talent.`, "Cinder Skin"),
+];
+const ids = (r) => r.rows.map((x) => x.id);
+for (const [name, q, mustHave] of [
+  ["Bestial Wrath", "Hunter talent Bestial Wrath: how many ranks does it have?", ["trait_max_ranks:1091-1", "trait_points_required:1091-1", "trait_prereq:1091-1"]],
+  ["Unsealed Wrath", "Paladin talent Unsealed Wrath: which talent has to be taken before it?", ["trait_max_ranks:1100-2", "trait_prereq:1100-2"]],
+  ["Unbridled Wrath", "How many ranks can you put into the Warrior talent Unbridled Wrath?", ["trait_max_ranks:1117-3"]],
+]) {
+  test(`replay miss: ${name} keeps its talent rows beside the 30-row ladder of Wrath`, async () => {
+    const own = name === "Bestial Wrath" ? talent(name, "1091-1", 1) : name === "Unsealed Wrath" ? talent(name, "1100-2", 1) : talent(name, "1117-3", 5);
+    const DB = await schemaDb();
+    loadFacts(DB, [...ladder("Wrath", 30), ...own]);
+    const r = await lookupGameFactsChecked({ DB }, q, { limit: 8, reader: true });
+    for (const id of mustHave) assert.ok(ids(r).includes(id), `${id} in ${ids(r).join(",")}`);
+    assert.ok(!ids(r).some((id) => id.startsWith("spelllevels:5")), "no row of the shorter name Wrath");
+  });
+}
+
+test("replay miss: Fire Nova Totem (1 row) is not crowded out by the 30-row ladder of Fire Nova", async () => {
+  const DB = await schemaDb();
+  loadFacts(DB, [...ladder("Fire Nova", 30), row("spellpower:9001", "spell_mana_cost", "Fire Nova Totem", "Fire Nova Totem costs 640 mana.", "640")]);
+  const r = await lookupGameFactsChecked({ DB }, "How much mana does Fire Nova Totem cost?", { limit: 8, reader: true });
+  assert.deepEqual(ids(r), ["spellpower:9001"]);
+});
+
+test("replay miss: Shadowburn keeps its rank-less talent row beside 12 ladder rows", async () => {
+  const DB = await schemaDb();
+  loadFacts(DB, [...ladder("Shadowburn", 6), ...ladder("Shadowburn", 6, "spell_mana_cost", 7000), ...talent("Shadowburn", "1116-4", 1)]);
+  const r = await lookupGameFactsChecked({ DB }, "How many ranks can you put into the Warlock talent Shadowburn?", { limit: 8, reader: true });
+  assert.ok(ids(r).includes("trait_max_ranks:1116-4"), ids(r).join(","));
+  assert.ok(r.rows.length <= READER_PER_NAME);
+});

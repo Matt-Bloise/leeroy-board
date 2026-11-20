@@ -110,7 +110,10 @@ export function renderGameFactsBlock(res, { env = {}, cap = GAME_FACTS_BLOCK_CHA
 // Never throws and never waits longer than timeoutMs. -> null (a failed, stalled or junk lookup: nothing changes for the ask, one fixed code is logged) or
 // { block, ids, ground, shown, omitted, doNot, tableFact }. tableFact: a row matched, or the question asks for a table figure; the rules are added when it is true (or a block exists).
 // lookup and timeoutMs are injectable for tests only.
-export async function readGameFacts(env, question, { lookup = lookupGameFactsChecked, timeoutMs = GAME_FACTS_TIMEOUT_MS } = {}) {
+// trace (optional, the shadow recorder's): an object this fills with { ms, outcome: "timeout" | "failed" | "empty" | "rows", block } and nothing else; it changes no result.
+export async function readGameFacts(env, question, { lookup = lookupGameFactsChecked, timeoutMs = GAME_FACTS_TIMEOUT_MS, trace = null } = {}) {
+  const t0 = Date.now();
+  const note = (outcome, block = null) => { if (trace) { trace.ms = Math.max(0, Date.now() - t0); trace.outcome = outcome; trace.block = block; } };
   let timer = null;
   const STALL = Symbol("stall");
   const log = (code) => { try { console.error(code); } catch { /* a console that throws */ } };
@@ -119,11 +122,13 @@ export async function readGameFacts(env, question, { lookup = lookupGameFactsChe
     const work = Promise.resolve().then(() => lookup(env, question, { limit: GAME_FACTS_LIMIT, reader: true }));
     work.catch(() => {}); // a lookup that fails after the timeout won must not become an unhandled rejection
     const res = await Promise.race([work, stall]);
-    if (res === STALL) { log(GAME_FACTS_TIMEOUT_CODE); return null; }
-    if (!res || typeof res !== "object" || res.failed === true) { log(GAME_FACTS_FAIL_CODE); return null; }
+    if (res === STALL) { note("timeout"); log(GAME_FACTS_TIMEOUT_CODE); return null; }
+    if (!res || typeof res !== "object" || res.failed === true) { note("failed"); log(GAME_FACTS_FAIL_CODE); return null; }
     const b = renderGameFactsBlock(res, { env });
+    note(b.block ? "rows" : "empty", b.block || null);
     return { ...b, tableFact: b.shown > 0 || b.doNot > 0 || looksLikeTableFact(question) };
   } catch {
+    note("failed");
     log(GAME_FACTS_FAIL_CODE);
     return null;
   } finally {

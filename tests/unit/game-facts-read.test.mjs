@@ -593,3 +593,35 @@ test("the shadow route (the replay harness's door) runs the real compose with th
   assert.ok(blockOf(user).includes("[spelllevels:101]") && anth[0].body.system.map((b) => b.text).join("\n").includes(GAME_FACTS_RULE));
   assert.equal(DB.raw.prepare("SELECT COUNT(*) AS c FROM ask_turns").get().c, 0, "silent: no turn row");
 });
+
+test("the shadow row stores the GAME_FACTS block, the lookup's ms and its outcome in meta.gf; flag off stores no meta.gf", async () => {
+  const shadow = async (flag) => {
+    const DB = await freshDb();
+    const env = mkEnv(DB, flag ? { GAME_FACTS_READ: flag } : {});
+    const body = JSON.stringify({ purpose: "shadow-ask", question: Q, as: "red-fox", channel: CH });
+    const ts = String(Math.floor(Date.now() / 1000));
+    const res = await worker.fetch(new Request("https://worker.test/api/shadow/ask", { method: "POST", headers: { "Content-Type": "application/json", "X-Listen-Timestamp": ts, "X-Listen-Signature": await signListen(SHADOW_KEY, ts, body) }, body }), env, { waitUntil() {} });
+    assert.equal(res.status, 200);
+    return JSON.parse(DB.raw.prepare("SELECT meta FROM shadow_answers").get().meta);
+  };
+  const on = await shadow("on");
+  assert.equal(on.gf.outcome, "rows");
+  assert.equal(on.gf.timed_out, false);
+  assert.equal(on.gf.used, true);
+  assert.ok(Number.isInteger(on.gf.ms) && on.gf.ms >= 0);
+  assert.ok(on.gf.block.includes("[spelllevels:101]") && on.gf.block.length <= 4000);
+  const off = await shadow(null);
+  assert.ok(!("gf" in off), "flag off: nothing about the reader is stored");
+});
+
+test("readGameFacts fills a trace for a timeout, a failed lookup and an empty one, and the result is unchanged", async () => {
+  const stall = () => new Promise(() => {});
+  const t1 = {}; assert.equal(await readGameFacts({}, Q, { lookup: stall, timeoutMs: 20, trace: t1 }), null);
+  assert.equal(t1.outcome, "timeout"); assert.ok(t1.ms >= 15 && t1.block === null);
+  const t2 = {}; assert.equal(await readGameFacts({}, Q, { lookup: async () => ({ failed: true }), trace: t2 }), null);
+  assert.equal(t2.outcome, "failed");
+  const t3 = {}; const r3 = await readGameFacts({}, Q, { lookup: async () => ({ rows: [], doNotSay: [], ambiguous: false, via: "none" }), trace: t3 });
+  assert.equal(t3.outcome, "empty"); assert.equal(r3.block, "");
+  const noTrace = await readGameFacts({}, Q, { lookup: async () => ({ rows: [], doNotSay: [], ambiguous: false, via: "none" }) });
+  assert.deepEqual(noTrace, r3);
+});

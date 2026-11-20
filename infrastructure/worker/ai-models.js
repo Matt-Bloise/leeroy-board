@@ -1123,7 +1123,8 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       ? await buildGroupMemoryBlock(env, { askerSlug: memberSlug, isMember: true, channel: groupMemory.channel, share: groupMemory.share !== false, names: sheets0.filter((s) => s && s.slug).map((s) => ({ slug: s.slug, display: s.name || s.slug })), mentionText: `${question}\n${prevText}` })
       : "";
     // GAME_FACTS_READ (off by default; research asks only): the client table rows that match the question, one lookup (3 D1 reads) started beside the persona load; readGameFacts never throws, and null means nothing changes.
-    const gfPromise = research && gameFacts === true && retrieve && gameFactsReadOn(env) ? readGameFacts(env, question) : null; // gameFacts: the caller says Claude will answer (a member, a key); a guest or any path without Claude never reads the table
+    const gfTrace = research && gameFacts === true && retrieve && gameFactsReadOn(env) ? {} : null; // filled by readGameFacts; only the shadow recorder reads it
+    const gfPromise = gfTrace ? readGameFacts(env, question, { trace: gfTrace }) : null; // gameFacts: the caller says Claude will answer (a member, a key); a guest or any path without Claude never reads the table
     const persona = await loadPersona(env);
     let gf = gfPromise ? await gfPromise : null;
     let gfActive = Boolean(gf && (gf.block || gf.tableFact)); // the table-fact rules go in when a block is shown or the question asks for a table figure
@@ -1192,9 +1193,10 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     let userPrompt = userFor(gfActive && gf.block ? `${gf.block}\n\n` : "", libraryFor(gfActive));
     if (gfActive) systemPrompt = `${systemBase}\n\n${GAME_FACTS_RULE}`;
     // One shared budget (research/claude.js MAX_PROMPT_CHARS): when the block and the rules would push the request over it, they go (never the question or the library) and the ask is the one it would be without the flag.
-    if (gfActive && systemPrompt.length + userPrompt.length > MAX_PROMPT_CHARS) { gf = null; gfActive = false; systemPrompt = systemBase; userPrompt = userFor("", libraryFor(false)); }
+    if (gfActive && systemPrompt.length + userPrompt.length > MAX_PROMPT_CHARS) { gf = null; gfActive = false; systemPrompt = systemBase; userPrompt = userFor("", libraryFor(false)); if (gfTrace) gfTrace.dropped = "prompt-budget"; }
+    if (gfTrace) gfTrace.used = gfActive;
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, ...(gfActive ? { gameFactIds: gf.ids, gameFactGround: gf.ground } : {}), abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, ...(gfActive ? { gameFactIds: gf.ids, gameFactGround: gf.ground } : {}), ...(gfTrace ? { gfTrace } : {}), abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1621,7 +1623,7 @@ export async function answerWithAi({
     // The model column exactly as an ask_turns row carries it. A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
     const modelLabel = degraded ? `${provider}:${model}+research${researchNote}`.slice(0, 120 - DEGRADED_SUFFIX.length) + DEGRADED_SUFFIX : `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120);
     if (shadow) { // record-only: the same text and the same model label an ask would have stored, and nothing else happens
-      await sink.record({ status: degraded ? "degraded" : "answered", answer, cites, model: modelLabel, reason: (/\[([^\]]{1,60})\]/.exec(researchNote) || [])[1] || null, latencyMs, groupMemory: groupOn && Boolean(inputs.groupMember), research: Boolean(research), usage: degraded ? null : claudeUsage });
+      await sink.record({ status: degraded ? "degraded" : "answered", answer, cites, model: modelLabel, reason: (/\[([^\]]{1,60})\]/.exec(researchNote) || [])[1] || null, latencyMs, groupMemory: groupOn && Boolean(inputs.groupMember), research: Boolean(research), usage: degraded ? null : claudeUsage, ...(inputs.gfTrace ? { gameFactsTrace: inputs.gfTrace } : {}) });
       return;
     }
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.
