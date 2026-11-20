@@ -154,8 +154,9 @@ export async function lookupGameFactsChecked(env, question, { limit = 5, reader 
     const add = (list) => { for (const r of list) fetched.set(`${r.id}|${r.load_id || ""}|${r.build}`, r); };
     const fetchN = reader ? READER_ROW_LIMIT : 400;
     const kinds = reader ? ALL_KIND_LIST : KIND_LIST;
-    if (exact.length) add(await runAll(env, buildNameSql(exact, "subject_norm", fetchN, kinds, reader)));
-    if (byBase.length) add(await runAll(env, buildNameSql(byBase, "subject_base", fetchN, kinds, reader)));
+    let cut = false; // reader mode: true when ANY limit may have hidden a row (the SQL LIMIT, the per-name cap, the row budget); the composed table answer declines on it
+    if (exact.length) { const got = await runAll(env, buildNameSql(exact, "subject_norm", fetchN, kinds, reader)); if (got.length >= fetchN) cut = true; add(got); }
+    if (byBase.length) { const got = await runAll(env, buildNameSql(byBase, "subject_base", fetchN, kinds, reader)); if (got.length >= fetchN) cut = true; add(got); }
     const named = chooseNames(windows, [...fetched.values()]);
     const holds = [], wrong = [];
     let ambiguous = false, rankMissing = false;
@@ -169,18 +170,18 @@ export async function lookupGameFactsChecked(env, question, { limit = 5, reader 
         if (!mine.some((r) => rankOfRow(r) !== undefined)) { rankMissing = true; mine = []; }
       }
       mine = [...mine].sort((a, b) => (rankOfRow(a) ?? 1e9) - (rankOfRow(b) ?? 1e9) || KIND_RANK.get(a.kind) - KIND_RANK.get(b.kind) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      if (reader) mine = capPerName(mine, READER_PER_NAME);
+      if (reader) { if (mine.length > READER_PER_NAME) cut = true; mine = capPerName(mine, READER_PER_NAME); }
       const gh = mine.filter((r) => r.verdict === "holds"), gw = mine.filter((r) => r.verdict === "wrong");
       const perKind = new Map();
       for (const r of gh) perKind.set(r.kind, (perKind.get(r.kind) || 0) + 1);
       if ([...perKind.values()].some((c) => c > 1)) ambiguous = true;
-      if (holds.length === 0 || holds.length + gh.length <= n) holds.push(...gh);
+      if (holds.length === 0 || holds.length + gh.length <= n) holds.push(...gh); else if (gh.length) cut = true;
       wrong.push(...gw);
     }
     const cur = reader ? [] : curatedMatches(question, await runAll(env, buildCuratedSql(300)));
     for (const r of cur) { if (r.verdict === "holds" && holds.length < n) holds.push(r); else if (r.verdict === "wrong") wrong.push(r); }
     const rank = (r) => r.id;
-    return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, ...(rankMissing ? { rankMissing: true } : {}), via: "names" };
+    return { rows: holds.map(shape), doNotSay: [...new Map(wrong.map((r) => [rank(r), r])).values()].map(shape), ambiguous, ...(rankMissing ? { rankMissing: true } : {}), ...(reader ? { cut, groups: named.length } : {}), via: "names" };
   } catch {
     return { ...empty, failed: true };
   }
