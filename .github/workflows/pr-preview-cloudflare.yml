@@ -365,6 +365,8 @@ jobs:
           DEPLOY_OUT=$(npx wrangler deploy 2>&1)
           DEPLOY_EXIT=$?
           # The account workers.dev subdomain carries a personal name: it is never printed. The raw output stays in the variable, only the redacted text reaches the log.
+          SUB=$(printf '%s' "$DEPLOY_OUT" | grep -oE '\.[a-z0-9-]+\.workers\.dev' | head -n 1 | sed -E 's#^\.([a-z0-9-]+)\.workers\.dev$#\1#' || true)
+          if printf '%s' "$SUB" | grep -qE '^[a-z0-9-]+$'; then echo "::add-mask::$SUB"; fi
           echo "$DEPLOY_OUT" | sed -E 's#\.[a-z0-9-]+\.workers\.dev#.<account-subdomain>.workers.dev#g'
           if [ $DEPLOY_EXIT -ne 0 ]; then
             echo "::error::wrangler deploy failed with exit code $DEPLOY_EXIT"
@@ -377,10 +379,10 @@ jobs:
             echo "::error::Could not read the preview Worker URL (https://${WORKER_NAME}.<subdomain>.workers.dev) from the wrangler deploy output above. Not guessing one."
             exit 1
           fi
+          # Mask the account subdomain (it carries a personal name) for the rest of THIS job. The step output below is read only by later steps of this job; no other job or workflow receives the host (each job that needs it resolves it itself: tools/preview-worker-url.sh).
+          SUB=$(printf '%s' "$WORKER_URL" | sed -E 's#^https://[^.]+\.([a-z0-9-]+)\.workers\.dev$#\1#')
+          if printf '%s' "$SUB" | grep -qE '^[a-z0-9-]+$'; then echo "::add-mask::$SUB"; echo "::add-mask::$WORKER_URL"; fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
-          # The Worker URL goes to the Preview Tests workflow as the preview-urls workflow artifact (uploaded below), not in the public PR comment: its host carries a personal name.
-          mkdir -p "$RUNNER_TEMP/preview-urls"
-          printf '%s\n' "$WORKER_URL" > "$RUNNER_TEMP/preview-urls/worker.txt"
 
       - name: Set Preview Salt Secrets (derived per preview)
         working-directory: infrastructure
@@ -433,14 +435,6 @@ jobs:
           echo "$PAGES_OUT"
           PREVIEW_URL="https://${PAGES_BRANCH}.${PAGES_PROJECT_NAME}.pages.dev"
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Keep the Worker URL for the Preview Tests workflow (artifact, not the public comment)
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: preview-urls
-          path: ${{ runner.temp }}/preview-urls/worker.txt
-          retention-days: 3
-          if-no-files-found: error
 
       - name: Post / Update Sticky PR Preview Comment
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1

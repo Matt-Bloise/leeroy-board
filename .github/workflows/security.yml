@@ -137,6 +137,9 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Find the preview URL in the PR comment
         id: urls
         continue-on-error: true
@@ -208,6 +211,10 @@ jobs:
             echo '{"status":"failed"}' > out/zap-summary.json
           fi
           cat out/zap-summary.json
+
+      - name: Scrub the account subdomain from the files about to be uploaded
+        if: always()
+        run: bash tools/scrub-subdomain.sh zap-out out/zap-summary.json
 
       - name: Upload artifacts
         if: always()
