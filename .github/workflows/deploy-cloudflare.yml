@@ -404,13 +404,8 @@ jobs:
             exit $DEPLOY_EXIT
           fi
           set -e
-          WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://api\.leeroy\.party" | head -n 1)
-          if [ -z "$WORKER_URL" ]; then
-            WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://leeroy-brain\.[a-z0-9-]+\.workers\.dev" | head -n 1)
-          fi
-          if [ -z "$WORKER_URL" ]; then
-            WORKER_URL="https://api.leeroy.party"
-          fi
+          # Production is stamped with its own API origin and nothing else: no workers.dev host (it would be accepted as a key destination by the page). The URL is not parsed out of the deploy output any more.
+          WORKER_URL="https://api.leeroy.party"
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 
       - name: Create missing Flagship flags (disabled; never changes an existing flag)
@@ -459,8 +454,8 @@ jobs:
           # (the Worker serves those through its privacy projection) and fails this step when one is present. docs/runbooks/member-data-worker-only.md
           node tools/pages-bundle.mjs .cloudflare-dist
 
-          # The Worker URL is stamped into JavaScript: accept only https://api.leeroy.party or https://<name>[.<subdomain>].workers.dev, refuse anything else.
-          if ! printf '%s' "$WORKER_URL" | grep -qE '^(https://api\.leeroy\.party|https://[a-z0-9-]+(\.[a-z0-9-]+)?\.workers\.dev)$'; then
+          # The Worker URL is stamped into JavaScript: accept only https://api.leeroy.party, refuse anything else.
+          if [ "$WORKER_URL" != "https://api.leeroy.party" ]; then
             echo "::error::The Worker URL does not have the shape https://<name>[.<subdomain>].workers.dev (or the production API origin); refusing to stamp it into the site bundle."
             exit 1
           fi

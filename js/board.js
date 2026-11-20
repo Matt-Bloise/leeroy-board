@@ -10,7 +10,9 @@ const SAFE_URL = /^(https?:\/\/|\/(?![\/\\])|#|[a-z0-9_.-]+\/)/; /* https(s) URL
 const IMG_DATA = /^data:image\/(?:png|webp|jpeg|gif);base64,[A-Za-z0-9+\/=]+$/; /* a small raster picture is allowed on <img>/<source> src (never on a link, never svg or text/html); the one svg exception is the board's own crest medallion, matched exactly by BoardCrest.isOwn */
 const ownSvg = (v) => !!(window.BoardCrest && window.BoardCrest.isOwn && window.BoardCrest.isOwn(v));
 const okSrc = (tag, k, v) => SAFE_URL.test(v) || ((tag === "img" || tag === "source") && k === "src" && (IMG_DATA.test(v) || ownSvg(v))) || (tag === "image" && k === "href" && ownSvg(v));
-const API_OK = /^(?:https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:jmattbloise|joshbblaine)\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/; /* same origins as BRAIN_OK in js/brain.js: our own Worker, our own pr-N previews, a local Worker */
+const API_OK = /^(?:https:\/\/api\.leeroy\.party|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/; /* same origins as BRAIN_OK in js/brain.js: our own Worker, our own pr-N previews, a local Worker */
+const PREVIEW_WORKER = ""; /* stamped by tools/preview-stamp.mjs in a preview build only (the one origin of that preview Worker); empty in production */
+const apiOk = (o) => API_OK.test(o) || (PREVIEW_WORKER !== "" && o === PREVIEW_WORKER);
 function h(tag, attrs, ...kids) {
   /* a lazy image made while the wall is cold gets its src on settle (a lazy image that is rendered but covered still loads) */
   if (tag === "img" && attrs && attrs.loading === "lazy" && attrs.src && wallCold()) {
@@ -270,12 +272,12 @@ const API = (() => {
       if (u) {
         const o = new URL(u, location.href).origin;
         /* BoardBrain.url must not bypass the ?api= allowlist below: only the page's own origin (Discord Activity), the production Worker, pr-N preview Workers and a local Worker */
-        if (o === location.origin || API_OK.test(o)) return o;
+        if (o === location.origin || apiOk(o)) return o;
         return null;
       }
     }
     const u = new URL(new URLSearchParams(location.search).get("api") || localStorage.getItem("board-api") || "x:");
-    return API_OK.test(u.origin) ? u.origin : null;
+    return apiOk(u.origin) ? u.origin : null;
   } catch (e) { return null; }
 })();
 /* The documents that carry member data (the five member documents and the sign-ups). They are not published as static files (tools/pages-bundle.mjs leaves them out of the Pages bundle: the Worker serves them through its privacy projection),

@@ -41,8 +41,12 @@ function on(n, f) { if (typeof f === "function") (B.subs[n] ||= []).push(f); }
 })();
 
 /* The only origins the board key may ever be sent to (and ?brain= may point at): the production Worker, the pr-N preview Workers, and a local Worker. */
-const BRAIN_OK = /^(?:https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:jmattbloise|joshbblaine)\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/;
-function brainOrigin(u) { try { const x = new URL(String(u), location.href); return BRAIN_OK.test(x.origin) ? x.origin : null; } catch (e) { return null; } }
+const BRAIN_OK = /^(?:https:\/\/api\.leeroy\.party|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/;
+// The preview build stamps WORKER with its own isolated Worker (tools/preview-stamp.mjs); that one origin is allowed too. No personal host is written in this file: production only ever talks to api.leeroy.party.
+const WORKER_ORIGIN = (() => { try { return WORKER !== "https://api.leeroy.party" ? new URL(WORKER).origin : ""; } catch (e) { return ""; } })();
+// The stamped Worker belongs to THIS pr-N page only when its first host label is exactly leeroy-brain-pr-N (a substring match let pr-4 use the Worker of pr-42).
+const workerIsPr = (n) => { try { return WORKER_ORIGIN !== "" && new URL(WORKER).hostname.split(".")[0] === `leeroy-brain-pr-${n}`; } catch (e) { return false; } };
+function brainOrigin(u) { try { const x = new URL(String(u), location.href); return BRAIN_OK.test(x.origin) || (WORKER_ORIGIN && x.origin === WORKER_ORIGIN) ? x.origin : null; } catch (e) { return null; } }
 function baseFor() {
   const host = location.hostname || "";
   const q = new URLSearchParams(location.search || "").get("brain");
@@ -52,8 +56,9 @@ function baseFor() {
   }
   const pr = host.match(/^pr-(\d+)\.leeroy-board\.pages\.dev$/i);
   if (pr) {
-    const prWorker = WORKER && WORKER.includes(`pr-${pr[1]}`) ? WORKER : `https://leeroy-brain-pr-${pr[1]}.jmattbloise.workers.dev`;
-    return { http: `${prWorker}/api`, ws: `${prWorker.replace(/^https:/, "wss:")}/api/live` };
+    // A preview site is stamped with its own Worker. An unstamped pr-N page never falls back to production or to a guessed host: it asks its own origin, which has no API (offline mode).
+    if (workerIsPr(pr[1])) return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
+    return { http: "/api", ws: `wss://${host}/api/live` };
   }
   if (/\.discordsays\.com$/.test(host)) return { http: "/api", ws: `wss://${host}/api/live` };
   if (host === "leeroy.party" || host.endsWith(".leeroy.party")) {

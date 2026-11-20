@@ -106,7 +106,14 @@ test("file names are never printed raw, and the Worker URL is validated before i
   for (const [f, name] of [["pr-preview-cloudflare.yml", "Stage Static Site"], ["deploy-cloudflare.yml", "Stage Static Site"]]) {
     const st = stepsOf(wf(f)).find((x) => x.name && x.name.startsWith(name));
     assert.ok(st, f);
-    const gate = st.run.indexOf("refusing to stamp"), stamp = st.run.indexOf("const WORKER");
+    const gate = st.run.indexOf("refusing to stamp");
+    if (f === "pr-preview-cloudflare.yml") {
+      // the preview stamps through tools/preview-stamp.mjs (it validates the URL itself and uses replacer functions: tests/unit/preview-stamp.test.mjs)
+      const stamp = st.run.indexOf("node tools/preview-stamp.mjs");
+      assert.ok(gate > 0 && gate < stamp, f + ": validated before it is stamped");
+      continue;
+    }
+    const stamp = st.run.indexOf("const WORKER");
     assert.ok(gate > 0 && gate < stamp, f + ": validated before it is stamped");
     assert.ok(st.run.includes("() => `const WORKER = \"${url}\";`"), f + ": a replacer function, so $-patterns in the URL are literal");
   }
