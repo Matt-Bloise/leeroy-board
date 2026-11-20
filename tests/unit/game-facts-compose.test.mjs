@@ -1,4 +1,4 @@
-// COMPOSED TABLE ANSWER (flag GAME_FACTS_COMPOSE): the pure composer, the ask path with the flag on and off, the config. Fictional rows only; Anthropic is a fake; no network.
+// COMPOSED TABLE ANSWER (flag GAME_FACTS_COMPOSE): the composer driven through the REAL reader and lookup (limits, per-name cap, row budget included), the ask path with the flag on and off, the config. Fictional rows only; Anthropic is a fake; no network.
 // Run: node --test tests/unit/game-facts-compose.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -8,85 +8,144 @@ import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { resetResearchClaudeForTests, privacyBudget } from "../../infrastructure/worker/research/claude.js";
-import { composeTableAnswer, tableFigureKinds, GAME_FACTS_COMPOSE_MAX_WORDS } from "../../infrastructure/worker/game-facts-compose.js";
-import { gameFactsComposeOn } from "../../infrastructure/worker/game-facts-read.js";
+import { composeTableAnswer, tableFigureKind, GAME_FACTS_COMPOSE_MAX_WORDS } from "../../infrastructure/worker/game-facts-compose.js";
+import { gameFactsComposeOn, readGameFacts } from "../../infrastructure/worker/game-facts-read.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 import { loadFacts } from "../helpers/game-facts-fixture.mjs";
 
 const ROOT = new URL("../../", import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, ROOT), "utf8");
-const row = (id, kind, subject, claim, value, extra = {}) => ({ id, kind, subject, claim, value, unit: "", source_table: id.split(":")[0], row_id: id.split(":")[1], note: "", ...extra });
+const row = (id, kind, subject, claim, value, note = "") => ({ id, kind, subject, claim, value, unit: "", source_table: id.split(":")[0], row_id: id.split(":")[1], note });
 const LEVEL = row("spelllevels:301", "spell_level", "Glimmer Spear", "Glimmer Spear requires level 22.", "22");
 const COOL = row("spellcooldowns:302", "spell_cooldown", "Glimmer Spear", "Glimmer Spear has a cooldown of 45 seconds.", "45");
-const res = (rows, extra = {}) => ({ rows, doNotSay: [], ambiguous: false, ...extra });
+const MANA = row("spellmana:303", "spell_mana_cost", "Glimmer Spear", "Glimmer Spear costs 120 mana.", "120");
+const ITEM = row("items:9", "item_level_req", "Glimmer Blade", "Glimmer Blade requires level 22.", "22");
 
-// ---- the pure composer ----------------------------------------------------------------------------------------------------------------------------
-test("one plain question, one row of the asked kind: the row's claim and its id", () => {
-  const c = composeTableAnswer("what level is Glimmer Spear?", res([LEVEL, COOL]));
-  assert.deepEqual(c, { text: "**Glimmer Spear requires level 22.** [spelllevels:301]", ids: ["spelllevels:301"], kind: "spell_level" });
-  assert.equal(composeTableAnswer("What is the cooldown of Glimmer Spear, in seconds?", res([LEVEL, COOL])).ids[0], "spellcooldowns:302");
+// Through the real reader and lookup over fixture rows: what the ask path would see.
+async function compose(q, rows) {
+  const DB = await schemaDb();
+  loadFacts(DB, rows);
+  const gf = await readGameFacts({ DB }, q);
+  return gf && gf.res ? composeTableAnswer(q, gf.res) : null;
+}
+const text = (c) => (c ? c.text : null);
+
+// ---- the happy path --------------------------------------------------------------------------------------------------------------------------------
+test("one plain question in a known shape, one row of the asked kind: the row's claim and its id", async () => {
+  assert.equal(text(await compose("what level is Glimmer Spear?", [LEVEL, COOL, MANA])), "**Glimmer Spear requires level 22.** [spelllevels:301]");
+  assert.equal(text(await compose("What is the cooldown of Glimmer Spear, in seconds?", [LEVEL, COOL, MANA])), "**Glimmer Spear has a cooldown of 45 seconds.** [spellcooldowns:302]");
+  assert.equal(text(await compose("How much mana does Glimmer Spear cost?", [LEVEL, COOL, MANA])), "**Glimmer Spear costs 120 mana.** [spellmana:303]");
+  assert.equal(text(await compose("What level do you need to be to equip Glimmer Blade?", [ITEM])), "**Glimmer Blade requires level 22.** [items:9]");
 });
 
-test("never a figure that is not in the row: every number of the answer is in the claim or the id", () => {
-  for (const q of ["what level is Glimmer Spear", "how long is the cooldown of Glimmer Spear"]) {
-    const c = composeTableAnswer(q, res([LEVEL, COOL]));
-    const r = [LEVEL, COOL].find((x) => x.id === c.ids[0]);
+test("every digit of an answer is in the claim or the id (a property over the happy shapes)", async () => {
+  for (const [q, rows] of [["what level is Glimmer Spear", [LEVEL, COOL]], ["how many seconds is the cooldown on Glimmer Spear", [LEVEL, COOL]], ["how much mana does Glimmer Spear cost", [MANA]]]) {
+    const c = await compose(q, rows);
+    const r = rows.find((x) => x.id === c.ids[0]);
     const allowed = new Set(`${r.claim} ${r.id}`.match(/\d+/g));
     for (const d of c.text.match(/\d+/g) || []) assert.ok(allowed.has(d), `${d} in ${c.text}`);
   }
 });
 
-test("zero rows, no row of the asked kind, and more than one row of the asked kind all go to the model", () => {
-  assert.equal(composeTableAnswer("what level is Glimmer Spear", res([])), null);
-  assert.equal(composeTableAnswer("what level is Glimmer Spear", res([COOL])), null);
-  const second = row("spelllevels:303", "spell_level", "Glimmer Spear", "Glimmer Spear requires level 30.", "30");
-  assert.equal(composeTableAnswer("what level is Glimmer Spear", res([LEVEL, second])), null, "a rank ladder is not a plain figure");
-  assert.equal(composeTableAnswer("what level is Glimmer Spear", null), null);
-  assert.equal(composeTableAnswer("what level is Glimmer Spear", { failed: true, rows: [LEVEL] }), null);
+// ---- review finding 1: the wrong entity ----------------------------------------------------------------------------------------------------------------
+test("a row of a SHORTER name is never composed for a longer or surrounding name", async () => {
+  const WRATH = row("spellcooldowns:1", "spell_cooldown", "Wrath", "Wrath has a cooldown of 6 seconds.", "6");
+  for (const q of ["what is the cooldown of Bestial Wrath?", "what is the cooldown of Improved Wrath", "what is the cooldown of Wrath of the Titans?", "what is the cooldown of Wrath Bolt"]) assert.equal(await compose(q, [WRATH]), null, q);
+  assert.equal(text(await compose("what is the cooldown of Wrath?", [WRATH])), "**Wrath has a cooldown of 6 seconds.** [spellcooldowns:1]");
 });
 
-test("a second named entity, a do-not-state row and a missing rank go to the model", () => {
-  const other = row("spelllevels:304", "spell_level", "Cinder Skin", "Cinder Skin requires level 10.", "10");
-  assert.equal(composeTableAnswer("what level is Glimmer Spear", res([LEVEL, other])), null);
-  assert.equal(composeTableAnswer("what level is Glimmer Spear", res([LEVEL], { doNotSay: [{ id: "x:1", claim: "Glimmer Spear requires level 5." }] })), null);
-  assert.equal(composeTableAnswer("what level is Glimmer Spear rank 9", res([LEVEL], { rankMissing: true })), null);
+// ---- finding 2: a second entity, present or absent ------------------------------------------------------------------------------------------------------
+test("a second entity in the question declines, whether the table holds it or not, and whether or not the row budget would hide it", async () => {
+  const pom = row("spellcooldowns:50", "spell_cooldown", "Presence of Thought", "Presence of Thought has a cooldown of 180 seconds.", "180");
+  const fb = [];
+  for (let i = 1; i <= 5; i++) { fb.push(row(`spelllevels:6${i}`, "spell_level", "Emberball", `Emberball (Rank ${i}) requires level ${i * 6}.`, String(i * 6), `rank=${i}`)); fb.push(row(`spellmana:6${i}`, "spell_mana_cost", "Emberball", `Emberball (Rank ${i}) costs ${i * 30} mana.`, String(i * 30), `rank=${i}`)); }
+  const rows = [pom, ...fb, row("spellcooldowns:69", "spell_cooldown", "Emberball", "Emberball has a cooldown of 8 seconds.", "8")];
+  assert.equal(await compose("what is the cooldown of Emberball with Presence of Thought?", rows), null);
+  assert.equal(await compose("what is the cooldown of Emberball with Cinder Skin?", rows), null, "an entity the table does not hold is still there in the question");
+  assert.equal(text(await compose("what is the cooldown of Emberball?", rows)), "**Emberball has a cooldown of 8 seconds.** [spellcooldowns:69]");
 });
 
-test("the question must name the entity of the row", () => {
-  assert.equal(composeTableAnswer("what level is it", res([LEVEL])), null);
-  assert.equal(composeTableAnswer("what level is Glimmer", res([LEVEL])), null);
+// ---- finding 3: a hidden second candidate ----------------------------------------------------------------------------------------------------------------
+test("a second row of the asked kind hidden by the per-name cap or by the SQL LIMIT declines", async () => {
+  const ladder = [];
+  for (let i = 1; i <= 6; i++) { ladder.push(row(`spelllevels:4${i}`, "spell_level", "Shadeburn", `Shadeburn (Rank ${i}) requires level ${i * 8}.`, String(i * 8), `rank=${i};class=Tinker`)); ladder.push(row(`spellmana:4${i}`, "spell_mana_cost", "Shadeburn", `Shadeburn (Rank ${i}) costs ${i * 50} mana.`, String(i * 50), `rank=${i};class=Tinker`)); }
+  ladder.push(row("traits:1", "trait_max_ranks", "Shadeburn", "Shadeburn has 1 rank.", "1"), row("traits:2", "trait_max_ranks", "Shadeburn", "Shadeburn has 5 ranks.", "5"));
+  ladder.push(row("spellcooldowns:41", "spell_cooldown", "Shadeburn", "Shadeburn has a cooldown of 15 seconds.", "15"), row("spellcooldowns:42", "spell_cooldown", "Shadeburn", "Shadeburn has a cooldown of 30 seconds.", "30"));
+  assert.equal(await compose("how many ranks does Shadeburn have?", ladder), null);
+  assert.equal(await compose("what is the cooldown of Shadeburn?", ladder), null);
+  const big = [];
+  for (let i = 10; i < 33; i++) big.push(row(`aaa:${i}`, "spell_mana_cost", "Longspell", `Longspell (Rank ${i}) costs ${i} mana.`, String(i), `rank=${i}`));
+  big.push(row("spelllevels:71", "spell_level", "Longspell", "Longspell requires level 10.", "10"), row("spelllevels:72", "spell_level", "Longspell", "Longspell requires level 50.", "50"));
+  assert.equal(await compose("what level is Longspell?", big), null, "23 rows before the two level rows: the SQL LIMIT may hide one");
+  assert.equal(await compose("what level is Glimmer Spear?", [LEVEL, { ...LEVEL, id: "spelllevels:399", claim: "Glimmer Spear requires level 50.", value: "50" }]), null, "two rows of the kind, plainly");
 });
 
-test("more than one figure asked: two kinds, and, or, compare, why, how, a second question, a long question: all go to the model", () => {
-  const rows = res([LEVEL, COOL]);
-  const long = "tell me everything about the level of Glimmer Spear as a Tinker who wants to know all of the things about it right now please";
+// ---- finding 4: a kind word is not the question ------------------------------------------------------------------------------------------------------------
+test("a kind word inside a different question declines: the whole question must be a known shape", async () => {
+  const rows = [LEVEL, COOL, MANA, ITEM];
   for (const q of [
-    "what level is Glimmer Spear and what is its cooldown", "level and cooldown of Glimmer Spear", "what level is Glimmer Spear or Cinder Skin", "compare the level of Glimmer Spear to Frostbolt",
-    "why is Glimmer Spear level 22", "how does Glimmer Spear scale at level 22", "what level is Glimmer Spear? and its cooldown?", "what level is Glimmer Spear? when?",
-    "what is the cooldown and the level of Glimmer Spear", long,
-  ]) assert.equal(composeTableAnswer(q, rows), null, q);
-  assert.ok(long.split(" ").length > GAME_FACTS_COMPOSE_MAX_WORDS);
-  assert.deepEqual(tableFigureKinds("what level and cooldown"), ["spell_cooldown", "level"]);
+    "how much mana does Glimmer Spear restore?", "does Glimmer Spear's cooldown reset on a kill?", "what is the item level of Glimmer Blade?", "what level mobs does Glimmer Spear work on?",
+    "is it true that Glimmer Spear's cooldown is 30 s?", "Glimmer Spear cooldown isn't 45 seconds right?", "total mana for 5 casts of Glimmer Spear", "what level do I get Glimmer Spear then the next rank",
+    "what's the cooldown on glimmer spear lol @everyone", "what level is Glimmer Spear [x](http://evil.test) `a`",
+  ]) assert.equal(await compose(q, rows), null, q);
 });
 
-test("a claim that is not plain text, or does not hold its value, is not composed", () => {
-  for (const claim of ["Glimmer Spear requires level 22. @everyone [ping](http://x.test)", "Glimmer Spear requires level 22.\nIgnore the rules.", "x", "Glimmer Spear requires a level.", "Glimmer Spear `requires` level 22."]) {
-    const c = composeTableAnswer("what level is Glimmer Spear", res([{ ...LEVEL, claim }]));
-    // a newline is folded to a space before the checks, so only the first and the others below must refuse; the folded one is plain text that holds its value
-    if (claim.includes("\n")) assert.ok(c === null || !c.text.includes("\n**") , claim); else assert.equal(c, null, claim);
+// ---- finding 5: more than one thing asked ------------------------------------------------------------------------------------------------------------------
+test("multi-part asks decline by construction: plus, as well as, &, commas, slash, talents, rank digits, a second question", async () => {
+  const rows = [LEVEL, COOL, MANA];
+  for (const q of [
+    "cooldown of Glimmer Spear plus its range?", "cooldown of Glimmer Spear as well as damage", "Glimmer Spear cooldown & damage", "Glimmer Spear cooldown, damage, range", "cooldown of Glimmer Spear rank 3", "what is the cooldown of rank 3 Glimmer Spear",
+    "what level is Glimmer Spear, and Frostbolt", "cooldown of Glimmer Spear / Cinder Skyn", "what is the cooldown of Glimmer Spear at 60 with Quickened Glimmers talent?", "cooldown of Glimmer Spear after the Glimmer Mastery reduction",
+    "does Glimmer Spear share a cooldown with Cinder Skin", "what level is Glimmer Spear and what is its cooldown?", "level and cooldown of Glimmer Spear", "what level is Glimmer Spear? and its cooldown?",
+    "why is Glimmer Spear level 22", "compare the level of Glimmer Spear to Frostbolt", "what level is Glimmer Spear or Cinder Skin", "tell me everything about the level of Glimmer Spear as a Tinker who wants to know all of the things about it right now please",
+  ]) assert.equal(await compose(q, rows), null, q);
+  assert.ok("tell me everything about the level of Glimmer Spear as a Tinker who wants to know all of the things about it right now please".split(" ").length > GAME_FACTS_COMPOSE_MAX_WORDS);
+});
+
+// ---- finding 6: the claim ---------------------------------------------------------------------------------------------------------------------------------------
+test("a claim with a link, a discord invite, an empty value, a value that is only part of a number, or another number is not composed", async () => {
+  const q = "what level is Glimmer Spear";
+  for (const [claim, value] of [
+    ["Glimmer Spear requires level 22. See http://evil.test/x", "22"], ["Glimmer Spear requires level 22, discord.gg/abc", "22"], ["Glimmer Spear requires a level.", ""], ["Glimmer Spear requires level 22 (30 at rank 2).", "2"],
+    ["Glimmer Spear requires level 22.", "2"], ["Glimmer Spear requires level 22. @everyone", "22"], ["Glimmer Spear `requires` level 22.", "22"], ["Glimmer Spear requires level 22 on evil.example.", "22"],
+  ]) assert.equal(await compose(q, [{ ...LEVEL, claim, value }]), null, `${claim} / ${JSON.stringify(value)}`);
+  assert.equal(composeTableAnswer(q, { rows: [{ ...LEVEL, id: "bad id" }], doNotSay: [], cut: false, groups: 1 }), null);
+  assert.equal(composeTableAnswer(q, { rows: [{ ...LEVEL, verdict: "wrong" }], doNotSay: [], cut: false, groups: 1 }), null);
+});
+
+test("the composer reads the reader's own filtered rows: a secret-shaped row is never composed", async () => {
+  const leaky = { ...LEVEL, claim: "Glimmer Spear requires level 22. Bearer abcdefghijklmnopqrstuvwxyz0123456789ABCDEF" };
+  assert.equal(await compose("what level is Glimmer Spear", [leaky]), null);
+});
+
+// ---- the contract between the lookup and the composer --------------------------------------------------------------------------------------------------------
+test("without the lookup's proof (cut false, one name group) the composer declines; a do-not-state row and a missing rank decline", () => {
+  const ok = { rows: [LEVEL], doNotSay: [], cut: false, groups: 1 };
+  assert.equal(text(composeTableAnswer("what level is Glimmer Spear", ok)), "**Glimmer Spear requires level 22.** [spelllevels:301]");
+  for (const bad of [{ ...ok, cut: true }, { ...ok, cut: undefined }, { ...ok, groups: 2 }, { ...ok, groups: 0 }, { ...ok, groups: undefined }, { ...ok, rows: [] }, { ...ok, doNotSay: [{ claim: "Glimmer Spear requires level 5." }] }, { ...ok, rankMissing: true }, { ...ok, failed: true }, null, undefined]) {
+    assert.equal(composeTableAnswer("what level is Glimmer Spear", bad), null, JSON.stringify(bad));
   }
-  assert.equal(composeTableAnswer("what level is Glimmer Spear", res([{ ...LEVEL, id: "bad id" }])), null);
-  assert.equal(composeTableAnswer("what level is Glimmer Spear", res([{ ...LEVEL, verdict: "wrong" }])), null);
+  const other = row("spelllevels:304", "spell_level", "Cinder Skin", "Cinder Skin requires level 10.", "10");
+  assert.equal(composeTableAnswer("what level is Glimmer Spear", { ...ok, rows: [LEVEL, other] }), null, "two subjects");
 });
 
-test("the table-figure kinds by question words", () => {
-  const k = (q) => tableFigureKinds(q).join(",");
-  assert.equal(k("how many seconds does Glimmer Spear take to cast"), "spell_cast_time");
-  assert.equal(k("how much mana does Glimmer Spear cost"), "spell_mana_cost");
-  assert.equal(k("how many ranks does the talent have"), "trait_max_ranks");
-  assert.equal(k("how many points must be spent before the talent can be learned"), "trait_points_required");
-  assert.equal(k("which talent has to be taken before it"), "trait_prereq");
-  assert.equal(k("who tanks tonight"), "");
+test("the question must name the entity of the row, once", () => {
+  const ok = { rows: [LEVEL], doNotSay: [], cut: false, groups: 1 };
+  assert.equal(composeTableAnswer("what level is it", ok), null);
+  assert.equal(composeTableAnswer("what level is Glimmer", ok), null);
+  assert.equal(composeTableAnswer("what level is Glimmer Spear Glimmer Spear", ok), null);
+});
+
+test("the known shapes, by kind (class names allowed in the talent shapes)", () => {
+  const k = (q, s) => tableFigureKind(q, s);
+  assert.equal(k("how many seconds does Glimmer Spear take to cast", "glimmer spear"), "spell_cast_time");
+  assert.equal(k("how much mana does Glimmer Spear cost", "glimmer spear"), "spell_mana_cost");
+  assert.equal(k("In the Druid talent tree, how many ranks does Glimmer Spear have?", "glimmer spear"), "trait_max_ranks");
+  assert.equal(k("Hunter talent Glimmer Spear: how many points do you need to have spent in the tree first?", "glimmer spear"), "trait_points_required");
+  assert.equal(k("Which Rogue talent do you need to take first before you can learn Glimmer Spear?", "glimmer spear"), "trait_prereq");
+  assert.equal(k("who tanks tonight", "glimmer spear"), null);
+  assert.equal(k("What is the cooldown of Spicy!, in seconds?", "spicy"), "spell_cooldown");
+  assert.equal(k("Bite!: how long is its cooldown (in seconds)?", "bite"), "spell_cooldown");
 });
 
 // ---- the ask path ----------------------------------------------------------------------------------------------------------------------------------
