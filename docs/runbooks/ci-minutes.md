@@ -1,6 +1,6 @@
 # Runbook: CI minutes (lean by default)
 
-Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `security.yml`, `nightly-production.yml` (Lighthouse moved there from `lighthouse.yml`, removed). `deploy-cloudflare.yml` is unchanged (about 1 minute per merge).
+Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `security.yml`, `nightly-production.yml` (Lighthouse moved there from `lighthouse.yml`, removed). `deploy-cloudflare.yml` skips pushes that change only docs, tests, markdown or tools it never runs (`on.push.paths-ignore`; rules and queueing: `rollback.md`, "When a push deploys"). Cross-engine QA (`cross-engine.yml`) already runs only on a daily schedule and by hand, never per push or PR.
 
 ## Cost model
 
@@ -37,6 +37,7 @@ Behaviour of the labels:
 - Put `ci-full` on a PR only when it is final: reviewed, rebased, no pushes expected. Then wait for the gate comment.
 - Remove the label after the merge decision if the PR is not merging yet and you need the slot; the passed comment for that head sha stays.
 - Docs-only PRs need no label: they get `### Preview tests: passed (<sha7>)` with a `passed (docs only)` line from the light run.
+- Light path (`tools/docs-only.mjs`, output `docs_only`): besides docs, a PR whose every file is under `tests/unit/` or is a tool no workflow, deploy, bundle or browser test runs (`LIGHT_TOOL_FILES`, `LIGHT_TOOL_DIRS`: replay, shadow-ask, cost-model, restore and export helpers, ...) gets no preview and the gate comment `passed (docs only)` from unit and stamps. The unit job covers those files. Any other path forces the full rules. No workflow-level `paths` filter is used on Preview Tests or PR Preview, so the checks always report; only job-level `if` on the scope output skips jobs, and a skipped job counts as passing for required checks.
 - `ci-scope` forces the browser and layout jobs for any change under `.github/`, `tools/`, `infrastructure/wrangler*`, any `package*.json`, and the site paths. Renames count on both sides. An empty list or an unknown path shape also forces them. A bug there is a silent gate bypass, so `tests/unit/ci-scope.test.mjs` covers each rule.
 
 ## The merge gate (contract for `merge-if-green`)
