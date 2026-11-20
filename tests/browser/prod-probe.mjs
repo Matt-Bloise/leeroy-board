@@ -104,7 +104,7 @@ const MEMBER_SLUGS = new Set(party.members.map((m) => slugOf(m.name)));
 {
   // Every roster-derived token of 3+ characters: the full name, the slug, each word of the name and each component of a compound slug, matched case-insensitively.
   const tokens = [...new Set(party.members.flatMap((m) => { const n = String(m.name || "").trim(), sl = slugOf(n); return [n, sl, ...n.split(/[^A-Za-z0-9]+/), ...sl.split("-")]; }).map((t) => t.trim()).filter((t) => t.length >= 3))].sort((a, b) => b.length - a.length);
-  if (tokens.length) { const re = new RegExp(tokens.map((t) => t.split("").map((ch) => (/[A-Za-z0-9 _-]/.test(ch) ? ch : "\\" + ch)).join("")).join("|"), "gi"); scrub = (t) => String(t).replace(re, "<member>"); }
+  if (tokens.length) { const re = new RegExp("(?<![A-Za-z0-9])(?:" + tokens.map((t) => t.split("").map((ch) => (/[A-Za-z0-9 _-]/.test(ch) ? ch : "\\" + ch)).join("")).join("|") + ")(?![A-Za-z0-9])", "gi"); /* whole words only: a short name must not turn "members" into "m<member>s" */ scrub = (t) => String(t).replace(re, "<member>"); }
   // Nothing the probe prints (console.log or console.error) may carry a roster token, wherever the line comes from.
   for (const m of ["log", "error", "warn"]) { const orig = console[m].bind(console); console[m] = (...a) => orig(...a.map((x) => (typeof x === "string" ? scrub(x) : x))); }
   { const append = fs.appendFileSync; fs.appendFileSync = (f, d, ...r) => append(f, typeof d === "string" ? scrub(d) : d, ...r); } // the step summary too
