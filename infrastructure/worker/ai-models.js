@@ -18,7 +18,8 @@ import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./ind
 import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
 import { anthropicAuth, anthropicAvailable, scrubSecrets, scrubError, clearStoreKey, gatewayReady } from "./ai-keys.js";
-import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
+import { loadPersona, buildSystemPrompt, buildSystemPromptParts, pickLine } from "./persona.js";
+import { legacyOn } from "./flags.js";
 import { loadConfigKey } from "./config.js";
 import { reserveRow, reconcileRow, estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
@@ -488,7 +489,7 @@ export function thinkingOffFor(model) {
   return null;
 }
 
-export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, modelOverride = null, wantUsage = false, beforeSend = null }) {
+export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, modelOverride = null, wantUsage = false, beforeSend = null, systemCachePrefix = "" }) {
   const auth = await anthropicAuth(env);
   if (auth.mode === "none") {
     throw new Error("Anthropic credential is not configured on the Cloudflare Worker (BYOK, Secrets Store binding or ANTHROPIC_API_KEY)");
@@ -503,7 +504,13 @@ export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep,
     model,
     max_tokens: maxTokens,
     ...(thinkingOffFor(model) ? { thinking: thinkingOffFor(model) } : {}),
-    system: [
+    // PROMPT_PREFIX_ORDER: when the caller names a stable prefix and the prompt really starts with it, the prefix is its own cached block and the variable rest follows uncached; any mismatch sends one block as before.
+    system: !wantUsage && systemCachePrefix && systemPrompt.length > systemCachePrefix.length && systemPrompt.startsWith(`${systemCachePrefix}\n\n`)
+      ? [
+          { type: "text", text: systemCachePrefix, cache_control: { type: "ephemeral" } },
+          { type: "text", text: systemPrompt.slice(systemCachePrefix.length + 2) },
+        ]
+      : [
       {
         type: "text",
         text: systemPrompt,
@@ -797,7 +804,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, hardDeadlineAt = null }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, hardDeadlineAt = null , systemCachePrefix = ""}) {
   if (modelOverride && !modelAllowed(provider, modelOverride)) {
     throw new Error(`model ${String(modelOverride).slice(0, 60)} is not allowed for provider ${provider}`);
   }
@@ -880,7 +887,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
       });
     case "claude":
     default:
-      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, maxTokens });
+      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, maxTokens, systemCachePrefix });
   }
 }
 
@@ -977,6 +984,7 @@ export function publicAskError(err) {
 const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13)) : String(id));
 
 const MAX_RANK_PASSES = 4; // the question itself, one more for a follow-up's combined retry, and the abstain page lookups (class + two professions) share this; a plain abstain keeps full coverage, an opener that abstains gets class + one profession
+export const promptPrefixOrderOn = (env) => legacyOn(env, "PROMPT_PREFIX_ORDER");
 export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null, research = false, priorTurns = null, researchReal = false, groupMemory = null, gameFacts = false }) {
   const isCoach = journey === "guided" && share !== true;
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
@@ -1141,6 +1149,16 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const personaCap = Number(persona && persona.format && persona.format.chatMaxChars);
     // Research mode with nothing in the library: the research rules go after VOICE_RULE and override the "only from LIBRARY" lines for this question.
     systemPrompt = `${systemPrompt}\n\n${PERSONALISE_RULE}\n\n${VOICE_RULE}${research && abstain ? `\n\n${RESEARCH_RULES}` : ""}${research && (abstain || !usePersona || (personaCap > 0 && personaCap < RESEARCH_HARD_CHARS)) ? `\n\n${RESEARCH_LENGTH_OVERRIDE}` : ""}\n\n${FENCE_RULE}${groupText ? `\n\n${GROUP_MEMORY_RULE}` : ""}`;
+    // PROMPT_PREFIX_ORDER (off by default; the legacy Claude path of a production prompt only, never research or an evaluation variant): the same parts in a new order, the stable ones first, so the stable block
+    // can be sent as its own cached system block (callAnthropicClaude). Off or unset: byte-identical to before. See docs/runbooks/prompt-prefix.md.
+    let systemCachePrefix = "";
+    if (promptPrefixOrderOn(env) && usePersona && promptVariant === "production" && !research) {
+      const parts = buildSystemPromptParts(persona, { journey, question, partySummary, libraryStamp, isCoach, coachPrompt: COACH_PROMPT });
+      const stableText = [...parts.stable, PERSONALISE_RULE, VOICE_RULE, FENCE_RULE].join("\n\n");
+      const variableText = [...parts.variable, ...(groupText ? [GROUP_MEMORY_RULE] : [])].join("\n\n");
+      systemPrompt = variableText ? `${stableText}\n\n${variableText}` : stableText;
+      systemCachePrefix = stableText;
+    }
     const systemBase = systemPrompt; // the table-fact rules (GAME_FACTS_READ) are appended to it below, after the request is sized
 
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.
@@ -1198,7 +1216,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     if (gfTrace) gfTrace.used = gfActive;
     const tableAnswer = gf && gf.res && gameFactsComposeOn(env) ? composeTableAnswer(question, gf.res) : null; // GAME_FACTS_COMPOSE: the row is the answer; null = the model answers as before
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, ...(gfActive ? { gameFactIds: gf.ids, gameFactGround: gf.ground } : {}), ...(gfTrace ? { gfTrace } : {}), ...(tableAnswer ? { tableAnswer } : {}), abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, ...(systemCachePrefix ? { systemCachePrefix } : {}), userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, ...(gfActive ? { gameFactIds: gf.ids, gameFactGround: gf.ground } : {}), ...(gfTrace ? { gfTrace } : {}), ...(tableAnswer ? { tableAnswer } : {}), abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1503,6 +1521,7 @@ export async function answerWithAi({
         systemPrompt: sendSystem,
         userPrompt: sendUser,
         deep,
+        ...(!(priv && priv.ok) && inputs.systemCachePrefix ? { systemCachePrefix: inputs.systemCachePrefix } : {}),
         cacheKey,
         metadata,
         budgetKeys: budget,
