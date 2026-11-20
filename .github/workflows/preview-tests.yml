@@ -160,7 +160,11 @@ jobs:
           RESP=""
           if printf '%s' "$SUB" | grep -qE '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'; then
             echo "::add-mask::$SUB"
-            echo "enc=$(printf '%s' "$SUB" | openssl enc -aes-256-cbc -pbkdf2 -salt -a -A -pass env:PREVIEW_ADMIN_TOKEN)" >> "$GITHUB_OUTPUT"
+            # Key = HMAC-SHA256(preview admin token, fixed label) so the ciphertext does not verify the raw token; pbkdf2, 200,000 iterations, random salt. Fails closed when the secret is shorter than 32 characters (length only, never printed).
+            if [ "${#PREVIEW_ADMIN_TOKEN}" -lt 32 ]; then echo "::error::BOARD_PREVIEW_ADMIN_TOKEN must be a random value of at least 32 characters."; exit 1; fi
+            PASS=$(printf '%s' 'leeroy-preview-subdomain-v1' | openssl dgst -sha256 -hmac "$PREVIEW_ADMIN_TOKEN" -r | cut -d' ' -f1)
+            echo "enc=$(printf '%s' "$SUB" | PASS="$PASS" openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -A -pass env:PASS)" >> "$GITHUB_OUTPUT"
+            PASS=""
           else
             echo "::error::Could not read the account workers.dev subdomain from the Cloudflare API (GET accounts/<id>/workers/subdomain). The token needs the account permission Workers Scripts: Read (the deploy token has Edit). Nothing was guessed."
             exit 1

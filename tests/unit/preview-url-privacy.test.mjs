@@ -58,7 +58,10 @@ test("the preview-secrets job reads the subdomain, masks it first and hands on o
   assert.equal(job.outputs.sub_enc, "${{ steps.sub.outputs.enc }}");
   assert.equal(WF["preview-tests"].doc.jobs.preview.outputs.sub_enc, "${{ needs.preview-secrets.outputs.sub_enc }}");
   assert.match(step.run, /Workers Scripts: Read/);
-  for (const line of step.run.split("\n")) if (/^\s*echo\b/.test(line) && /\$\{?(RESP|SUB)\b/.test(line)) assert.match(line, /::add-mask::\$SUB|enc=\$\(printf '%s' "\$SUB" \| openssl enc -aes-256-cbc -pbkdf2 -salt -a -A -pass env:PREVIEW_ADMIN_TOKEN\)" >> "\$GITHUB_OUTPUT"/, `only the mask and the encrypted output mention it: ${line.trim()}`);
+  for (const line of step.run.split("\n")) if (/^\s*echo\b/.test(line) && /\$\{?(RESP|SUB)\b/.test(line)) assert.match(line, /::add-mask::\$SUB|enc=\$\(printf '%s' "\$SUB" \| PASS="\$PASS" openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -A -pass env:PASS\)" >> "\$GITHUB_OUTPUT"/, `only the mask and the encrypted output mention it: ${line.trim()}`);
+  assert.match(step.run, /openssl dgst -sha256 -hmac "\$PREVIEW_ADMIN_TOKEN"/, "the passphrase is an HMAC of a fixed label, not the raw token");
+  assert.match(step.run, /\$\{#PREVIEW_ADMIN_TOKEN\}" -lt 32/, "fails closed on a short secret");
+  assert.ok(!/-pass env:PREVIEW_ADMIN_TOKEN/.test(step.run), "the raw secret is never the passphrase");
 });
 
 test("every job of Preview Tests that talks to the preview Worker or uploads files resolves the host itself first, and scrubs before it uploads", () => {
@@ -72,6 +75,9 @@ test("every job of Preview Tests that talks to the preview Worker or uploads fil
     const r = steps[resolve];
     assert.match(r.env.PREVIEW_SUBDOMAIN_ENC, name === "preview" ? /needs\.preview-secrets\.outputs\.sub_enc/ : /needs\.preview\.outputs\.sub_enc/);
     for (let k = 0; k < steps.length; k++) assert.ok(!JSON.stringify(steps[k]).includes("secrets.CLOUDFLARE"), `${name}: the Cloudflare token is not in this job`);
+    assert.match(r.env.PREVIEW_KEY, /secrets\.BOARD_PREVIEW_ADMIN_TOKEN/);
+    for (let k = 0; k < steps.length; k++) if (k !== resolve) assert.ok(!JSON.stringify(steps[k].env || {}).includes("PREVIEW_KEY"), `${name}: the key is on the decrypt step only, never job-wide`);
+    assert.ok(!JSON.stringify(WF["preview-tests"].doc.jobs[name].env || {}).includes("BOARD_PREVIEW_ADMIN_TOKEN") || name === "preview-secrets", `${name}: no job-wide secret`);
     for (let k = 0; k < steps.length; k++) {
       if (!(steps[k].uses && /upload-artifact/.test(steps[k].uses))) continue;
       assert.ok(k > resolve, `${name}: the upload comes after the resolve`);
@@ -107,8 +113,9 @@ test("tools/preview-worker-url.sh: decrypts, masks first, never echoes the host,
   assert.ok(src.indexOf("::add-mask::$SUB") < src.indexOf('echo "::add-mask::$HOST"'));
   assert.ok(!/echo[^\n]*\$(SUB|HOST)(?!")/.test(src.replace(/echo "::add-mask::[^"]*"/g, "")), "no echo of the subdomain or the host outside the mask commands");
   const dir = mkdtempSync(path.join(tmpdir(), "pwu-"));
-  const KEY = "fixture-preview-key";
-  const enc = (v, key = KEY) => spawnSync("openssl", ["enc", "-aes-256-cbc", "-pbkdf2", "-salt", "-a", "-A", "-pass", "env:K"], { input: v, encoding: "utf8", env: { ...process.env, K: key } }).stdout.trim();
+  const KEY = "fixture-preview-key-0123456789abcdef-long"; // at least 32 characters
+  const pass = (key) => spawnSync("openssl", ["dgst", "-sha256", "-hmac", key, "-r"], { input: "leeroy-preview-subdomain-v1", encoding: "utf8" }).stdout.split(" ")[0];
+  const enc = (v, key = KEY) => spawnSync("openssl", ["enc", "-aes-256-cbc", "-pbkdf2", "-iter", "200000", "-salt", "-a", "-A", "-pass", "env:K"], { input: v, encoding: "utf8", env: { ...process.env, K: pass(key) } }).stdout.trim();
   const run = (cipher, pr = "425", key = KEY) => { const envf = path.join(dir, "env.txt"); writeFileSync(envf, ""); const r = spawnSync("bash", [path.join(ROOT, "tools/preview-worker-url.sh"), pr], { encoding: "utf8", env: { ...process.env, PREVIEW_SUBDOMAIN_ENC: cipher, PREVIEW_KEY: key, GITHUB_ENV: envf } }); return { ...r, env: readFileSync(envf, "utf8") }; };
   const cipher = enc("fixture-sub");
   assert.ok(cipher && !cipher.includes("fixture-sub") && !Buffer.from(cipher, "base64").toString("latin1").includes("fixture-sub"), "the ciphertext does not contain the subdomain in any plain form");
@@ -119,14 +126,23 @@ test("tools/preview-worker-url.sh: decrypts, masks first, never echoes the host,
   assert.deepEqual(lines.filter((l) => l.startsWith("::add-mask::")), ["::add-mask::fixture-sub", "::add-mask::leeroy-brain-pr-425.fixture-sub.workers.dev", "::add-mask::https://leeroy-brain-pr-425.fixture-sub.workers.dev"]);
   assert.ok(!lines.filter((l) => !l.startsWith("::add-mask::")).join("\n").includes("fixture-sub"), "the subdomain appears nowhere but in the mask commands");
   assert.equal(ok.env, "PREVIEW_SUBDOMAIN=fixture-sub\nPREVIEW_API=https://leeroy-brain-pr-425.fixture-sub.workers.dev\n");
-  for (const bad of ["", "!!!", enc("bad sub!"), enc("-x"), cipher.slice(0, 20)]) {
+  for (const bad of ["", "!!!", enc("bad sub!"), enc("-x"), cipher.slice(0, 20), Buffer.from("x".repeat(40)).toString("base64")]) {
     const r = run(bad);
     assert.equal(r.status, 1, JSON.stringify(bad));
     assert.match(r.stdout, /::error::/);
     assert.ok(!r.stdout.includes("::add-mask::"), "nothing guessed, nothing masked");
     assert.equal(r.env, "");
   }
-  assert.equal(run(cipher, "425", "another-key").status, 1, "the wrong key decrypts to nothing usable");
+  assert.equal(run(cipher, "425", "another-key-0123456789abcdef-long-x").status, 1, "the wrong key decrypts to nothing usable");
+  for (const short of ["", "short", "x".repeat(31)]) {
+    const r = run(cipher, "425", short);
+    assert.equal(r.status, 1, `a secret of ${short.length} characters is refused`);
+    assert.match(r.stdout, /::error::The preview secret needed to unlock the Worker host is missing or too short/);
+    assert.ok(!r.stdout.includes("fixture-sub") && !r.stdout.includes("::add-mask::") && r.env === "", "fails closed, names no host");
+  }
+  assert.ok(!/-pass env:PREVIEW_KEY/.test(src), "the raw secret is never the passphrase");
+  assert.match(src, /-iter 200000/);
+  assert.match(src, /openssl dgst -sha256 -hmac "\$PREVIEW_KEY"/);
   assert.equal(run(cipher, "x1").status, 2, "a non-numeric PR number is refused");
 });
 
