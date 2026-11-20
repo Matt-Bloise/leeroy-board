@@ -2,7 +2,7 @@
 
 Status: proposal, docs only. Written 2026-11-18. Nothing here changes a Worker var, secret, Discord setting or production workflow.
 
-Goal (Matt): Cloudflare alone runs Leeroy, so the PC session and `bot.js` can be switched off and friends notice no difference.
+Goal (the owner): Cloudflare alone runs Leeroy, so the PC session and `bot.js` can be switched off and friends notice no difference.
 
 Evidence classes used in every claim:
 
@@ -23,7 +23,7 @@ No member names, ids, friend text or config values appear here. `config.json` wa
 
 ## 1. Gap table
 
-Legend. Has it: yes / partial / no. Who: C = code only; J = Josh (owns the Cloudflare account); M = Matt, read-only role (can read, cannot change the Cloudflare account); P = Developer Portal (app owner). Proof: always "shadow": the Worker computes and records the answer or action without posting, then it is compared with what the local side did (method per slice in section 4).
+Legend. Has it: yes / partial / no. Who: C = code only; J = the account admin (owns the Cloudflare account); M = the owner, read-only role (can read, cannot change the Cloudflare account); P = Developer Portal (app owner). Proof: always "shadow": the Worker computes and records the answer or action without posting, then it is compared with what the local side did (method per slice in section 4).
 
 ### 1a. Gateway events
 
@@ -108,8 +108,8 @@ Heartbeat design: DO class `GatewayLink` (new `new_sqlite_classes` migration), `
 - Cron: `* * * * *` (every minute) is supported; UTC; changes may take up to 15 min to propagate and runs can be missed meanwhile. [docs https://developers.cloudflare.com/workers/configuration/cron-triggers/]
 - Cron triggers per account: 5 Free, 250 Paid. CPU per cron invocation: 10 ms Free, 30 s Paid (schedule under 1 hour). Wall clock for cron or alarm: 15 min. `waitUntil` extension: 30 s. Free daily requests: 100,000. [docs https://developers.cloudflare.com/workers/platform/limits/]
 - DO alarm: one alarm per object, at-least-once, minimum interval not stated, handler duration not stated on the alarm page (15 min per the limits page). [docs alarms URL above]
-- Current use: two cron triggers already (`0 */6 * * *`, `* * * * *`, `wrangler.toml`), "second of five" per its comment. Whether other Workers on the account use triggers: unv (Josh).
-- The 10 ms CPU line is a real risk for the minute cron on Free. The existing cron already does D1 work and sweeps, so either the account is on Paid or the work is mostly I/O wait: unv (Josh can read the plan).
+- Current use: two cron triggers already (`0 */6 * * *`, `* * * * *`, `wrangler.toml`), "second of five" per its comment. Whether other Workers on the account use triggers: unv (the account admin).
+- The 10 ms CPU line is a real risk for the minute cron on Free. The existing cron already does D1 work and sweeps, so either the account is on Paid or the work is mostly I/O wait: unv (the account admin can read the plan).
 
 Recommendation: keep one minute cron as the single dispatcher (moments, sign-up jobs, catch-up every 10th minute, forum refresh every 15th, digest check, card flush `index.js:2083,2094`) so no new trigger slot is used. Use DO alarms only for per-item delays that need sub-minute or per-event timing: still-on-it (12 min), launch-stub delete (4 s), gateway watchdog. The local moments tick is 20 s; the Worker's is 60 s: acceptable only if the moments schedule has no sub-minute precision requirement [unv].
 
@@ -172,13 +172,13 @@ Brief was public-safe with roles only. Each point has a disposition; nothing gat
 | 11 | Both PC and Worker may hold gateway connections at once (Gemini) | Shadow can run alongside; the Worker never posts in shadow. Presence updates are not sent by the Worker. |
 | 12 | Interactions-only ranks lowest-risk but misses passive mentions and replies (both) | Kept as a fallback only; cannot meet 'friends notice no difference' if friends tag the bot. |
 
-## 3. Josh / Matt only list
+## 3. Account admin / owner only list
 
-Matt has a read-only role on Cloudflare, so everything that changes the account needs Josh. Developer Portal items need whoever owns the Discord application.
+The owner has a read-only role on Cloudflare, so everything that changes the account needs the account admin. Developer Portal items need whoever owns the Discord application.
 
 | Item | Needed for | Who |
 |---|---|---|
-| New Durable Object class binding `GatewayLink` and a migration tag `v2` with `new_sqlite_classes` in `wrangler.toml`; the file is code, but the deploy and any DO enablement on the account is Josh's | Gateway DO | code PR (C), deploy by J |
+| New Durable Object class binding `GatewayLink` and a migration tag `v2` with `new_sqlite_classes` in `wrangler.toml`; the file is code, but the deploy and any DO enablement on the account is the account admin's | Gateway DO | code PR (C), deploy by J |
 | Workers plan change to Paid if the account is on Free (money item: the gateway Durable Object needs it; see 2a cost). Not to be changed without the owner's decision | Gateway DO duration headroom | J changes, M/owner decides |
 | Confirm Workers plan (Free or Paid) and current cron trigger usage on the account | Cron CPU limit (10 ms Free), trigger slots, DO duration headroom | J reads, M can ask |
 | Flag flips in `[vars]` (`GATEWAY`, `MOMENTS_ENABLED`, `CARDS_ENABLED`, `ANSWER_UX`, ...) or Flagship flags | every slice | J (deploy) or the owner per `docs/runbooks/flags.md` |
@@ -187,6 +187,7 @@ Matt has a read-only role on Cloudflare, so everything that changes the account 
 | Privileged intents: Message Content only if reply-without-ping mentions must be read; Server Members not needed. Guild Message Reactions and Direct Messages are not privileged | gateway | P |
 | Cron trigger additions (none planned; the single minute cron is reused) | timers | J |
 | Anything in the Cloudflare dashboard: AI Gateway key, Secrets Store, D1 database id, Pages | unchanged | J |
+| Salts, a two-step decision. Step 1: the account admin compares the live `USER_SALT` and `KEY_SALT` Worker secrets with the values in the repository history or old CI logs (the old logs were removed on 2026-11-19), by deriving a known member key and checking it still matches. Step 2, only if step 1 says live equals the historic value: rotate `KEY_SALT` following `docs/runbooks/rotate-salts.md`; members are locked out until their keys are re-issued, so freeze deploys first. Reasoning: the old values are public in history, so a live value equal to them is attackable offline; a live value that already differs needs no rotation; rotating costs every member a key re-issue, so it is not done blind | Salt exposure (`docs/runbooks/secrets.md`, weakness 1) | J decides and rotates, M informed |
 | Stopping the PC bot, the forwarder and the local session at cutover | cutover | M (host), after a written go/no-go |
 
 ## 4. Proposed slice order (most local dependence removed first)

@@ -96,22 +96,20 @@ After any rotation: check `gh run list`, `GET /api/health`, and one call that us
 
 ## Known weaknesses today
 
-Each row was verified against the file and line shown, or the live repository setting, on 2026-11-02.
+Re-checked 2026-11-19 against the repository, `gh api` and `git log`; the 2026-11-02 list is replaced by this one.
 
-| # | Weakness | Evidence | Impact | Suggested fix |
-| :-- | :--- | :--- | :--- | :--- |
-| 1 | `KEY_SALT` and `USER_SALT` were public plain variables (fixed in Q01) | They are now Worker secrets set by both deploy workflows. The previous values remain in git history and are public | Hashes made under the old values can be attacked offline with a known salt | Rotate both to fresh private values with the plan above when the owner chooses, which re-issues member keys |
-| 2 | Preview workflow passes `BOARD_ADMIN_TOKEN` as a plain `--var` | `pr-preview-cloudflare.yml:236-237` | The production admin value becomes a plaintext variable on every preview Worker (visibility in the dashboard is by Cloudflare behavior, unverified here), and wrangler may print binding values in the deploy log (unverified) | Use a distinct preview-only admin token, delivered with `wrangler secret put` |
-| 3 | Same-repository PR workflows can read production secrets | Trigger `pull_request` (`pr-preview-cloudflare.yml:3-9`); job `if` allows same-repo heads (`:41`); env uses `CLOUDFLARE_API_TOKEN` (`:44-45`); `preview-tests.yml:97` uses `BOARD_ADMIN_TOKEN`; PR code runs `npm install`, `seed-d1.mjs`, `wrangler.toml` from the branch (`:53-63,204-226`). `pull_request_target` is not used (searched `.github`). | Anyone who can push a branch to this repository can change workflow or script files in a PR and exfiltrate the Cloudflare token or admin token. Fork PRs do not receive secrets by GitHub default, which is the intended boundary | Restrict who has write access; use environments with required reviewers for production secrets; use a preview-only Cloudflare token scoped to preview resources |
-| 4 | No branch protection on `master` | `gh api repos/<owner>/leeroy-board/branches/master/protection` returned 404 "Branch not protected" | Anyone with write access can push to `master` and trigger a production deploy without review or tests. The "rated 6 or higher waits for the owner" rule in `CONTRIBUTING.md:7` is process only | Enable branch protection or a ruleset: required PR, required `Preview Tests` check, owner approval, no force-push |
-| 5 | One broad Cloudflare token serves production deploy, previews and teardown | `deploy-cloudflare.yml:17`, `pr-preview-cloudflare.yml:44,338`; teardown deletes Workers and D1 databases by name (`:363,369`) | A bug in the name derivation could delete production resources | Separate tokens per environment; add a guard that the target name starts with `leeroy-brain-pr-` |
-| 6 | Production workflow has no `permissions:` block | Only `pr-preview-cloudflare.yml:15` and `preview-tests.yml:11` declare one (grep); repository default workflow permission is `write` (GitHub API, 2026-11-02) | The deploy job's `GITHUB_TOKEN` is broader than needed | Add `permissions: contents: read` to `deploy-cloudflare.yml`; set the repo default to read |
-| 7 | Actions pinned by tag, not commit sha | `actions/checkout@v4` (`deploy-cloudflare.yml:24`), `actions/github-script@v7` (`pr-preview-cloudflare.yml:287`) | A moved tag runs new code with secrets in scope | Pin to full commit shas |
-| 8 | Secret list drift | Workflow syncs 11 names including `DISCORD_BOT_TOKEN` (`deploy-cloudflare.yml:261,263`); `infrastructure/README.md:102` lists 10 | Rotation inventories miss one | Fixed in this runbook; update the README |
-| 9 | `DISCORD_CLIENT_ID` has no source of truth | See "Read by the code but not set"; `account.js:86` vs `index.js:1144` | Two fallback sites hold the same public id | Set it explicitly in `wrangler.toml` (it is not secret) and remove the divergent fallback |
-| 10 | Secrets removed from GitHub stay in the Worker | `deploy-cloudflare.yml:265` | Revoked credentials may remain live | Delete with `wrangler secret delete` during rotation |
-
-Items 2, 3 and 4 combine: a branch push opens a PR, the PR workflow runs with production credentials, and nothing blocks a direct push to `master`. Treat 3 and 4 as the first fixes before onboarding any additional contributor with write access.
+| # | Weakness | State now | Owner |
+| :-- | :--- | :--- | :--- |
+| 1 | `KEY_SALT` and `USER_SALT` were public plain variables | Fixed for the variables: Worker secrets since #73 (merged 2026-11-02), absent from `wrangler.toml`. Open: the old values remain in git history, so the salts are not yet rotated (`rotate-salts.md`) | the account admin |
+| 2 | Preview passed the production `BOARD_ADMIN_TOKEN` as a `--var` | Fixed in #140 and #147: previews use `BOARD_PREVIEW_ADMIN_TOKEN` and derived values (`pr-preview-cloudflare.yml` comment at line 363) | none |
+| 3 | Same-repository PR workflows read production secrets | Partly fixed (#147): production credentials moved to environment `production`. Open: `CLOUDFLARE_API_TOKEN`, `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` stay at repository level by decision (`ci-secrets.md`) | the owner, the account admin |
+| 4 | No branch protection on `master` | Fixed by a setting, not a PR: ruleset `master-required-checks` is active (required PR, status checks `unit`, `scope`, `stamps`, `report`, no deletion or force-push). Open: required approvals are 0, so no human review is enforced; the classic protection API still returns 404 | the owner |
+| 5 | One Cloudflare token for deploy, previews and teardown | Open by decision (`ci-secrets.md`, "Previews share the production Cloudflare token"); teardown derives names from `leeroy-brain-pr-<number>` but has no explicit prefix guard (unverified beyond reading the step) | the account admin |
+| 6 | Production workflow has no `permissions:` block | Fixed: `deploy-cloudflare.yml` declares `contents: read` (#140); the repository default workflow permission is `read` (`gh api repos/Matt-Bloise/leeroy-board/actions/permissions/workflow`) | none |
+| 7 | Actions pinned by tag | Fixed: every `uses:` in `.github/workflows` is a 40-character sha (`grep -n "uses:" .github/workflows/*.yml` shows no tag), introduced with #140 | none |
+| 8 | Secret list drift | Fixed in the docs: `ci-secrets.md` has the secret map and `infrastructure/README.md` names `DISCORD_BOT_TOKEN`; the count is unverified (`grep -c` the README list against the deploy loop) | none |
+| 9 | `DISCORD_CLIENT_ID` has no single source | Open: `account.js:81` and `index.js:1255` still hold the same literal fallback, nothing in `wrangler.toml` | the owner |
+| 10 | Secrets removed from GitHub stay in the Worker | Open: `deploy-cloudflare.yml` only runs `wrangler secret put`; no `secret delete` anywhere in `.github/workflows` | the account admin |
 
 ## Owner steps to turn on web login (Q18)
 

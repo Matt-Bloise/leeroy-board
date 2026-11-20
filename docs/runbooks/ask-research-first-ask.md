@@ -4,7 +4,7 @@ Status: DRAFT, prepared 2026-11-15. This runbook and the one-line flag change in
 
 ## The flip (one line)
 
-`infrastructure/wrangler.toml`, `[vars]`: `ASK_RESEARCH = "on"`. It is a `[vars]` flag, so it takes effect on deploy (Josh deploys). It is never on in a PR preview.
+`infrastructure/wrangler.toml`, `[vars]`: `ASK_RESEARCH = "on"`. It is a `[vars]` flag, so it takes effect on deploy (the account admin deploys). It is never on in a PR preview.
 
 Landed before this change: PR 339 (nonce tolerance, Sonnet-class compose), 348 (asker memory, length and advice restores), 370 (real names to Claude, RESEARCH_NAMES, the honest degraded chain, privacy page) and 371 (/say and the Discord command sync). PR 360 (tokenising conditions) is parked: `RESEARCH_NAMES = "tokenised"` keeps the tokeniser path available. `RESEARCH_NAMES` is already `"real"` in `[vars]`.
 
@@ -24,7 +24,7 @@ Set `ASK_RESEARCH = "off"` in `infrastructure/wrangler.toml` and deploy. The off
 1. Key: `ANTHROPIC_API_KEY` is an encrypted env secret on the leeroy-brain Worker (no Secrets Store binding, no BYOK). The resolver falls through to it; `tests/unit/ai-keys-env-secret.test.mjs` pins that. Do not paste the key anywhere.
 2. Model ids and prices: with that key, one live call per model id in `wrangler.toml` (`RESEARCH_CLAUDE_MODEL_FAST`, `RESEARCH_CLAUDE_MODEL_DEEP`, and the fallback ids) to confirm they exist and what they cost. The 5-5 ids are unverified.
 3. Latency: `tools/measure-claude-latency.mjs` against the real endpoint (see `research-latency.md`). Pass: compose p95 under 5 s, retry p95 under 2.5 s. The live run needs the owner's go because it spends tokens.
-4. Worker CPU: a throwaway preview deploy with the flag on (previews force it off), then read CPU time in Workers observability. Pass: median and p95 under 10 ms. Needs the owner's go and Josh.
+4. Worker CPU: a throwaway preview deploy with the flag on (previews force it off), then read CPU time in Workers observability. Pass: median and p95 under 10 ms. Needs the owner's go and the account admin.
 5. Monthly cap: confirm `RESEARCH_CLAUDE_MONTHLY_TOKENS` is a number the owner accepts.
 
 ## The first real ask (after the deploy)
