@@ -54,10 +54,11 @@ const COLS = "g.id AS id, g.kind AS kind, g.subject AS subject, g.subject_norm A
 const FROM = "FROM game_facts g JOIN game_fact_loads l ON l.id = g.load_id";
 const marks = (n) => Array.from({ length: n }, () => "?").join(", ");
 
-export function buildNameSql(keys, column, fetch, kindList = KIND_LIST) {
+// longestFirst (reader mode only): the SQL LIMIT cuts the LONGEST names last. Without an order the one-word window "wrath" (24 rows) crowded out "Bestial Wrath" (6 rows) in the 2026-11-19 replay.
+export function buildNameSql(keys, column, fetch, kindList = KIND_LIST, longestFirst = false) {
   if (!["subject_norm", "subject_base"].includes(column)) throw new Error("bad column");
   const base = column === "subject_base" ? " AND g.subject_base <> ''" : ""; // the partial index is usable only when the query says so
-  return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind IN (${kindList}) AND g.${column} IN (${marks(keys.length)})${base} AND ${VISIBLE} LIMIT ?`, binds: [...keys, fetch] };
+  return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind IN (${kindList}) AND g.${column} IN (${marks(keys.length)})${base} AND ${VISIBLE}${longestFirst ? ` ORDER BY LENGTH(g.${column}) DESC, g.id` : ""} LIMIT ?`, binds: [...keys, fetch] };
 }
 export function buildCuratedSql(fetch) {
   return { sql: `SELECT ${COLS} ${FROM} WHERE g.kind = 'curated' AND ${VISIBLE} LIMIT ?`, binds: [fetch] };
@@ -86,6 +87,15 @@ export function askedRank(tokens, win) {
   const after = read(tokens[win.start + win.len], tokens[win.start + win.len + 1]);
   if (after !== null) return after;
   return win.start >= 2 ? read(tokens[win.start - 2], tokens[win.start - 1]) : null;
+}
+
+// The per-name cap keeps the first row of EVERY kind before it fills up in order, so a name with a long rank ladder (Shadowburn: 12 level and mana rows) does not lose its rank-less talent rows. Order is kept.
+export function capPerName(rows, cap) {
+  if (rows.length <= cap) return rows;
+  const seen = new Set();
+  const firsts = rows.filter((r) => (seen.has(r.kind) ? false : (seen.add(r.kind), true)));
+  const keep = new Set([...firsts, ...rows.filter((r) => !firsts.includes(r))].slice(0, cap));
+  return rows.filter((r) => keep.has(r));
 }
 
 // A window that is the base of a row's name ("arcane spirit" for "arcane spirit iii") counts only when no rank follows it in the question: "Arcane Spirit II" must not return the rank III row on its own.
@@ -144,8 +154,8 @@ export async function lookupGameFactsChecked(env, question, { limit = 5, reader 
     const add = (list) => { for (const r of list) fetched.set(`${r.id}|${r.load_id || ""}|${r.build}`, r); };
     const fetchN = reader ? READER_ROW_LIMIT : 400;
     const kinds = reader ? ALL_KIND_LIST : KIND_LIST;
-    if (exact.length) add(await runAll(env, buildNameSql(exact, "subject_norm", fetchN, kinds)));
-    if (byBase.length) add(await runAll(env, buildNameSql(byBase, "subject_base", fetchN, kinds)));
+    if (exact.length) add(await runAll(env, buildNameSql(exact, "subject_norm", fetchN, kinds, reader)));
+    if (byBase.length) add(await runAll(env, buildNameSql(byBase, "subject_base", fetchN, kinds, reader)));
     const named = chooseNames(windows, [...fetched.values()]);
     const holds = [], wrong = [];
     let ambiguous = false, rankMissing = false;
@@ -159,7 +169,7 @@ export async function lookupGameFactsChecked(env, question, { limit = 5, reader 
         if (!mine.some((r) => rankOfRow(r) !== undefined)) { rankMissing = true; mine = []; }
       }
       mine = [...mine].sort((a, b) => (rankOfRow(a) ?? 1e9) - (rankOfRow(b) ?? 1e9) || KIND_RANK.get(a.kind) - KIND_RANK.get(b.kind) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      if (reader) mine = mine.slice(0, READER_PER_NAME);
+      if (reader) mine = capPerName(mine, READER_PER_NAME);
       const gh = mine.filter((r) => r.verdict === "holds"), gw = mine.filter((r) => r.verdict === "wrong");
       const perKind = new Map();
       for (const r of gh) perKind.set(r.kind, (perKind.get(r.kind) || 0) + 1);
