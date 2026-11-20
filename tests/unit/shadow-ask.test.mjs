@@ -628,7 +628,7 @@ test("shadowLimits: each var is honoured, as a string or a number", () => {
 test("shadowLimits: clamping, and hostile values fall back to the default, never to unlimited", () => {
   assert.equal(shadowLimits({ SHADOW_ASK_HOURLY: "500" }).hourly, 120);
   assert.equal(shadowLimits({ SHADOW_ASK_DAILY: "99999" }).daily, 600);
-  assert.equal(shadowLimits({ SHADOW_ASK_SUBCAP_PERCENT: "90" }).percent, 70);
+  assert.equal(shadowLimits({ SHADOW_ASK_SUBCAP_PERCENT: "90" }).percent, 60);
   assert.equal(shadowLimits({ SHADOW_ASK_SUBCAP_PERCENT: "0.01" }).percent, 0.1);
   for (const bad of ["", " ", "abc", "NaN", "Infinity", "-5", "0", "0.0", "-0", "1e3", "0x10", "+5", "5abc", "5 5", "1,000", "--1", "null", "undefined", NaN, Infinity, -Infinity, -1, 0, null, undefined, true, {}, [], [7], "9".repeat(400)]) {
     const l = shadowLimits({ SHADOW_ASK_HOURLY: bad, SHADOW_ASK_DAILY: bad, SHADOW_ASK_SUBCAP_PERCENT: bad });
@@ -707,7 +707,7 @@ test("wrangler.toml carries ONE limits var, SHADOW_ASK_LIMITS, with in-range par
     const [h, d, p] = [Number(m[1]), Number(m[2]), Number(m[3])];
     assert.ok(Number.isInteger(h) && h >= 1 && h <= 120, "hourly in range");
     assert.ok(Number.isInteger(d) && d >= h && d <= 600, "daily in range and not below hourly");
-    assert.ok(p >= 0.1 && p <= 70, "sub-cap percent in range");
+    assert.ok(p >= 0.1 && p <= 60, "sub-cap percent in range");
     assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: `${h}/${d}/${p}` }).hourly, h);
   } else assert.deepEqual(shadowLimits({}), { hourly: 6, daily: 20, percent: 2, fraction: 0.02 }, "absent var: the defaults");
   for (const doc of ["docs/runbooks/flags.md", "docs/runbooks/shadow-ask.md"]) for (const k of ["SHADOW_ASK_LIMITS"]) assert.ok(read(doc).includes("`" + k + "`"), `${k} in ${doc}`);
@@ -892,7 +892,7 @@ test("SHADOW_ASK_LIMITS: one var, three parts, each clamped on its own; absent, 
   assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: "60/100/5" }), { hourly: 60, daily: 100, percent: 5, fraction: 0.05 });
   assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: "" }), shadowLimits({}));
   assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: "x/y/z" }), shadowLimits({}));
-  assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: "500/99999/90" }), { hourly: 120, daily: 600, percent: 70, fraction: 0.7 });
+  assert.deepEqual(shadowLimits({ SHADOW_ASK_LIMITS: "500/99999/90" }), { hourly: 120, daily: 600, percent: 60, fraction: 0.6 });
   assert.equal(shadowLimits({ SHADOW_ASK_LIMITS: "40" }).hourly, 40, "a missing part takes its default");
   assert.equal(shadowLimits({ SHADOW_ASK_LIMITS: "40" }).daily, 40, "the default daily 20 is raised to the hourly 40");
   assert.equal(shadowLimits({ SHADOW_ASK_LIMITS: "60/100/5/9" }).percent, 2, "too many parts: the percent falls back to the default");
