@@ -2,7 +2,7 @@
 
 This page covers the `GROUP_MEMORY` flag: what is stored, where it lives, who can read it, how to inspect, export and erase it, how to turn it on, and how to roll it back.
 
-Owner decision (Matt, 2026-11-15): Leeroy's memory keeps everything from the group (full conversations, every turn, running bits, who said what, personal context) with no exclusion list and no consent gate, so Leeroy can use the friends' names and history naturally. Three lines stay because they protect the friends: the data lives in private storage only, it goes only to the paid Claude API, and it is read only for roster members.
+Owner decision (the owner, 2026-11-15): Leeroy's memory keeps everything from the group (full conversations, every turn, running bits, who said what, personal context) with no exclusion list and no consent gate, so Leeroy can use the friends' names and history naturally. Three lines stay because they protect the friends: the data lives in private storage only, it goes only to the paid Claude API, and it is read only for roster members.
 
 ## What is stored
 

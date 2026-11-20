@@ -2,7 +2,7 @@
 
 This page is the admin's checklist for the one-hour spike that decides whether a Durable Object can hold the Discord gateway connection (`docs/parity/worker-parity-gap-table.md`, sections 2a, 2f row 2, and 3). The kit lives in `tools/gateway-spike/` and is a separate worker, `leeroy-gateway-spike`. It has no D1, no AI binding, no routes, no cron, no vars, and none of the production secrets. It is not part of the production deploy (`deploy-cloudflare.yml` deploys from `infrastructure/`; `tools/pages-bundle.mjs` publishes a fixed list of top-level folders that does not include `tools/`; `tests/unit/gateway-spike.test.mjs` pins both).
 
-Who: the account admin (Josh). The spike needs a Cloudflare login that can deploy a Worker, and a Discord login that can create an application. Matt's role is read-only on Cloudflare, so Matt cannot run it.
+Who: the account admin. The spike needs a Cloudflare login that can deploy a Worker, and a Discord login that can create an application. The owner's role is read-only on Cloudflare, so the owner cannot run it.
 
 Not verified by the author: nothing in this kit was run against Discord or Cloudflare. Only the pure state machine was tested with a fake socket. Every statement below marked [not stated] is something the opened pages do not say; the spike exists to measure those.
 

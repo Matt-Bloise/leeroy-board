@@ -31,4 +31,4 @@ This page ranks what the old PC-hosted bot did against what the Worker does toda
 Partner DM intake, typing indicators, the wastebasket reaction, 5-second outbox polling, the Claude-session brain, the Windows scheduled tasks, board publishing to a mirror.
 
 ## How we will know it is better
-Each row gets an outside check: Cloudflare's own delivery and latency numbers, a script that lints every bot message in the live channel history against the format rules, the friends' thumbs and a blind side-by-side of old and new answers, Josh's review, and Discord's rendering of the final message. The old bot's 118 answers are the private baseline and never enter this repository.
+Each row gets an outside check: Cloudflare's own delivery and latency numbers, a script that lints every bot message in the live channel history against the format rules, the friends' thumbs and a blind side-by-side of old and new answers, the account admin's review, and Discord's rendering of the final message. The old bot's 118 answers are the private baseline and never enter this repository.
