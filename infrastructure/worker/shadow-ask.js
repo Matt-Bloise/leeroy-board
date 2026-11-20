@@ -169,6 +169,9 @@ export async function handleShadowAsk(req, env, deps = {}) {
   const inputTokens = ru ? mu(ru.input_tokens) : null;
   const outputTokens = ru ? mu(ru.output_tokens) : null;
   const usageKnown = inputTokens !== null && outputTokens !== null;
+  // GAME_FACTS_READ trace: the block text the model was shown (table rows only: no friend text is in it), the lookup's elapsed ms and its outcome. Present only when the reader ran.
+  const gt = rec.gameFactsTrace;
+  if (gt && typeof gt === "object") meta.gf = { ms: mu(gt.ms), outcome: ["timeout", "failed", "empty", "rows"].includes(gt.outcome) ? gt.outcome : null, timed_out: gt.outcome === "timeout", used: gt.used === true, dropped: gt.dropped === "prompt-budget" ? "prompt-budget" : null, block: typeof gt.block === "string" && gt.used === true ? gt.block.slice(0, 4000) : null };
   meta.input_tokens = usageKnown ? inputTokens : null;
   meta.output_tokens = usageKnown ? outputTokens : null;
   const createdAt = nowFn().toISOString();

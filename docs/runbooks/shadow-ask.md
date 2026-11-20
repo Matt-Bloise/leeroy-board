@@ -108,3 +108,7 @@ This change ships the flag `off`. Turning it on is a one-line change, `SHADOW_AS
 ## Privacy
 
 `shadow_answers` holds a mirrored question and answers, so it is as private as `ask_turns` and `group_log`: private D1 only, never exported to a page, never on the socket. `asker_slug` is its only link to a person; a member's erase deletes their rows by it (`DATA_MAP`, `data-rights.js`); the erase checks that the table exists first, so a deploy that runs before migration 0014 does not break erase. The rows are the owner's own test data and are not in the member export.
+
+## Reader trace (meta.gf)
+
+When `GAME_FACTS_READ` is on and the ask reached the reader, the stored `meta` JSON carries `gf`: `ms` (the lookup's elapsed time), `outcome` (`rows`, `empty`, `timeout`, `failed`), `timed_out`, `used` (the rules and block went into the prompt), `dropped` (`prompt-budget` when the shared prompt budget removed them) and `block` (the GAME_FACTS block text the model was shown, at most 4,000 characters; table rows only, no friend text). Absent with the flag off. Why: the 2026-11-19 replay could not tell a lost 300 ms race from a model that ignored a supplied row (Elune's Light); the stored block settles it per ask.
