@@ -40,6 +40,7 @@ jobs:
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       site_changed: ${{ steps.classify.outputs.site_changed }}
+      probe_changed: ${{ steps.classify.outputs.probe_changed }}
       api_needed: ${{ steps.classify.outputs.api_needed }}
       full: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
     steps:
@@ -61,6 +62,7 @@ jobs:
           cat "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
           echo "site_changed=$(node tools/ci-scope.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
+          echo "probe_changed=$(node tools/ci-scope.mjs --probe < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
           # B72: the API suite (the only job that calls the real preview Worker, about 117 requests) runs only when a Worker, API, schema, wrangler, dependency or CI file changed.
           echo "api_needed=$(node tools/api-scope.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
@@ -330,11 +332,26 @@ jobs:
   browser:
     name: browser
     needs: [scope, preview, recover]
-    # Skipped when no site, tooling, workflow, config or dependency file changed (Worker-only, test-only, docs-only): tools/ci-scope.mjs decides.
+    # Skipped when no site, tooling, workflow, config or dependency file changed (Worker-only, test-only, docs-only): tools/ci-scope.mjs decides. That rule covers every change to the production probe,
+    # its self-test, tests/helpers and tests/package*.json (tests/browser/, tests/helpers/ and package*.json are site paths there), so the self-test legs below run on every such PR.
     # Also skipped when the preview is (no `ci-full`): a skipped needs-dependency skips the job.
     if: needs.scope.outputs.site_changed == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
+    # One job name (`browser`) so the result the report job reads is the AND of every leg: a leg that fails or is cancelled fails `browser`. Legs: the 46 browser suites in 4 shards (tests/browser/run.mjs --shard i/4;
+    # live-smoke is the first suite of shard 0; tests/unit/browser-shards.test.mjs pins that the shards hold every suite exactly once) and the production probe's self-test in 3 shards
+    # (tests/browser/prod-probe-selftest.mjs --shard i/3; about 17 minutes in one piece, it prints a progress line per case). Shard 0 writes browser.log, which tools/ci-report.mjs reads for the live-smoke count.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { leg: "0", suite: browser, shard: "0/4", log: browser.log }
+          - { leg: "1", suite: browser, shard: "1/4", log: browser-1.log }
+          - { leg: "2", suite: browser, shard: "2/4", log: browser-2.log }
+          - { leg: "3", suite: browser, shard: "3/4", log: browser-3.log }
+          - { leg: "selftest-0", suite: selftest, shard: "0/3", log: browser-selftest-0.log }
+          - { leg: "selftest-1", suite: selftest, shard: "1/3", log: browser-selftest-1.log }
+          - { leg: "selftest-2", suite: selftest, shard: "2/3", log: browser-selftest-2.log }
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -350,12 +367,26 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Cache the Playwright browsers (keyed on the lockfile; most legs skip the download)
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tests/package-lock.json') }}
+
       - name: Install test dependencies
+        # Infrastructure only (no test has run yet), so it gets ONE automatic retry; a test step never does. Proof run 3 showed what NOT to do: a 7-minute `timeout` around the install killed apt mid-run on a slow mirror
+        # and the retry then failed on the dpkg lock. So apt is told to be patient and resilient instead (per-connection timeout, retries, wait for the lock), nothing is killed mid-install, and the step as a whole is cut at 20 minutes.
+        timeout-minutes: 20
         working-directory: tests
         run: |
-          sudo apt-get update
-          npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium webkit
+          printf '%s\n' 'Acquire::http::Timeout "20";' 'Acquire::https::Timeout "20";' 'Acquire::Retries "3";' 'DPkg::Lock::Timeout "300";' | sudo tee /etc/apt/apt.conf.d/99ci-resilient >/dev/null
+          install() { sudo apt-get update && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium webkit; }
+          for attempt in 1 2; do
+            if install; then exit 0; fi
+            echo "::warning::Install attempt $attempt failed."
+          done
+          echo "::error::Installing the test dependencies failed twice."
+          exit 1
 
       - name: Browser smoke
         working-directory: tests
@@ -364,16 +395,23 @@ jobs:
           SMOKE_REQUIRE_ENGINES: "1"   # a browser engine that is not installed FAILS the job instead of printing a WARN and skipping its checks
           PAGES_URL: ${{ needs.preview.outputs.pages }}
           LAYOUT_SWEEP_SKIP: "1"
+          SUITE: ${{ matrix.suite }}
+          SHARD: ${{ matrix.shard }}
+          LOG: ${{ matrix.log }}
         run: |
           set -o pipefail
-          npm run test:browser -- --url "$PAGES_URL/" 2>&1 | tee "$RUNNER_TEMP/browser.log"
+          if [ "$SUITE" = "selftest" ]; then
+            node browser/prod-probe-selftest.mjs --shard "$SHARD" 2>&1 | tee "$RUNNER_TEMP/$LOG"
+          else
+            npm run test:browser -- --url "$PAGES_URL/" --shard "$SHARD" 2>&1 | tee "$RUNNER_TEMP/$LOG"
+          fi
 
       - name: Worker request summary
         if: always()
         run: |
           # Report only. Every suite except deploy-smoke answers /api/ from tests/fixtures/api-snapshot and prints how many reads it served without touching the Worker;
           # deploy-smoke is the live one (15 requests: 3 API checks + 6 per engine x 2 engines, measured). A stub miss fails the suite (API_STUB_ALLOW_MISS=1 opts out). See docs/runbooks/cloudflare-requests.md.
-          { echo "### Worker requests (browser job)"; grep -h "api-stub" "$RUNNER_TEMP/browser.log" | sort | uniq -c | sort -rn | head -30 || true; echo "Live suites: deploy-smoke only (15 requests)."; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### Worker requests (browser job)"; grep -h "api-stub" "$RUNNER_TEMP/${{ matrix.log }}" | sort | uniq -c | sort -rn | head -30 || true; echo "Live suites: deploy-smoke only (15 requests)."; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Scrub the account subdomain from the files about to be uploaded
         if: always()
@@ -383,8 +421,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: preview-test-logs-browser
-          path: ${{ runner.temp }}/browser.log
+          name: preview-test-logs-browser-${{ matrix.leg }}
+          path: ${{ runner.temp }}/${{ matrix.log }}
           if-no-files-found: ignore
 
   layout:
@@ -621,6 +659,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
           SITE_CHANGED: ${{ needs.scope.outputs.site_changed }}
+          PROBE_CHANGED: ${{ needs.scope.outputs.probe_changed }}
           API_NEEDED: ${{ needs.scope.outputs.api_needed }}
           PREVIEW_RESULT: ${{ needs.preview.result }}
           FULL: ${{ needs.scope.outputs.full }}

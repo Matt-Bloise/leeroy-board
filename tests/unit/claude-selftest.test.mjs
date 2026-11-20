@@ -101,15 +101,23 @@ test("missing, wrong, other-key and tampered signatures are 401 and send nothing
   assert.equal(DB.raw.prepare("SELECT COUNT(*) AS c FROM kv_state WHERE key = ?").get(SELFTEST_RATE_KEY).c, 0, "a rejected call leaves no limiter row");
 });
 
-test("replay window: 110 s old is accepted, 121 s old or ahead is refused", async () => {
+test("replay window: 110 s old is accepted, 121 s old or ahead is refused (the handler's clock is injected: no wall-clock second boundary)", async () => {
   const DB = await schemaDb();
   const env = mkEnv(DB);
-  const now = Math.floor(Date.now() / 1000);
-  assert.equal((await post(env, BODY, { ts: now - 121 })).status, 401);
-  assert.equal((await post(env, BODY, { ts: now + 121 })).status, 401);
-  assert.equal((await post(env, BODY, { ts: now - 3600 })).status, 401);
+  const NOW = new Date("2026-11-19T12:00:00.999Z"); // the last millisecond of a second: the case that made the wall-clock version flaky
+  const now = Math.floor(NOW.getTime() / 1000);
+  const at = async (ts) => {
+    const body = JSON.stringify(BODY);
+    const req = new Request("https://worker.test/api/selftest/claude", { method: "POST", headers: { "Content-Type": "application/json", "X-Listen-Timestamp": String(ts), "X-Listen-Signature": await signListen(KEY, String(ts), body) }, body });
+    return handleSelftestClaude(req, env, { now: () => NOW });
+  };
+  assert.equal((await at(now - 121)).status, 401);
+  assert.equal((await at(now + 121)).status, 401);
+  assert.equal((await at(now - 3600)).status, 401);
   assert.equal(sends.length, 0);
-  assert.equal((await quiet(() => post(env, BODY, { ts: now - 110 }))).status, 200);
+  assert.equal((await quiet(() => at(now - 110))).status, 200);
+  clearLimit(DB); // the 60 s limiter would answer 429 to a second accepted call
+  assert.equal((await quiet(() => at(now - 120))).status, 200, "exactly 120 s old is still inside the window");
 });
 
 test("body: over 1 KB is 413, not JSON is 400 (after the signature)", async () => {
