@@ -109,8 +109,18 @@ test("a change to the production probe, its self-test, tests/helpers or tests/pa
   for (const p of ["tests/browser/prod-probe.mjs", "tests/browser/prod-probe-selftest.mjs", "tests/helpers/probe-checks.mjs", "tests/helpers/shard.mjs", "tests/package.json", "tests/package-lock.json", ".github/workflows/preview-tests.yml"]) assert.equal(isSitePath(p), true, p);
 });
 
-test("the install step of the browser legs has its own timeout, so an apt or download stall fails fast instead of eating the whole job", () => {
-  const step = wf.jobs.browser.steps.find((s) => /^Install test dependencies$/.test(s.name));
-  assert.ok(step["timeout-minutes"] <= 10, "a stalled install is cut at 10 minutes or less");
-  assert.ok(step["timeout-minutes"] < wf.jobs.browser["timeout-minutes"]);
+test("the install step of the browser legs: bounded attempts, one automatic retry, a Playwright browser cache keyed on the lockfile, and no retry for any test step", () => {
+  const steps = wf.jobs.browser.steps;
+  const step = steps.find((s) => /^Install test dependencies$/.test(s.name));
+  assert.ok(step["timeout-minutes"] <= 20 && step["timeout-minutes"] < wf.jobs.browser["timeout-minutes"], "a stalled install is cut well before the job limit");
+  assert.match(step.run, /for attempt in 1 2; do/);
+  assert.match(step.run, /timeout 420 bash -c/);
+  assert.match(step.run, /playwright install --with-deps chromium webkit/);
+  const cache = steps.find((s) => s.uses && /actions\/cache@[0-9a-f]{40}/.test(s.uses));
+  assert.ok(cache, "the cache action is pinned to a full sha");
+  assert.equal(cache.with.path, "~/.cache/ms-playwright");
+  assert.match(cache.with.key, /hashFiles\('tests\/package-lock\.json'\)/);
+  assert.ok(steps.indexOf(cache) < steps.indexOf(step), "restored before the install");
+  const test = steps.find((s) => s.name === "Browser smoke");
+  assert.ok(!/attempt|retry|for i in/.test(test.run), "a test step never gets a retry");
 });

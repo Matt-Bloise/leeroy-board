@@ -319,14 +319,25 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Cache the Playwright browsers (keyed on the lockfile; most legs skip the download)
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tests/package-lock.json') }}
+
       - name: Install test dependencies
-        # Two legs of the first ci-full proof hung here for the whole 30-minute job (apt-get update or the Playwright download stalled, nothing printed): a stall now fails in 8 minutes, so a rerun costs 8 minutes, not 30.
-        timeout-minutes: 8
+        # Infrastructure only (no test has run yet), so it gets ONE automatic retry; a test step never does. Two legs of the first ci-full proof hung here for the whole 30-minute job (apt-get update or the Playwright
+        # download stalled, nothing printed): each attempt is cut at 7 minutes, the step at 16. With the cache restored the browsers are not downloaded again (install skips what is present).
+        timeout-minutes: 16
         working-directory: tests
         run: |
-          sudo apt-get update
-          npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium webkit
+          install() { sudo apt-get update && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium webkit; }
+          for attempt in 1 2; do
+            if timeout 420 bash -c "$(declare -f install); install"; then exit 0; fi
+            echo "::warning::Install attempt $attempt failed or stalled (7-minute limit)."
+          done
+          echo "::error::Installing the test dependencies failed twice."
+          exit 1
 
       - name: Browser smoke
         working-directory: tests
