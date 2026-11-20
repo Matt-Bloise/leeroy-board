@@ -362,8 +362,14 @@ jobs:
           set +e
           # The production BOARD_ADMIN_TOKEN is never passed to the preview (a --var is plain text in the Worker settings).
           # The preview gets a derived admin secret in the next step.
-          DEPLOY_OUT=$(npx wrangler deploy 2>&1)
-          DEPLOY_EXIT=$?
+          # Bounded retry (at most 3 attempts, 20 s apart) for ONE known transient: Cloudflare error 10007 on the first deploy of a brand-new PR Worker. Any other failure stops at once.
+          for ATTEMPT in 1 2 3; do
+            DEPLOY_OUT=$(npx wrangler deploy 2>&1)
+            DEPLOY_EXIT=$?
+            if [ $DEPLOY_EXIT -eq 0 ] || ! printf '%s' "$DEPLOY_OUT" | grep -qE '(^|[^0-9])10007([^0-9]|$)' || [ $ATTEMPT -eq 3 ]; then break; fi
+            echo "::warning::wrangler deploy hit Cloudflare error 10007 (attempt $ATTEMPT of 3); retrying in 20 s"
+            sleep 20
+          done
           # The account workers.dev subdomain carries a personal name: it is never printed. The raw output stays in the variable, only the redacted text reaches the log.
           SUB=$(printf '%s' "$DEPLOY_OUT" | grep -oE '\.[a-z0-9-]+\.workers\.dev' | head -n 1 | sed -E 's#^\.([a-z0-9-]+)\.workers\.dev$#\1#' || true)
           if printf '%s' "$SUB" | grep -qE '^[a-z0-9-]+$'; then echo "::add-mask::$SUB"; fi
