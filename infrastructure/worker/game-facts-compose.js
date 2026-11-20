@@ -157,7 +157,7 @@ export function composeTableAnswer(question, res) {
     if (new Set(same.map((r) => (typeof r.hint === "string" && r.hint ? r.hint.toLowerCase() : "")).filter(Boolean)).size > 1) return null;
     // A spell row at level 1 is the client's BaseLevel of a talent (Cruelty, Improved Cleave: "requires level 1") as often as a real level-1 spell: the table value is not when a player can take a talent. Talents with a trait row are caught by the entity rule above;
     // this closes the talents the loader has no trait row for. A real level-1 spell is answered by the model from the same row.
-    if (row.kind === "spell_level" && String(row.value).trim() === "1") return null;
+    if (row.kind === "spell_level" && (row.talent === true || String(row.value).trim() === "1")) return null; // talent=1 is the loader's marker of a talent spell (tools/facts-load.mjs markTalentSpells)
     if (row.verdict !== undefined && row.verdict !== "holds") return null;
     if (!ID_RE.test(row.id)) return null;
     if (row.rank !== undefined) return null; // rank-specific row, unranked question: the table does not say the ladder is complete
