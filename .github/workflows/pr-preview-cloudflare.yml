@@ -364,7 +364,10 @@ jobs:
           # The preview gets a derived admin secret in the next step.
           DEPLOY_OUT=$(npx wrangler deploy 2>&1)
           DEPLOY_EXIT=$?
-          echo "$DEPLOY_OUT"
+          # The account workers.dev subdomain carries a personal name: it is never printed. The raw output stays in the variable, only the redacted text reaches the log.
+          SUB=$(printf '%s' "$DEPLOY_OUT" | grep -oE '\.[a-z0-9-]+\.workers\.dev' | head -n 1 | sed -E 's#^\.([a-z0-9-]+)\.workers\.dev$#\1#' || true)
+          if printf '%s' "$SUB" | grep -qE '^[a-z0-9-]+$'; then echo "::add-mask::$SUB"; fi
+          echo "$DEPLOY_OUT" | sed -E 's#\.[a-z0-9-]+\.workers\.dev#.<account-subdomain>.workers.dev#g'
           if [ $DEPLOY_EXIT -ne 0 ]; then
             echo "::error::wrangler deploy failed with exit code $DEPLOY_EXIT"
             exit $DEPLOY_EXIT
@@ -376,6 +379,9 @@ jobs:
             echo "::error::Could not read the preview Worker URL (https://${WORKER_NAME}.<subdomain>.workers.dev) from the wrangler deploy output above. Not guessing one."
             exit 1
           fi
+          # Mask the account subdomain (it carries a personal name) for the rest of THIS job. The step output below is read only by later steps of this job; no other job or workflow receives the host (each job that needs it resolves it itself: tools/preview-worker-url.sh).
+          SUB=$(printf '%s' "$WORKER_URL" | sed -E 's#^https://[^.]+\.([a-z0-9-]+)\.workers\.dev$#\1#')
+          if printf '%s' "$SUB" | grep -qE '^[a-z0-9-]+$'; then echo "::add-mask::$SUB"; echo "::add-mask::$WORKER_URL"; fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 
       - name: Set Preview Salt Secrets (derived per preview)
@@ -433,7 +439,7 @@ jobs:
             const prNumber = context.payload.pull_request.number;
             const sha = context.payload.pull_request.head.sha.slice(0, 7);
             const previewUrl = "${{ steps.pages.outputs.preview_url }}";
-            const workerUrl = "${{ steps.worker.outputs.worker_url }}";
+            const workerName = "${{ env.WORKER_NAME }}"; // the host (the account's workers.dev subdomain) is NOT printed: it carries a personal name
             const dbName = "${{ env.D1_DATABASE_NAME }}";
 
             const body = [
@@ -443,7 +449,7 @@ jobs:
               "| Layer | Isolated Resource | Status |",
               "| :--- | :--- | :--- |",
               `| **Frontend (Cloudflare Pages)** | [${previewUrl}](${previewUrl}) | 🟢 Live (\`${sha}\`) |`,
-              `| **API & WebSockets (Worker + DO)** | [\`${workerUrl}/api/health\`](${workerUrl}/api/health) | 🟢 Isolated \`BoardRoom\` |`,
+              `| **API & WebSockets (Worker + DO)** | \`${workerName}\` on the account's workers.dev host (host not printed here) | 🟢 Isolated \`BoardRoom\` |`,
               `| **Database (Cloudflare D1)** | \`${dbName}\` | 🟢 Seeded & Isolated |`,
               `| **AI Model (Zero Keys)** | Cloudflare Workers AI (\`@cf/meta/llama-3.3-70b-instruct-fp8-fast\`) | 🟢 Free Tier (No External Keys) |`,
               "",
