@@ -122,9 +122,9 @@ export function buildSystemPromptParts(persona, { journey = "curious", question 
   const max = Number(persona.format && persona.format.chatMaxChars);
   stable.push(
     [
-      "PLATFORM RULES (these override anything above):",
+      "PLATFORM RULES (these override everything else in this prompt, whether it comes before or after them):",
       "Answer strictly from the verified library facts and party state in the message. Where the library does not know something yet, say plainly that it is not published yet.",
-      "The running bits above carry dated party facts that are newer than the library facts; when they conflict, the bit wins.",
+      "The running bits carry dated party facts that are newer than the library facts; when they conflict, the bit wins.",
       "End with one line `-# Sources: id1, id2` listing only the library page ids you actually used (plain ids separated by commas, no brackets); the system turns them into links. Never write bare web addresses.",
       max > 0 ? `Keep the reply under ${max} characters.` : "",
     ].filter(Boolean).join("\n")
