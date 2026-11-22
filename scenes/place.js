@@ -77,8 +77,10 @@ function setPos(card, x, y) {
   const host = getComputedStyle(card).position === "fixed" ? { x: 0, y: 0 } : (card.offsetParent ? R(card.offsetParent) : { x: 0, y: 0 });
   card.style.left = `${Math.round(x - host.x)}px`; card.style.top = `${Math.round(y - host.y)}px`;
 }
+const SIB = "ul, ol, .spells, .map-box, .roads-legend, .wheel, .cal-col, .races, .tn-cards, .bclass, .tabs, .cal, .chips, .seg, [role=tablist], [role=group]";
 function siblingsOf(t, sel) {
-  const c = t.closest("ul, ol, .spells, .map-box, .roads-legend, .wheel, .cal-col, .races, .tn-cards, .bclass, .tabs, .cal, .chips, .seg, [role=tablist], [role=group]") || t.parentElement;
+  /* the container is an ancestor, never the tipped element itself: the journey switch is a [role=group] with its own tip, and its siblings are the header controls around it */
+  const c = (t.matches(SIB) ? t.parentElement && t.parentElement.closest(SIB) : t.closest(SIB)) || t.parentElement;
   return c ? [...c.querySelectorAll(sel)].filter((e) => e !== t && !e.contains(t) && !t.contains(e) && isShown(e)).map(R) : [];
 }
 function visibleBounds(pad = 8) {
@@ -376,6 +378,11 @@ function rows() {
 
 function tips() {
   let card = $("#place-tip"); if (!card) { card = h("div", { class: "place-card place-tip", id: "place-tip", role: "tooltip", hidden: "" }); document.body.append(card); }
+  /* a hover tip on something INSIDE a link or button (a crest in a name chip) is the control's own tip: the inner element must not become a second Tab stop or carry a
+     duplicate label. A control with no name of its own (an icon-only button whose only name was that title) takes the tip as its name instead, so it is never left unnamed. */
+  const ctlOf = (e) => (e.parentElement ? e.parentElement.closest("a[href], button, summary, [role=button], [role=link], [role=tab], [role=menuitem]") : null);
+  const named = (c) => !!((c.textContent || "").trim() || c.getAttribute("aria-label") || c.getAttribute("aria-labelledby") || c.querySelector("img[alt]:not([alt='']), [aria-label]"));
+  const inControl = (e, tip) => { const c = ctlOf(e); if (c && tip && !named(c)) c.setAttribute("aria-label", tip); return !!c; };
   const strip = (root) => {
     const list = root.nodeType === 1 ? [root, ...root.querySelectorAll("[title]")] : [];
     for (const e of list) {
@@ -383,11 +390,11 @@ function tips() {
       const t = e.getAttribute("title"); e.removeAttribute("title");
       if (!t) continue;
       e.setAttribute("data-tip", t);
-      if (!(e.textContent || "").trim() && !e.getAttribute("aria-label") && !e.getAttribute("aria-labelledby")) e.setAttribute("aria-label", t);
+      if (!(e.textContent || "").trim() && !e.getAttribute("aria-label") && !e.getAttribute("aria-labelledby") && !inControl(e, t)) e.setAttribute("aria-label", t);
     }
-    if (root.nodeType === 1) root.querySelectorAll("svg title").forEach((x) => { const p = x.parentElement; if (p && !p.getAttribute("data-tip")) p.setAttribute("data-tip", x.textContent); x.remove(); });
+    if (root.nodeType === 1) root.querySelectorAll("svg title").forEach((x) => { const p = x.parentElement, tip = x.textContent; if (p && !p.getAttribute("data-tip")) p.setAttribute("data-tip", tip); x.remove(); if (p && tip) inControl(p, tip); });
     if (root.nodeType === 1) for (const p of [root, ...root.querySelectorAll("[data-tip]")]) {
-      if (!p.hasAttribute || !p.hasAttribute("data-tip") || p.matches("a[href], button, input, select, textarea, summary, [tabindex], [disabled], #place-tip") || (p.closest && p.closest('[aria-hidden="true"]'))) continue;
+      if (!p.hasAttribute || !p.hasAttribute("data-tip") || p.matches("a[href], button, input, select, textarea, summary, [tabindex], [disabled], #place-tip") || inControl(p, p.getAttribute("data-tip")) || (p.closest && p.closest('[aria-hidden="true"]'))) continue;
       p.setAttribute("tabindex", "0");
       if (!p.getAttribute("aria-label") && !p.getAttribute("aria-labelledby") && !(p.textContent || "").trim()) p.setAttribute("aria-label", p.getAttribute("data-tip"));
       else if (!p.getAttribute("aria-description")) p.setAttribute("aria-description", p.getAttribute("data-tip"));
