@@ -1,6 +1,7 @@
 // The visual baseline gate (tests/browser/visual-baseline.mjs, job `visual` in preview-tests.yml): the PNG codec and the pixel diff it judges with, the gate wiring in the
 // workflows and in tools/ci-report.mjs, and the committed baselines themselves (decodable, the right sizes, one per screen and size, nothing stale).
 // Run: node --test tests/unit/visual-baseline-gate.test.mjs
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -116,6 +117,20 @@ test("visual-baselines.yml: dispatch only, never on the default branch, and only
   assert.match(render.steps.map((s) => s.run || "").join("\n"), /A committed render is the whole set/, "a partial render is never committed");
   assert.match(steps, /tests\/browser\/baselines/);
   assert.doesNotMatch(steps, /npm|node |npx/, "the job with the write token runs no code from the branch");
+});
+
+test("visual-baselines.yml: the input check runs as written, accepts what it should and refuses a partial or oversized committed render", () => {
+  const v = parse(read(".github/workflows/visual-baselines.yml"));
+  const step = v.jobs.render.steps.find((x) => x.name === "Check the inputs");
+  assert.ok(step && step.run, "the check step exists");
+  const run = (REPEAT, ONLY, SIZES, COMMIT) => spawnSync("bash", ["-e", "-c", step.run], { env: { PATH: process.env.PATH, REPEAT, ONLY, SIZES, COMMIT }, encoding: "utf8" }).status === 0;
+  for (const [args, want] of [
+    [["3", "", "", "true"], true], [["1", "", "", "true"], true], [["5", "", "", "true"], true], [["6", "", "", "true"], false],
+    [["20", "timeline", "390x844", "false"], true], [["20", "timeline,wall", "390x844,1366x768", "false"], true],
+    [["3", "timeline", "", "true"], false], [["3", "", "390x844", "true"], false],
+    [["0", "", "", "false"], false], [["31", "", "", "false"], false], [["abc", "", "", "false"], false], [["", "", "", "false"], false],
+    [["3", "a;b", "", "false"], false], [["3", "", "100x100", "false"], false],
+  ]) assert.equal(run(...args), want, `repeat ${args[0]}, only "${args[1]}", sizes "${args[2]}", commit ${args[3]}`);
 });
 
 test("visual-drift.yml: daily and read-only, report only; its issue job runs for scheduled failures only", () => {
