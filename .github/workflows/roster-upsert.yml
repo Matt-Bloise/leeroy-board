@@ -1,0 +1,129 @@
+name: Roster upsert (guarded discord_members edit, production D1)
+
+# Stopgap for when the /member command is unreachable (docs/runbooks/roster-upsert.md). Manual only: workflow_dispatch, nothing else. The entries are typed in at dispatch
+# time and are never stored in the repository. dry_run defaults to true: a dry run reads the live roster, prints BEFORE and the planned AFTER, and writes nothing.
+# The real run is ONE compare-and-set UPDATE of kv_state 'discord_members' (WHERE json = the exact text that was read), then one audit_log row per added member.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (default): read the roster, print BEFORE and the planned AFTER, write nothing. Untick for the real write."
+        type: boolean
+        default: true
+      entries_json:
+        description: 'A JSON array of entries, at most 10 and 4000 bytes: [{"slug":"...","name":"...","match":["lowercase","words"],"id":"17 to 20 digits, quoted"}]. id is optional on an update of an existing slug.'
+        type: string
+        required: true
+      audit_adds:
+        description: "Write one audit_log row (member.add) for each ADDED entry that has an id. Updates never write one."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roster-upsert-production
+  cancel-in-progress: false
+
+jobs:
+  roster-upsert:
+    name: Edit the production roster (guarded, dry run by default)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Master only, same as the production deploy. The environment `production` holds the deployment-branch rule (master only).
+    if: github.ref == 'refs/heads/master'
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE_NAME: leeroy-board-db
+
+    steps:
+      - name: Refuse to run in a public repository
+        env:
+          REPO_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          # The run log prints the roster (names and Discord ids). The runs of a public repository publish their logs, so this workflow cannot run while the repository is public.
+          if [ "$REPO_PRIVATE" != "true" ]; then
+            echo "::error::This repository is public and the runs of a public repository publish their logs, so this run would publish the roster. Nothing was read or written. See docs/runbooks/roster-upsert.md."
+            exit 1
+          fi
+
+      - name: Checkout master
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Require the Cloudflare secrets
+        env:
+          DEPLOY_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          MISSING=""
+          [ -n "$DEPLOY_TOKEN" ] || MISSING="$MISSING CLOUDFLARE_API_TOKEN"
+          [ -n "$ACCOUNT_ID" ] || MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Secrets missing:$MISSING. Nothing was read or written. They are repository secrets (Settings > Secrets and variables > Actions); see docs/runbooks/ci-secrets.md."
+            exit 1
+          fi
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install Wrangler CLI
+        working-directory: infrastructure
+        run: |
+          # Exact, locked install: package.json pins wrangler without a range and the lockfile fixes the whole tree. npm ci fails if they disagree.
+          npm ci --no-audit --no-fund
+          WANT=$(node -p "require('./package-lock.json').packages['node_modules/wrangler'].version")
+          HAVE=$(node -p "require('./node_modules/wrangler/package.json').version")
+          echo "wrangler locked $WANT, installed $HAVE"
+          [ -n "$WANT" ] && [ "$WANT" = "$HAVE" ] || { echo "::error::Installed wrangler ($HAVE) does not match the lockfile ($WANT)."; exit 1; }
+
+      - name: Clean the Cloudflare credentials
+        run: |
+          # Same sanitising as the production deploy: whitespace, carriage returns and quotes pasted around a secret.
+          CLEAN_TOKEN=$(echo "$CLOUDFLARE_API_TOKEN" | tr -d '\r\n ' | sed -e 's/^["\x27]//' -e 's/["\x27]$//')
+          CLEAN_ACC=$(echo "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\r\n ' | sed -e 's/^["\x27]//' -e 's/["\x27]$//')
+          if [ -z "$CLEAN_TOKEN" ] || [ -z "$CLEAN_ACC" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is empty after cleaning. Nothing was read or written."
+            exit 1
+          fi
+          echo "::add-mask::$CLEAN_TOKEN"
+          echo "::add-mask::$CLEAN_ACC"
+          echo "CLOUDFLARE_API_TOKEN=$CLEAN_TOKEN" >> "$GITHUB_ENV"
+          echo "CLOUDFLARE_ACCOUNT_ID=$CLEAN_ACC" >> "$GITHUB_ENV"
+
+      - name: Resolve the D1 database id and patch wrangler.toml (never creates a database)
+        working-directory: infrastructure
+        run: |
+          set -e
+          # Same lookup as the production deploy, without the create branch: a failed or empty lookup stops the run.
+          if ! LIST_JSON=$(npx wrangler d1 list --json); then
+            echo "::error::'wrangler d1 list --json' failed, so the D1 database '$D1_DATABASE_NAME' could not be looked up. Nothing was read or written."
+            exit 1
+          fi
+          if ! DB_ID=$(node -e '
+            const list = JSON.parse(process.argv[1]);
+            if (!Array.isArray(list)) throw new Error("not a list");
+            const found = list.find(d => d.name === process.env.D1_DATABASE_NAME);
+            if (found) process.stdout.write(found.uuid);
+          ' "$LIST_JSON"); then
+            echo "::error::Could not read the D1 database list from wrangler (unexpected output). Nothing was read or written."
+            exit 1
+          fi
+          if [ -z "$DB_ID" ]; then
+            echo "::error::D1 database '$D1_DATABASE_NAME' was not found in this Cloudflare account. Nothing was read or written."
+            exit 1
+          fi
+          sed -i "s/00000000-0000-0000-0000-000000000000/$DB_ID/g" wrangler.toml
+          echo "Resolved the D1 database id for '$D1_DATABASE_NAME'."
+
+      - name: Roster upsert (dry run unless dry_run is unticked)
+        # The inputs reach the script through the environment only, never through the command text (no expression expansion inside the shell script).
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          ENTRIES_JSON: ${{ inputs.entries_json }}
+          AUDIT_ADDS: ${{ inputs.audit_adds }}
+        run: node tools/roster-upsert.mjs

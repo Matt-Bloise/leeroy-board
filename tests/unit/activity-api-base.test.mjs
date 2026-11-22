@@ -12,7 +12,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const read = (f) => fs.readFileSync(path.join(ROOT, f), "utf8");
 const BOARD = read("js/board.js");
 const cut = (re, what) => { const m = re.exec(BOARD); assert.ok(m, `board.js still has ${what}`); return m[0]; };
-const API_OK = cut(/^const API_OK = .*$/m, "API_OK"), API_SRC = cut(/^const API = \(\(\) => \{[\s\S]*?^\}\)\(\);$/m, "the API base"), EXT_SRC = cut(/^function externalTarget\(a\) \{[\s\S]*?^\}$/m, "externalTarget");
+const API_OK = [cut(/^const API_OK = .*$/m, "API_OK"), cut(/^const PREVIEW_WORKER = .*$/m, "PREVIEW_WORKER"), cut(/^const apiOk = .*$/m, "apiOk")].join("\n"), API_SRC = cut(/^const API = \(\(\) => \{[\s\S]*?^\}\)\(\);$/m, "the API base"), EXT_SRC = cut(/^function externalTarget\(a\) \{[\s\S]*?^\}$/m, "externalTarget");
 
 function load(host, search = "") {
   const store = new Map(), fetched = [];

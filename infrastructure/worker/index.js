@@ -11,6 +11,7 @@
 import { BoardRoom, LIVE_AUTH_HEADER } from "./room.js";
 import {
   answerWithAi,
+  callAnthropicClaude,
   resolveAiProvider,
   isProviderConfigured,
   isPrPreviewEnv,
@@ -23,6 +24,11 @@ import { runScheduledSourceSweep, recomputeCategoryAndIndex, acquireRefreshCoold
 import { feedbackReport, cleanupAnswerUx, insertAskTurn, newGuestSecret, privateTurnAccess, RELOAD_ANSWER_LINE } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
+import { handleListen, latestTurn } from "./listener.js";
+import { handleSelftestClaude } from "./selftest.js";
+import { handleShadowAsk } from "./shadow-ask.js";
+import { handleFactsLoad } from "./game-facts.js";
+import { handleHeartbeat, handleHeartbeatStatus, runDeadmanCheck, deadmanOn } from "./deadman.js";
 import { manifestFor } from "./setup-command.js";
 import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
@@ -34,12 +40,15 @@ import { gauge, handleGauge } from "./gauge.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
-import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
-import { upsertMember } from "./members.js";
+import { loadBudget, dailyCap, utcDayKey, hashId } from "./budget.js";
+import { askWallPlan } from "./research/no-wall.js";
+import { groupWikiCronOn, maybeRefreshGroupWiki } from "./research/group-wiki.js";
+import { saveMember } from "./member-write.js";
 import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
 import { defaultDocRow } from "./default-docs.js";
+import { libraryGlossaryBody, LIBRARY_GLOSSARY_BLOB, LIBRARY_GLOSSARY_CACHE_PATH } from "./party-glossary.js";
 import { isPublicAtlasDoc, isPublicDataDoc, publicDataDoc, dataCachePath } from "./public-docs.js";
 import { feedOn, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isDeniedKvKey, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
@@ -215,6 +224,9 @@ function setCachedResponse(ctx, origin, path, resp, ttlMs = ISOLATE_CACHE_TTL_MS
     ctx.waitUntil(caches.default.put(cacheKey, stored));
   } catch {}
 }
+
+// Cached library paths that are not a category blob: the glossary has its own cache key. Spread into every library purge list.
+export const LIBRARY_PURGE_PATHS = Object.freeze(["/api/library/glossary.json", LIBRARY_GLOSSARY_CACHE_PATH]);
 
 export async function purgeWorkerCache(origin, paths = []) {
   // /api/state and /api/bootstrap carry every document, so any purge clears their isolate copies too (not only the edge cache below)
@@ -511,7 +523,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 export function projectionTag(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); }
 
 export const ROUTES = [
-  "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
+  "POST /discord", "POST /listen", "POST /selftest/claude", "POST /shadow/ask", "POST /heartbeat", "POST /heartbeat/status", "POST /facts/load", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
@@ -540,6 +552,29 @@ const worker = {
       // 0. Discord Serverless HTTP Interactions Endpoint (`POST /api/discord`) & Command Manifest (`GET /api/discord/commands`)
       if (req.method === "POST" && path === "/discord") {
         return await handleDiscordInteraction(req, env, ctx, url.origin);
+      }
+      // The listener (LISTENER flag, off by default): a signed message event from the PC forwarder. See listener.js.
+      if (req.method === "POST" && path === "/listen") {
+        return await handleListen(req, env, ctx, url.origin);
+      }
+      // Production self-test of the Claude path (signed like the listener; no bot token means no route). See selftest.js.
+      if (req.method === "POST" && path === "/selftest/claude") {
+        return await handleSelftestClaude(req, env);
+      }
+      // Shadow-compare recorder for /ask (flag SHADOW_ASK, off: 404; signed like the listener; posts nothing). See shadow-ask.js.
+      if (req.method === "POST" && path === "/shadow/ask") {
+        return await handleShadowAsk(req, env);
+      }
+      // Dead-man check (flag DEADMAN, off: 404; signed with its own derived key; posts nothing). See deadman.js.
+      if (req.method === "POST" && path === "/heartbeat") {
+        return await handleHeartbeat(req, env);
+      }
+      if (req.method === "POST" && path === "/heartbeat/status") {
+        return await handleHeartbeatStatus(req, env);
+      }
+      // Game-facts loader (flag GAME_FACTS_LOAD, off: 404; signed with its own derived key; posts nothing and no answer path reads it yet). See game-facts.js.
+      if (req.method === "POST" && path === "/facts/load") {
+        return await handleFactsLoad(req, env);
       }
       if (req.method === "GET" && path === "/discord/commands") {
         return jsonResp({ commands: manifestFor(env, DISCORD_SLASH_COMMANDS_MANIFEST) }, 200, cors);
@@ -852,23 +887,9 @@ const worker = {
           return jsonResp({ error: "Body must be valid JSON" }, 400, cors);
         }
         if (!entry || typeof entry !== "object" || Array.isArray(entry)) return jsonResp({ error: "member must be an object" }, 400, cors);
-        let current = [];
-        try {
-          const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'discord_members'").first();
-          if (row && row.json) current = JSON.parse(row.json);
-        } catch {
-          return jsonResp({ error: "Could not read the roster" }, 500, cors);
-        }
-        const result = upsertMember(Array.isArray(current) ? current : [], entry);
-        if (result.error) return jsonResp({ error: result.error }, 400, cors);
-        const problem = validateConfigValue("discord_members", result.members);
-        if (problem) return jsonResp({ error: problem }, 400, cors);
-        const now = new Date().toISOString();
-        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
-          .bind("discord_members", JSON.stringify(result.members), now)
-          .run();
-        invalidateConfigCache("discord_members");
-        return jsonResp({ ok: true, slug: entry.slug, entries: result.members.length }, 200, cors);
+        const saved = await saveMember(env, entry);
+        if (!saved.ok) return jsonResp({ error: saved.error }, saved.status, cors);
+        return jsonResp({ ok: true, slug: saved.slug, entries: saved.entries }, 200, cors);
       }
 
       // Admin only, and only when EVAL_ENABLED is on (default off; 404 otherwise). Model bake-off: runs a few cells of questions x
@@ -1224,10 +1245,9 @@ const worker = {
       }
 
       if (req.method === "POST" && path === "/token") {
-        let body = {};
-        try {
-          body = await req.json();
-        } catch {}
+        const read = await readJsonCapped(req, 2048); // open to anyone: a code is under 512 characters
+        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+        const body = read.body;
         const code = typeof body?.code === "string" ? body.code.trim() : "";
         if (!code || code.length > 512) {
           return jsonResp({ error: "Invalid authorization code" }, 400, cors);
@@ -1284,17 +1304,14 @@ const worker = {
             if (!mine.includes(row.by_name)) row = null;
           }
         } else if (auth.ok && auth.member) {
-          row = await env.DB.prepare(
-            "SELECT * FROM ask_turns WHERE ((by_name = ? OR by_name = ?) AND by_name <> 'Visitor') OR share = 1 ORDER BY created_at DESC LIMIT 1" // a member named "Visitor" is not every guest
-          ).bind(auth.member.name, auth.member.slug).first();
+          // latestTurn leaves out every turn the listener created (a message in a channel is not a /ask for the whole board)
+          row = await latestTurn(env, "((by_name = ? OR by_name = ?) AND by_name <> 'Visitor') OR share = 1", [auth.member.name, auth.member.slug]); // a member named "Visitor" is not every guest
         } else {
           // No key and no id: the visitor is anonymous. The latest shared turn is a member's question and answer, so it is for signed-in
           // members and web sessions only (audit 2026-11-06 finding 4). A guest polls their own just-created ask by its random id (above).
           const ws = await webSessionFrom(req, env, Date.now());
           if (ws) {
-            row = await env.DB.prepare(
-              "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
-            ).first();
+            row = await latestTurn(env, "share = 1", []);
           }
         }
 
@@ -1321,11 +1338,13 @@ const worker = {
             : row.status === "answered"
             ? "answered"
             : "failed";
+        // The stored model carries diagnostic suffixes (" (after <provider>: <reason>)", " (failed: <reason>)", " [<reason>]"). The asker, a guest included, sees only the bare label.
+        const rowModel = String(row.model || "").replace(/ (?:\(after |\(failed|\[).*$/s, "") || null;
         const [provider, model] = isPrPreview
-          ? ["workers-ai", row.model || "workers-ai"]
-          : String(row.model || "").includes(":")
-            ? String(row.model).split(/:(.+)/)
-            : [resolveAiProvider(env), row.model || null];
+          ? ["workers-ai", rowModel || "workers-ai"]
+          : String(rowModel || "").includes(":")
+            ? String(rowModel).split(/:(.+)/)
+            : [resolveAiProvider(env), rowModel || null];
         let sources = [];
         try {
           sources = JSON.parse(row.cites_json || "[]");
@@ -1400,6 +1419,7 @@ const worker = {
               "/api/library/index.json",
               "/api/library/search.json",
               "/api/library/open.json",
+              ...LIBRARY_PURGE_PATHS,
               `/api/library/${r.refresh.category}.json`,
             ]);
             await broadcastToRoom(env, { type: "library", categories: cats, page: r.refresh.page });
@@ -1473,6 +1493,7 @@ const worker = {
           "/api/library/index.json",
           "/api/library/search.json",
           "/api/library/open.json",
+          ...LIBRARY_PURGE_PATHS,
           `/api/library/${category}.json`,
         ]);
         await broadcastToRoom(env, { type: "library", categories: [category], page: pageId });
@@ -1527,22 +1548,29 @@ const worker = {
 
       // 3. GET /library/:name -> Edge-cached library JSON blob from D1 `lib_blobs`
       if (req.method === "GET" && path.startsWith("/library/")) {
-        const name = decodeURIComponent(path.slice("/library/".length));
+        let name;
+        try { name = decodeURIComponent(path.slice("/library/".length)); } catch { return jsonResp({ error: "Library blob not found" }, 404, cors); }
+        // Blob names never hold whitespace or control characters. Those would be stripped when the cache key is built, so a trailing space or %00 could otherwise land on another blob's cache key.
+        if (/[\s\u0000-\u001f\u007f]/.test(name)) return jsonResp({ error: "Library blob not found" }, 404, cors);
         // seed.stamp is the deploy seed's bookkeeping row, not a Library document.
         if (name === "seed.stamp") return jsonResp({ error: `Library blob ${name} not found` }, 404, cors);
-        let resp = await getCachedResponse(url.origin, `/api/library/${name}`);
+        // The glossary is the one blob that is filtered on the way out (party-glossary.js): the stored row may hold text that names the vocabulary. Its cache entry has its own key
+        // (a copy cached unfiltered by an earlier deploy is never read) and a short lifetime, and a library write purges it (LIBRARY_PURGE_PATHS).
+        const isGlossary = name === LIBRARY_GLOSSARY_BLOB;
+        const cachePath = isGlossary ? LIBRARY_GLOSSARY_CACHE_PATH : `/api/library/${name}`;
+        let resp = await getCachedResponse(url.origin, cachePath);
         if (!resp) {
           const row = await env.DB.prepare("SELECT json, stamp FROM lib_blobs WHERE name = ?")
             .bind(name)
             .first();
           if (!row) return jsonResp({ error: `Library blob ${name} not found` }, 404, cors);
-          const ttl = name === "index.json" || name === "refresh.json" || name === "news.json" ? 30 : 3600;
-          resp = jsonResp(row.json, 200, {
+          const ttl = isGlossary ? 300 : name === "index.json" || name === "refresh.json" || name === "news.json" ? 30 : 3600;
+          resp = jsonResp(isGlossary ? libraryGlossaryBody(row.json) : row.json, 200, {
             ...cors,
-            ETag: `"${row.stamp}"`,
-            "Cache-Control": `public, max-age=${ttl}, s-maxage=${ttl * 4}, stale-while-revalidate=600`,
+            ETag: `"${row.stamp}${isGlossary ? "-f1" : ""}"`,
+            "Cache-Control": `public, max-age=${ttl}, s-maxage=${isGlossary ? ttl : ttl * 4}, stale-while-revalidate=${isGlossary ? 0 : 600}`,
           });
-          setCachedResponse(ctx, url.origin, `/api/library/${name}`, resp, ttl * 1000);
+          setCachedResponse(ctx, url.origin, cachePath, resp, ttl * 1000);
         } else {
           const headers = new Headers(resp.headers);
           for (const [k, v] of Object.entries(cors)) headers.set(k, v);
@@ -1879,7 +1907,8 @@ const worker = {
           };
           await broadcastToRoom(env, { type: "intent", item: intentItem });
 
-          const askBudget = askBudgetKeys({ userPart: isGuest ? guestHash : await hashId(memberSlug), guest: isGuest });
+          // ASK_RESEARCH on: a signed-in member is never walled (answerWithAi skips the verdict); a guest keeps the rate limit above and gets the guests' own budget keys (research/no-wall.js). Flag off: exactly askBudgetKeys.
+          const { budget: askBudget } = await askWallPlan(env, { isMember: !isGuest, userPart: isGuest ? guestHash : await hashId(memberSlug), guest: isGuest, preview: isPrPreview });
           ctx.waitUntil(
             answerWithAi({
               env,
@@ -1962,6 +1991,7 @@ const worker = {
             "/api/library/index.json",
             "/api/library/search.json",
             "/api/library/open.json",
+            ...LIBRARY_PURGE_PATHS,
             `/api/library/${pageRow.category}.json`,
           ]);
 
@@ -2072,6 +2102,8 @@ const worker = {
       ctx.waitUntil(
         runMoments(env, { loadSchedule: () => loadConfigKey(env, "moments") }).catch((err) => console.error("moments run failed:", String((err && err.message) || err)))
       );
+      // DEADMAN: one more step on this tick (one kv read, at most one write). Its own try/catch and .catch: it can never stop the work around it. A no-op while the flag is off.
+      try { if (deadmanOn(env)) ctx.waitUntil(runDeadmanCheck(env).catch(() => {})); } catch {}
       // CARDS_ENABLED: the every-minute tick also flushes a due board line and retries an unfinished card edit (no D1 read while the flag is off).
       if (cardsEnabled(env)) ctx.waitUntil(Promise.all([flushBoardLines(env), requestCardEdit(env, { dirty: false })]).catch(() => {}));
       return;
@@ -2079,6 +2111,8 @@ const worker = {
     const origin = env.API_ORIGIN || "https://api.leeroy.party";
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
     ctx.waitUntil(cleanupAnswerUx(env));
+    // GROUP_MEMORY (with ASK_RESEARCH): the wiki refresher, one Claude call at most, when 10 new rows or 24 hours have gathered (research/group-wiki.js). No D1 read and no call while either flag is off.
+    if (groupWikiCronOn(env)) ctx.waitUntil(maybeRefreshGroupWiki(env, { call: callAnthropicClaude }).catch(() => {}));
     // INTEREST_NUDGES: read-only counts of Interested clicks and reactions on Leeroy's own events and posts (no D1 read, no Discord call while off).
     ctx.waitUntil(collectInterest({ env }).catch((err) => console.error("interest counts failed:", String((err && err.message) || err))));
     // CARDS_ENABLED: this tick also flushes a due board line and retries an unfinished card edit (both no-ops when there is nothing to do).

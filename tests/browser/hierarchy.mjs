@@ -8,6 +8,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pageUrl } from "../helpers/page-url.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
+import { assertMemberState } from "../helpers/member-state.mjs";
+const MEMBER = standIn(0).name; // the first member of the party the API stub serves (never a literal name)
 import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -98,12 +101,13 @@ async function measureAll(page, dpr) {
   return got;
 }
 const browser = stubbed(await pw.chromium.launch());
+await assertMemberState(browser, pageUrl(BASE, { params: { preview: "1" } }), MEMBER); // fails loudly when MEMBER is not on the board (else the suite runs as nobody chosen)
 try {
   const mk = async (member, roomOff = false) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, serviceWorkers: "block" });
     await ctx.addInitScript(CLS_JS);
     if (roomOff) await ctx.addInitScript(() => { try { localStorage.setItem("board-room", "off"); } catch (e) {} }); /* contrast contexts only: the WebGL room is not under test there, and a software renderer made 13 screenshots time out on CI */
-    if (member) await ctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); } catch (e) {} });
+    if (member) await ctx.addInitScript((n) => { try { localStorage.setItem("board-as", n); localStorage.setItem("board-hinted", "1"); } catch (e) {} }, MEMBER);
     return ctx;
   };
   // first visit: Next steps over the wall, nobody signed in
@@ -156,19 +160,18 @@ try {
     await cctx.close(); }
   // wide screen: the same contrast rule at 1366x768
   { const wctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1, serviceWorkers: "block" });
-    await wctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} });
+    await wctx.addInitScript((n) => { try { localStorage.setItem("board-as", n); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} }, MEMBER);
     const wp = await wctx.newPage(); await wp.goto(url, { waitUntil: "load" }); await wp.waitForTimeout(3000);
     await wp.locator("#scene-close").click().catch(() => {}); await wp.waitForTimeout(2200);
     const wg = await measureAll(wp, 1);
     for (const r of wg) ok(`[table 1366] contrast ${r.label} (tier ${r.tier}) at 4.5:1 or better`, r.ratio !== null && r.ratio >= 4.5, r.ratio === null ? "no rect" : `${r.ratio.toFixed(2)}:1`);
     console.log("INFO contrast 1366 " + wg.map((r) => `${r.label}=${r.ratio ? r.ratio.toFixed(1) : "-"}`).join(" "));
     await wctx.close(); }
-  // the Ledger tile with a poll-only, an empty and an open-only party. The party reaches the page two ways: /api/bootstrap (the preview host and any ?brain= page, answered by the stub)
-  // and data/party.json (a local page with no API): both are rewritten, so the test means the same thing on CI and on a laptop.
+  // the Ledger tile with a poll-only, an empty and an open-only party. The party reaches the page from /api/bootstrap (answered by the stub); a page with no API has no party
+  // at all (the deploy publishes no static data/party.json), so that is the only route that is rewritten.
   const ledger = async (mutate) => {
     const c = await mk(true);
     const rewrite = (pick) => async (route) => { const r = await route.fetch(); const j = JSON.parse(await r.text()); const party = pick(j); if (party) mutate(party); await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": route.request().headers()["origin"] || "*", "access-control-allow-credentials": "true" }, body: JSON.stringify(j) }); };
-    await c.route("**/data/party.json", rewrite((j) => j));
     await c.route(/\/api\/bootstrap(\?|$)/, rewrite((j) => j.party));
     const pg = await c.newPage(); await pg.goto(url, { waitUntil: "load" }); await pg.waitForTimeout(3000);
     const t = await pg.evaluate(() => document.querySelector("#ts-ledger").textContent.replace(/\s+/g, " ")); await c.close(); return t;

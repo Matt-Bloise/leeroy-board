@@ -119,7 +119,7 @@ export const COMPOSITE_SECTIONS = {
   decide: [["people"], ["party"]],
   "guided-atlas": [["classes"]],
   tonight: [["people"], ["week_one", "trainers"]],
-  party: [["settled"], ["settled_extra"], ["open"], ["glossary"]],
+  party: [["settled"], ["settled_extra"], ["open"]],
 };
 const emptyDeep = (v) => v === null || v === undefined || (Array.isArray(v) ? v.every(emptyDeep) : typeof v === "object" ? Object.values(v).every(emptyDeep) : v === "");
 // [[name, doc], ...] for the composite documents inside one anonymous answer: /data/<name>, /state, /bootstrap (path without /api), or a live "data" message (no path)

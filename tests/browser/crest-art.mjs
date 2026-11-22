@@ -4,6 +4,7 @@
 // Stubbed: the Worker API is answered from tests/fixtures/api-snapshot (0 Worker requests), no AI call. The party document (static file data/party.json) is replaced in the browser by one
 // with nine members, one per class, so the real board code paths draw the crests (the first-screen medallions, the card deck, the sheet).
 import { stubbed } from "../helpers/browser-stub.mjs";
+import { repoDoc } from "../helpers/api-stub.mjs";
 import { pageUrl } from "../helpers/page-url.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
@@ -18,14 +19,14 @@ const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIU
 
 const browser = stubbed(await pw.chromium.launch(launch), { label: "crest-art api-stub" });
 const url = pageUrl(BASE, { params: { preview: "1" } }), origin = new URL(url).origin;
-const party = await (await fetch(new URL("data/party.json", origin))).json().catch(() => null);
-ok("data/party.json is readable", !!party && Array.isArray(party.members) && party.members.length >= 5);
+const party = JSON.parse(repoDoc("/data/party").body); /* the checkout's party document, the one the API stub serves: a deployed site publishes no static copy (member data is Worker-only) */
+ok("the party document is readable", !!party && Array.isArray(party.members) && party.members.length >= 5);
 
 for (const [size, opts] of [["1366x768", { viewport: { width: 1366, height: 768 } }], ["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }]]) {
   const tag = `[${size}]`, bad = [], crestReq = [], errors = [];
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" });
   const nine = { ...party, members: NINE.map((k, i) => ({ ...party.members[i % party.members.length], name: `Tester${i + 1}`, class_key: k, class: LABEL[k], color: COLOR[k] })) };
-  for (const glob of ["**/data/party.json*", "**/api/data/party.json*"]) await ctx.route(glob, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(nine) })); // static file, or the Worker route the stub answers
+  await ctx.route("**/api/data/party.json*", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(nine) })); // the Worker route the stub answers (there is no static party file to replace)
   await ctx.route("**/api/bootstrap*", async (r) => { const j = await (await r.fetch()).json(); j.party = nine; await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(j) }); }); // the Worker mode: the party comes in the bootstrap (the stub answers r.fetch())
   await ctx.route("**/img/crests/zz-missing.png", (r) => r.fulfill({ status: 200, contentType: "text/plain", body: "not an image" })); // a crest file that is present but broken
   const page = await ctx.newPage();

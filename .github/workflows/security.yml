@@ -137,6 +137,9 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Find the preview URL in the PR comment
         id: urls
         continue-on-error: true
@@ -144,8 +147,8 @@ jobs:
           set -u
           SHORT="${HEAD_SHA:0:7}"
           for i in $(seq 1 48); do
-            BODY=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments --jq '[.comments[] | select(.body | contains("<!-- cloudflare-pr-preview -->"))] | last | .body // ""' || true)
-            # The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
+            BODY=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" | jq -r -s '[.[][] | select(.user.type == "Bot" and .user.login == "github-actions[bot]" and (.body | contains("<!-- cloudflare-pr-preview -->")))] | last | .body // ""' || true)
+            # Only comments authored by github-actions[bot] count (a stranger cannot plant a preview URL). The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
             if echo "$BODY" | grep -q "$SHORT" && ! echo "$BODY" | grep -q "Torn Down"; then
               PAGES=$(echo "$BODY" | grep -oE "https://pr-${PR_NUMBER}\.leeroy-board\.pages\.dev" | head -n 1 || true)
               if [ -n "$PAGES" ]; then
@@ -208,6 +211,10 @@ jobs:
             echo '{"status":"failed"}' > out/zap-summary.json
           fi
           cat out/zap-summary.json
+
+      - name: Scrub the account subdomain from the files about to be uploaded
+        if: always()
+        run: bash tools/scrub-subdomain.sh zap-out out/zap-summary.json
 
       - name: Upload artifacts
         if: always()

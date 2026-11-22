@@ -72,7 +72,8 @@ export function buildReport(i) {
     if (i.recoverResult !== undefined && !ok(i.recoverResult)) pass = false;
   } else {
     mode = "light";
-    pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout);
+    // A PR that changes the production probe, its self-test or what they read must run the self-test: no light pass for it (tools/ci-scope.mjs probeChanged; the self-test legs are part of the `browser` job).
+    pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout) && i.probeChanged !== true;
     ran = "unit, stamps";
     notRun = "preview, api, browser, layout (full suite not requested)";
   }
@@ -103,7 +104,9 @@ export function buildReport(i) {
       : "Unit or stamps failed, and the preview secrets are not configured, so no preview was created. This comment is not the merge gate.\n"
   );
   if (mode === "docs" && pass) lines.push("**passed (docs only)**: this PR changes only docs, so no preview was created and only the unit and stamps suites ran.", "");
-  if (mode === "light") {
+  if (mode === "light" && i.probeChanged === true) {
+    lines.push("**This PR changes the production probe, its self-test or what they read, so the self-test must run.** Add the `ci-full` label: the `browser` job then runs the self-test legs. A light run cannot pass for it. This comment is not the merge gate.", "");
+  } else if (mode === "light") {
     lines.push(
       pass
         ? "Full suite not requested: only unit and stamps ran. The API, browser and layout suites need the `ci-full` label, added when the PR is final. This comment is not the merge gate."
@@ -162,6 +165,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href && process.arg
     previewSkipped: e.PREVIEW_SECRETS === "false",
     docsOnly: e.DOCS_ONLY === "true",
     siteChanged: e.SITE_CHANGED === "true",
+    probeChanged: e.PROBE_CHANGED === "true",
     apiNeeded: e.API_NEEDED !== "false", // fails closed: only the literal "false" lets the API suite be absent
     full: e.FULL === "true",
     previewResult: e.PREVIEW_RESULT,

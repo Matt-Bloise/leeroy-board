@@ -4,6 +4,9 @@
 //    Before the guard the second history.back() left the page (about:blank in this probe).
 // B: after a close, focus is on the tile, or on the main landmark while the tile has no layout box yet, and never stays on <body>; the tile takes focus once it has a box.
 import { pageUrl } from "../helpers/page-url.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
+import { assertMemberState } from "../helpers/member-state.mjs";
+const MEMBER = standIn(0).name; // the first member of the party the API stub serves (never a literal name)
 import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -13,10 +16,11 @@ let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const THROTTLE = Number(arg("--throttle") || 1);
 const browser = stubbed(await pw.chromium.launch());
+await assertMemberState(browser, pageUrl(BASE, { params: { preview: "1" } }), MEMBER); // fails loudly when MEMBER is not on the board (else the suite runs as nobody chosen)
 const TILE = '#wall a.tile[data-scene="roads"]';
 async function fresh() {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, serviceWorkers: "block" });
-  await ctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} });
+  await ctx.addInitScript((n) => { try { localStorage.setItem("board-as", n); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} }, MEMBER);
   const page = await ctx.newPage();
   if (THROTTLE > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE }); }
   await page.goto("about:blank"); await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });

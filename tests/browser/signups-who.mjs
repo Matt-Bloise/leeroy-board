@@ -55,7 +55,7 @@ async function open(browser, width, height, signups) {
   await ctx.route(DATA_RE, (route) => json(route, DATA_RE.exec(route.request().url())[1] === "party" ? PARTY : signups));
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
+  await page.goto(pageUrl(BASE, { defaults: { brain: "local" }, params: { preview: "1" } }), { waitUntil: "load" });
   await page.waitForSelector("#nx-fr2-look, .tn-name", { state: "attached", timeout: 20000 }).catch(() => {});
   // "Just take a look" must be TAKEN, not only looked for: the link (or the chips themselves, on a visit that skips the first-visit sheet) can be attached a moment before it is
   // visible, and a click skipped because the link was not visible yet leaves the chips hidden for good, so the click on a chip times out (the same race B64 fixed in six-members).

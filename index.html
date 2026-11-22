@@ -33,6 +33,7 @@
 <link rel="preload" as="image" type="image/avif" href="img/tavern-hero.w1200.avif" imagesrcset="img/tavern-hero.w640.avif 640w, img/tavern-hero.w1200.avif 1200w, img/tavern-hero.w1672.avif 1672w, img/tavern-hero-2816.w2816.avif 2816w" imagesizes="calc(100vw + 32px)" fetchpriority="high">
 </head>
 <body>
+<p class="offline-line" id="offline-line" role="status"></p>
 <div id="boot" role="status" hidden><div><p data-msg>Opening the board. This can take a moment on a slow connection.</p><p><a href="">Reload this page</a></p></div></div>
 <style>#boot{position:fixed;inset:0;z-index:9;box-sizing:border-box;display:grid;place-content:center;padding:16px;animation:boot-in .01s .8s both}#boot[hidden]{display:none}#boot>div{max-width:30em;padding:20px 24px;border:1px solid #3a2a1a;border-radius:8px;background:#1c130c;color:#eadfc4;font:18px/1.45 Georgia,serif}#boot p{margin:0 0 8px}#boot a{display:inline-block;padding:10px 0;color:#eadfc4;text-decoration:underline}@keyframes boot-in{from{opacity:0}to{opacity:1}}</style>
 <script>
@@ -48,7 +49,7 @@
 })();
 </script>
 <!-- The stylesheets sit here, below the opening card, not in the head: a stylesheet in the head holds back the first paint, so on a slow connection the page stayed black until all of them arrived. Order and cascade are unchanged. -->
-<link rel="stylesheet" href="css/board.css?v=8f4f722503">
+<link rel="stylesheet" href="css/board.css?v=18d6ca147a">
 <link rel="stylesheet" href="css/v13d.css?v=8d93bebb94">
 <link rel="stylesheet" href="css/v14.css?v=eab80f50eb">
 <link rel="stylesheet" href="css/wide.css?v=25a3ee74e2"><link rel="stylesheet" href="css/atlas.css?v=325d942e2b"><link rel="stylesheet" href="css/cloth.css?v=58f27e1eb1"><!-- mobile build: cloth rail --><link rel="stylesheet" href="css/seals.css?v=75fb78bb25"><link rel="stylesheet" href="css/sensory.css?v=cc89ec2db2"><!-- HOOK audio-sensory 1/3 --><link rel="stylesheet" href="css/calm.css?v=911fc50918">
@@ -179,7 +180,7 @@
     </div>
     <div class="sheet-body" id="sheet-body">
       <div class="panel" role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" tabindex="0" hidden>
-        <p class="lede">The dates from Blizzard and the group's cards, in your time zone where the board has a time.</p>
+        <p class="lede">The dates from Blizzard and the group's cards, in your time zone where the board has a time. The group's answer slots (6 PM, 8 PM) are in Eastern time.</p>
         <div class="dates-grid"><ol class="rail" id="rail"></ol><aside class="cal-col" id="cal-col" data-j="c e" aria-label="The dates on a calendar"></aside></div>
       </div>
       <div class="panel" role="tabpanel" id="panel-five" aria-labelledby="tab-five" tabindex="0" hidden>
@@ -307,15 +308,15 @@
 </aside>
 
 <script src="js/sound.js?v=503e312aa0"></script>
-<script src="js/brain.js?v=00b95999b7"></script>
-<script src="js/scene-fsm.js?v=dc83d8afe6"></script><script src="js/crest.js?v=427405be22"></script><script src="js/signups-week.js?v=a788265af1"></script><script src="js/board.js?v=b6bbdc8c94"></script><script src="js/spring.js?v=de9e76fe82"></script><!-- mobile build: spring family -->
-<script src="js/v13d.js?v=b15313b5cc"></script><script src="js/scenes.js?v=4dd7425252"></script><!-- lazy scenes: decide, sheet, chamber, probe --><script src="js/atlas-hook.js?v=b565aed183"></script><script src="js/cloth-hook.js?v=ea7c4c7c9d"></script><!-- mobile build: cloth hook --><script src="js/seals.js?v=351ad1a3b4"></script>
+<script src="js/brain.js?v=c337586e4c"></script>
+<script src="js/scene-fsm.js?v=dc83d8afe6"></script><script src="js/crest.js?v=427405be22"></script><script src="js/signups-week.js?v=a788265af1"></script><script src="js/board.js?v=00e5d71a59"></script><script src="js/spring.js?v=de9e76fe82"></script><!-- mobile build: spring family -->
+<script src="js/v13d.js?v=c91e4b67ee"></script><script src="js/scenes.js?v=86d0228406"></script><!-- lazy scenes: decide, sheet, chamber, probe --><script src="js/atlas-hook.js?v=b565aed183"></script><script src="js/cloth-hook.js?v=ea7c4c7c9d"></script><!-- mobile build: cloth hook --><script src="js/seals.js?v=351ad1a3b4"></script>
 <script src="js/ask.js?v=0d97ca1938"></script><!-- the hover layer loads on the first fine-pointer hover or key press (js/scenes.js, place) -->
 <!-- the wide roads map loads with Three roads through js/scenes.js -->
 <script src="js/sheets.js?v=47969d477d"></script><script src="js/shell.js?v=ed5b53f7a8"></script><script src="js/swipe.js?v=e9a339c7be"></script><!-- mobile build: sheets, phone shell, swipe -->
 <script src="js/haptics.js?v=61e934df8a"></script><script src="js/light.js?v=55ccf75d4e"></script><script src="js/tilt.js?v=3607fdff99"></script><!-- mobile build: tilt --><script src="js/sensory.js?v=f4048e44d3"></script><script src="js/mode.js?v=06a241cc87"></script><!-- companion N4: Play and Lounge --><!-- HOOK audio-sensory 2/3, 3/3 -->
 <script src="js/hdr.js?v=678831b0f7"></script>
-<script src="js/v15.js?v=b773134773"></script><script src="js/next.js?v=3f26b8c784"></script><script src="js/trust.js?v=6af135bf67"></script><script src="js/votes.js?v=833e8b4b02"></script><!-- companion N3: the next step, per journey --><script src="js/mine.js?v=034ef47bc4"></script><script src="js/since.js?v=0bfc64b219"></script><script src="js/roads-buffs.js?v=9e09283417"></script><!-- mobile build: launch-night answers, Looks wrong -->
+<script src="js/v15.js?v=b773134773"></script><script src="js/next.js?v=07456bb5e4"></script><script src="js/trust.js?v=6af135bf67"></script><script src="js/votes.js?v=833e8b4b02"></script><!-- companion N3: the next step, per journey --><script src="js/mine.js?v=034ef47bc4"></script><script src="js/since.js?v=0bfc64b219"></script><script src="js/roads-buffs.js?v=5812442e38"></script><!-- mobile build: launch-night answers, Looks wrong -->
 <script type="module">
 /* Gate: the board renders inside Discord (vendored SDK, relative import; outside Discord the gate stays). Two previews skip it:
    #preview or ?preview=1 on claude.ai or a local host, and #review-<REVIEW_KEY> on any host. The key keeps strangers off; it is

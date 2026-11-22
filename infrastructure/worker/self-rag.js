@@ -8,7 +8,7 @@
 //                                            retrieved text, the build, the party state or the question, else that sentence goes. Names: ask-build.js.
 // Trade-off, stated plainly: this trades some recall for fewer invented facts. A real question can abstain (see the calibration notes below and
 // docs/answer-claims.md), and a true number the Library never gave is removed.
-import { expandWords, idfFor, factHay, stem } from "./rank-core.js";
+import { expandWords, idfFor, factHay, stem, hayCount } from "./rank-core.js";
 import { parseSourceIds } from "./answer-format.js";
 
 export const ABSTAIN_LINE = "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.";
@@ -103,7 +103,7 @@ export const REL_WINDOW = 40; // facts examined (the ranker already ordered them
 export function selectRelevant(hits, words, hays) {
   const list = Array.isArray(hits) ? hits : [];
   const ws = Array.isArray(words) ? words : [];
-  const absent = ws.filter((w) => !hays.some((h) => h.includes(w)));
+  const absent = ws.filter((w) => hayCount(w, hays) === 0);
   const none = (extra = {}) => ({ hits: [], abstain: true, best: 0, kept: 0, dropped: list.length, absent: absent.length, ...extra });
   if (!list.length || !ws.length) return none();
   // two or more absent words, or a very short question (one or two content words) with one: the Library is not what this question is about

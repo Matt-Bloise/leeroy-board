@@ -63,7 +63,7 @@ function nextDeadline() {
   for (const q of (D.party && D.party.polls) || []) if (q.closes_epoch && q.closes_epoch > now) out.push({ t: q.closes_epoch, text: `The ${q.title.toLowerCase()} poll closes ${K.fmtWhen(q.closes_epoch, { rel: true })}` });
   return out.sort((a, b) => a.t - b.t)[0] || null;
 }
-const Q = { timeline: "When is launch, and what comes after?", five: "Who plays what?", roads: "Where do I wake up, and where do we meet?", racials: "What does my race give me?", legacy: "What are bonus points, and when do they start?", buffs: "What do I give, and what do I get?", ledger: "What is still open, and which one is mine?", get signups() { return K.launchPast && K.launchPast() ? "Am I in this week?" : "Am I in for launch night?"; }, librarian: "How do I ask Leeroy?", library: "What should I read first?", decide: "What do I still decide, and by when?" };
+const Q = { get timeline() { return K.launchPast && K.launchPast() ? "What comes after launch?" : "When is launch, and what comes after?"; }, five: "Who plays what?", roads: "Where do I wake up, and where do we meet?", racials: "What does my race give me?", legacy: "What are bonus points, and when do they start?", buffs: "What do I give, and what do I get?", ledger: "What is still open, and which one is mine?", get signups() { return K.launchPast && K.launchPast() ? "Am I in this week?" : "Am I in for launch night?"; }, librarian: "How do I ask Leeroy?", library: "What should I read first?", decide: "What do I still decide, and by when?" };
 const cut = (t, n = 38) => { const w = String(t).split(/\s+/); return w.length > n ? `${w.slice(0, n).join(" ").replace(/[,;:]$/, "")}.` : String(t); };
 const few = (l, n = 3) => (l.length > n ? `${l.slice(0, n).join(", ")} and ${l.length - n} more` : K.andList(l));
 const evOf = (k) => (D.timeline && D.timeline.events.find((e) => e.key === k)) || null;
@@ -578,7 +578,7 @@ function startBrain() {
       suControls();
     },
     pending: (p) => { BR.pend = p || {}; suControls(); },
-    status: (st) => { BR.status = st; },
+    status: (st) => { BR.status = st; K.setOffline(!!(st && st.down)); },
     journey: (j) => { if (j !== journey()) setJourney(j, "mirror"); },
   });
 }

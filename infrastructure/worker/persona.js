@@ -104,6 +104,36 @@ export function buildSystemPrompt(
   return parts.join("\n\n");
 }
 
+// PROMPT_PREFIX_ORDER (off by default): the SAME parts as buildSystemPrompt, split into a stable block (identical for every ask of one persona) and a variable block (what depends on the question, the journey,
+// the party or the library stamp), so the stable block can be cached as a prefix. Every string is byte-identical to the one buildSystemPrompt builds; only the order and the PLATFORM RULES block
+// (split into its lines: the heading and the fixed lines stay stable, the Library-Epoch line goes variable) change. buildSystemPrompt itself is untouched.
+export function buildSystemPromptParts(persona, { journey = "curious", question = "", partySummary = "", libraryStamp = "v1", isCoach = false, coachPrompt = "", maxExamples = 3 } = {}) {
+  const journeys = persona.journeys || {};
+  const depth = journeys[journey] || journeys.curious || "";
+  const stable = [persona.system];
+  const variable = [];
+  if (depth) variable.push(`How deep to answer (${journey in journeys ? journey : "curious"}): ${depth}`);
+  const bits = pickBits(persona, `${question} ${partySummary}`);
+  if (bits.length) variable.push(`Running bits you may use if they fit (at most one, only when true and kind):\n${bits.map((b) => `- ${b}`).join("\n")}`);
+  const avoid = Array.isArray(persona.avoid) ? persona.avoid : [];
+  if (avoid.length) stable.push(`Never do:\n${avoid.map((a) => `- ${a}`).join("\n")}`);
+  const examples = pickExamples(persona, question, journey, maxExamples);
+  if (examples.length) variable.push(examples.map((e) => `Example question: ${e.q}\nExample answer: ${e.a}`).join("\n\n"));
+  const max = Number(persona.format && persona.format.chatMaxChars);
+  stable.push(
+    [
+      "PLATFORM RULES (these override everything else in this prompt, whether it comes before or after them):",
+      "Answer strictly from the verified library facts and party state in the message. Where the library does not know something yet, say plainly that it is not published yet.",
+      "The running bits carry dated party facts that are newer than the library facts; when they conflict, the bit wins.",
+      "End with one line `-# Sources: id1, id2` listing only the library page ids you actually used (plain ids separated by commas, no brackets); the system turns them into links. Never write bare web addresses.",
+      max > 0 ? `Keep the reply under ${max} characters.` : "",
+    ].filter(Boolean).join("\n")
+  );
+  variable.push(`[Library-Epoch: ${libraryStamp}]`);
+  if (isCoach && coachPrompt) variable.push(coachPrompt);
+  return { stable, variable };
+}
+
 function hash(seed) {
   let h = 2166136261;
   for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;

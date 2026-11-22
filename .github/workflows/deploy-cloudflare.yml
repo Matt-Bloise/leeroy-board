@@ -4,6 +4,61 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      # Skipped only when EVERY changed file matches (GitHub evaluates this per push). Nothing here is read by this workflow, by tools/pages-bundle.mjs or by wrangler. The production probe job reads tests/browser/prod-probe.mjs, tests/helpers/ and tests/package*.json, so those are NOT ignored (tests/browser/, tests/helpers/, tests/package.json, tests/package-lock.json).
+      # A skipped push changes nothing: the next push that deploys checks out its own sha, which contains every earlier commit. docs/runbooks/rollback.md, "When a push deploys".
+      # Never add: infrastructure/, data/, pages-worker/, js/, css/, scenes/, index.html, tools/pages-bundle.mjs, tools/d1-row-count.mjs, tools/flagship-ensure-flags.mjs, tools/sync-discord-commands.mjs.
+      - "docs/**"
+      - "tests/unit/**"
+      - "tests/api/**"
+      - "tests/contract/**"
+      - "tests/csp/**"
+      - "tests/fixtures/**"
+      - "tests/load/**"
+      - "tests/local/**"
+      - "tests/visual/**"
+      - "tests/*.png"
+      - "**/*.md"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".claude/**"
+      - "tools/gateway-spike/**"
+      - "tools/replay/**"
+      - "tools/voice-eval/**"
+      - "tools/add-member.mjs"
+      - "tools/api-scope.mjs"
+      - "tools/bench-ask-cpu.mjs"
+      - "tools/check-secret-scope.sh"
+      - "tools/ci-report.mjs"
+      - "tools/ci-scope.mjs"
+      - "tools/claude-selftest.mjs"
+      - "tools/cost-model.mjs"
+      - "tools/deadman-status.mjs"
+      - "tools/docs-only.mjs"
+      - "tools/first-paint-measure.mjs"
+      - "tools/flake-signatures.json"
+      - "tools/flake-signatures.mjs"
+      - "tools/grade-answers.mjs"
+      - "tools/heartbeat-send.mjs"
+      - "tools/images.mjs"
+      - "tools/import-signups.mjs"
+      - "tools/lighthouse-summary.mjs"
+      - "tools/local-check.sh"
+      - "tools/measure-claude-latency.mjs"
+      - "tools/measure-research-cpu.mjs"
+      - "tools/pages-prune.mjs"
+      - "tools/pull-export.mjs"
+      - "tools/render-legal.mjs"
+      - "tools/research-synthetic.mjs"
+      - "tools/restore-drill.mjs"
+      - "tools/restore-local.mjs"
+      - "tools/roster-upsert.mjs"
+      - "tools/rotate-salts.mjs"
+      - "tools/shadow-ask.mjs"
+      - "tools/source-probe.mjs"
+      - "tools/source-probe.sources.json"
+      - "tools/stamps.mjs"
+      - "tools/terms-watch.mjs"
+      - "tools/tooltips-compliance.mjs"
   workflow_dispatch:
     inputs:
       allow_create_database:
@@ -104,7 +159,7 @@ jobs:
 
           if [ "$TOKEN_STATUS" != "active" ]; then
             echo "::error::Cloudflare API Token validation failed. Status: $TOKEN_STATUS"
-            echo "Raw response from Cloudflare: $VERIFY_RES"
+            echo "Cloudflare error codes: $(printf '%s' "$VERIFY_RES" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required:"
             echo "1. Verify CLOUDFLARE_API_TOKEN is a valid API Token (not a Global API Key)."
@@ -123,11 +178,11 @@ jobs:
               const target = process.env.TARGET_ID;
               const match = accs.find(a => a.id === target);
               if (match) {
-                console.log("MATCH:" + match.id + ":" + match.name);
+                console.log("MATCH:" + match.id);
               } else if (accs.length === 1) {
-                console.log("RESOLVED_SINGLE:" + accs[0].id + ":" + accs[0].name);
+                console.log("RESOLVED_SINGLE:" + accs[0].id);
               } else if (accs.length > 1) {
-                console.log("MULTIPLE:" + accs.map(a => `${a.name} (${a.id})`).join(", "));
+                console.log("MULTIPLE:" + accs.length);
               } else {
                 console.log("NONE");
               }
@@ -139,16 +194,16 @@ jobs:
           TARGET_ACCOUNT_ID="$CLEAN_ACC"
           if [[ "$ACC_INFO" == MATCH:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "✓ Account ID matches token: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "✓ Account ID matches the token (account name and id are not printed)."
           elif [[ "$ACC_INFO" == RESOLVED_SINGLE:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "::notice::Auto-resolved Cloudflare Account ID: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "::notice::Auto-resolved the Cloudflare account from the token (account name and id are not printed)."
             TARGET_ACCOUNT_ID="$ACC_ID"
           elif [[ "$ACC_INFO" == MULTIPLE:* ]]; then
             echo "::error::Provided Account ID '$CLEAN_ACC' does not match any accounts this token can access."
-            echo "Available accounts for this token: ${ACC_INFO#MULTIPLE:}"
+            echo "The token can access more than one account; names and ids are not printed. Set CLOUDFLARE_ACCOUNT_ID to the intended one."
             exit 1
           else
             echo "::warning::Could not query /accounts via token. Proceeding with provided Account ID: $CLEAN_ACC"
@@ -165,7 +220,7 @@ jobs:
 
           if [ "$D1_SUCCESS" != "true" ]; then
             echo "::error::Token lacks D1 permissions for account '$TARGET_ACCOUNT_ID'."
-            echo "Cloudflare response: $D1_CHECK"
+            echo "Cloudflare error codes: $(printf '%s' "$D1_CHECK" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required to Fix (Authentication error 10000 on D1):"
             echo "In Cloudflare Dashboard -> My Profile (top-right avatar) -> API Tokens:"
@@ -199,7 +254,7 @@ jobs:
 
           if [ "$ZONE_SUCCESS" != "true" ]; then
             echo "::error::Token lacks Zone Read permissions for leeroy.party."
-            echo "Cloudflare response: $ZONE_CHECK"
+            echo "Cloudflare error codes: $(printf '%s' "$ZONE_CHECK" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required to Fix:"
             echo "In Cloudflare Dashboard -> My Profile -> API Tokens:"
@@ -246,7 +301,7 @@ jobs:
               echo "$CREATE_OUT"
               DB_ID=$(echo "$CREATE_OUT" | grep -oE '[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}' | head -n 1)
             else
-              echo "::error::D1 database '$D1_DATABASE_NAME' was not found in this Cloudflare account. Refusing to create an empty one: production would run on an empty database. Check CLOUDFLARE_ACCOUNT_ID and the token's account. If this really is a first-time setup, run this workflow manually (workflow_dispatch) with allow_create_database=true. See docs/runbooks/rollback.md (Deploy safety)."
+              echo "::error::D1 database '$D1_DATABASE_NAME' was not found in this Cloudflare account. Refusing to create an empty one: production would run on an empty database. Check CLOUDFLARE_ACCOUNT_ID and the account that owns the Worker. If this really is a first-time setup, run this workflow manually (workflow_dispatch) with allow_create_database=true. See docs/runbooks/rollback.md (Deploy safety)."
               exit 1
             fi
           fi
@@ -273,6 +328,25 @@ jobs:
             echo "::error::CLOUDFLARE_ACCOUNT_ID is missing or empty in deploy step!"
             exit 1
           fi
+
+      - name: Record D1 Time Travel bookmark before migrations
+        # Read-only (wrangler d1 time-travel info changes nothing). Never blocks a deploy: continue-on-error, and the summary is written even if the call fails.
+        # Prints the bookmark only; the output of this command carries no token or account secret.
+        continue-on-error: true
+        working-directory: infrastructure
+        run: |
+          set +e
+          OUT="$(npx wrangler d1 time-travel info "$D1_DATABASE_NAME" 2>&1)"
+          CODE=$?
+          {
+            echo "### D1 Time Travel bookmark before migrations"
+            echo ""
+            echo '```'
+            echo "$OUT"
+            echo '```'
+            if [ "$CODE" -ne 0 ]; then echo ""; echo "Bookmark lookup failed (exit $CODE); the deploy continues."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$CODE"
 
       - name: Apply Unified D1 Schema (`schema.sql`) & Pending Migrations
         working-directory: infrastructure
@@ -321,19 +395,17 @@ jobs:
           set +e
           DEPLOY_OUT=$(npx wrangler deploy 2>&1)
           DEPLOY_EXIT=$?
-          echo "$DEPLOY_OUT"
+          # The account workers.dev subdomain carries a personal name: it is never printed. The raw output stays in the variable, only the redacted text reaches the log.
+          SUB=$(printf '%s' "$DEPLOY_OUT" | grep -oE '\.[a-z0-9-]+\.workers\.dev' | head -n 1 | sed -E 's#^\.([a-z0-9-]+)\.workers\.dev$#\1#' || true)
+          if printf '%s' "$SUB" | grep -qE '^[a-z0-9-]+$'; then echo "::add-mask::$SUB"; fi
+          echo "$DEPLOY_OUT" | sed -E 's#\.[a-z0-9-]+\.workers\.dev#.<account-subdomain>.workers.dev#g'
           if [ $DEPLOY_EXIT -ne 0 ]; then
             echo "::error::wrangler deploy failed with exit code $DEPLOY_EXIT"
             exit $DEPLOY_EXIT
           fi
           set -e
-          WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://api\.leeroy\.party" | head -n 1)
-          if [ -z "$WORKER_URL" ]; then
-            WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://leeroy-brain\.[a-z0-9-]+\.workers\.dev" | head -n 1)
-          fi
-          if [ -z "$WORKER_URL" ]; then
-            WORKER_URL="https://api.leeroy.party"
-          fi
+          # Production is stamped with its own API origin and nothing else: no workers.dev host (it would be accepted as a key destination by the page). The URL is not parsed out of the deploy output any more.
+          WORKER_URL="https://api.leeroy.party"
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 
       - name: Create missing Flagship flags (disabled; never changes an existing flag)
@@ -374,22 +446,26 @@ jobs:
           done
 
       - name: Stage Static Site Bundle & Deploy to Cloudflare Pages Production
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.worker_url }}
         run: |
           set -e
-          mkdir -p .cloudflare-dist
-          for item in index.html 404.html privacy terms _headers og-1200x630.jpg robots.txt atlas cloth css data fonts img js landing rate next room scenes vendor; do
-            if [ -e "$item" ]; then
-              cp -R "$item" .cloudflare-dist/
-            fi
-          done
+          # The bundle is staged by tools/pages-bundle.mjs (shared by the production deploy and the PR preview). It leaves out the member data files
+          # (the Worker serves those through its privacy projection) and fails this step when one is present. docs/runbooks/member-data-worker-only.md
+          node tools/pages-bundle.mjs .cloudflare-dist
 
+          # The Worker URL is stamped into JavaScript: accept only https://api.leeroy.party, refuse anything else.
+          if [ "$WORKER_URL" != "https://api.leeroy.party" ]; then
+            echo "::error::The Worker URL does not have the shape https://<name>[.<subdomain>].workers.dev (or the production API origin); refusing to stamp it into the site bundle."
+            exit 1
+          fi
           # Stamp the resolved production Worker URL into .cloudflare-dist/js/brain.js
           node -e '
             const fs = require("fs");
             const p = ".cloudflare-dist/js/brain.js";
             const s = fs.readFileSync(p, "utf8");
-            fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, `const WORKER = "${process.argv[1]}";`), "utf8");
-          ' "${{ steps.worker.outputs.worker_url }}"
+            const url = process.argv[1]; fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, () => `const WORKER = "${url}";`), "utf8");
+          ' "$WORKER_URL"
 
           cd infrastructure
           npx wrangler pages project create "$PAGES_PROJECT_NAME" --production-branch=master >/dev/null 2>&1 || true
@@ -428,6 +504,15 @@ jobs:
           done
           echo "::error::Post-deploy health check failed: $URL did not return HTTP 200 JSON with ok true and db ok after 5 tries. The Worker or its D1 database may be broken. Roll back: docs/runbooks/rollback.md."
           exit 1
+
+      # Runs only after the Worker is deployed, its secrets are synced and the health check passed, so the manifest it reads already lists every command in this commit
+      # (for example /say). POSTs only the missing or different commands, one by one; never a bulk PUT, never a DELETE. Never fails the deploy: any trouble is a ::warning::.
+      - name: Sync Discord slash commands (idempotent, never deletes)
+        continue-on-error: true
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          WORKER_URL: https://api.leeroy.party
+        run: node tools/sync-discord-commands.mjs --apply
 
   # B53: the production probe (tests/browser/prod-probe.mjs) runs ONCE after each production deploy, as its own job so that it holds no secret (no environment, no
   # job-level env, GITHUB_TOKEN read-only) and so that a failing probe turns the run red without touching anything that was deployed: nothing here rolls back, redeploys or

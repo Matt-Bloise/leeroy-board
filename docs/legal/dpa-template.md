@@ -4,7 +4,7 @@
 
 ## 0. Who is who (open question)
 
-Whether the guild admin is the controller and the service is a processor, or the two are joint controllers for some data, is undecided (SYNTHESIS Part 5e, "controller/processor split"). This template assumes the common case: the **guild admin (Customer) is controller** of member data entered for their guild, and the **Provider** (the selling entity, [name; entity not yet formed]) is **processor**. Counsel to confirm, and to say which data (for example login and abuse prevention) the Provider holds as its own controller.
+Whether the guild admin is the controller and the service is a processor, or the two are joint controllers for some data, is undecided (the planning notes (private), Part 5e, "controller/processor split"). This template assumes the common case: the **guild admin (Customer) is controller** of member data entered for their guild, and the **Provider** (the selling entity, [name; entity not yet formed]) is **processor**. Counsel to confirm, and to say which data (for example login and abuse prevention) the Provider holds as its own controller.
 
 | Term | Value |
 | :--- | :--- |

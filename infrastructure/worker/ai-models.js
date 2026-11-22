@@ -18,9 +18,10 @@ import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./ind
 import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
 import { anthropicAuth, anthropicAvailable, scrubSecrets, scrubError, clearStoreKey, gatewayReady } from "./ai-keys.js";
-import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
+import { loadPersona, buildSystemPrompt, buildSystemPromptParts, pickLine } from "./persona.js";
+import { legacyOn } from "./flags.js";
 import { loadConfigKey } from "./config.js";
-import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
+import { reserveRow, reconcileRow, estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings, stripPersonaIntro } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
@@ -28,10 +29,16 @@ import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
 import { researchEnabled, researchAnswer } from "./research/index.js";
-import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
+import { assertAnthropicUrl, namesAreReal } from "./research/real-names.js";
+import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_LENGTH_OVERRIDE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
+import { findAskerTurns, renderTurns, PRIOR_TURNS_RULE } from "./research/turns.js";
+import { composeTableAnswer } from "./game-facts-compose.js";
+import { gameFactsReadOn, gameFactsComposeOn, readGameFacts, GAME_FACTS_RULE, GAME_FACTS_NOTHING_RULE, addClientTableSources, isTableAbstention } from "./game-facts-read.js";
+import { groupMemoryOn, buildGroupMemoryBlock, groupRowsForAsk, appendGroupLog, isGroupSlug, GROUP_MEMORY_RULE } from "./research/group-memory.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
-import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
-import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
+import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER, degradedLines, DEGRADED_SUFFIX } from "./research/provider.js";
+import { prepareResearchPrivacy, tryResearchClaude, researchParty, MAX_PROMPT_CHARS } from "./research/claude.js";
+import { memberLine, researchTimeoutMs, guestLibraryOnly, hardEndMs } from "./research/no-wall.js";
 import { sheetsHideAnything, WITHHELD_LINE } from "./public-party.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
@@ -88,8 +95,10 @@ export function modelAllowed(provider, model) {
   return Boolean(list && list.includes(model));
 }
 
+// The sentence boundary is a lookbehind, not part of the match: with it consumed, two imperative sentences in a row left the second one
+// for a second pass (repairHouseVoice was not idempotent).
 const ORDERS_RE = new RegExp(
-  String.raw`(^|[.!?]\s+)(?:Don't|Do not|Make sure|Start with|Treat (?:it|this|that) as|Go with|Get it done|You should|Remember to|Be sure to)\b[^.!?\n]*[.!?]?`,
+  String.raw`(?<=^|[.!?]\s+)(?:Don't|Do not|Make sure|Start with|Treat (?:it|this|that) as|Go with|Get it done|You should|Remember to|Be sure to)\b[^.!?\n]*[.!?]?`,
   "gm"
 );
 
@@ -111,13 +120,8 @@ export function repairHouseVoice(rawText, opts = {}) {
   // 2. Strip bare 17-20 digit Discord snowflake IDs outside URLs
   out = out.replace(/(?<!https:\/\/discord\.com\/[^\s"]*)\b\d{17,20}\b/g, "");
 
-  // 3. Inform, never instruct (strip imperative openers unless in private Guided coach mode)
-  if (!opts.isCoach) {
-    const stripped = out.replace(ORDERS_RE, "$1").trim();
-    if (stripped.length >= 16) out = stripped;
-  }
-
-  // 4. Keep at most one bold span (`**...**`) per `api-brain.mjs` house-style rule
+  // 3. Keep at most one bold span (`**...**`) per `api-brain.mjs` house-style rule. Runs BEFORE the imperative strip: dropping the bold markers
+  // of a later span can put a sentence boundary right in front of an order, which a second pass would then strip (not idempotent).
   let seenBold = false;
   out = out.replace(/\*\*([^*]+)\*\*/g, (match, inner) => {
     if (!seenBold) {
@@ -126,6 +130,18 @@ export function repairHouseVoice(rawText, opts = {}) {
     }
     return inner;
   });
+
+  // 4. Inform, never instruct (strip imperative openers unless in private Guided coach mode)
+  // Research mode (opts.keepAdvice) keeps imperative advice: asked "what should I", the answer is a plain pick (research/rules.js).
+  if (!opts.isCoach && !opts.keepAdvice) {
+    // To a fixed point: dropping a sentence can put the next order right behind a sentence end, and one pass would leave it for the next call.
+    let stripped = out;
+    for (let prev = null; prev !== stripped; ) {
+      prev = stripped;
+      stripped = stripped.replace(ORDERS_RE, "").trim();
+    }
+    if (stripped.length >= 16) out = stripped;
+  }
 
   // Collapse spaces and tabs only; newlines carry the answer's line structure.
   return out
@@ -258,7 +274,11 @@ function scorePageForQuestion(page, words) {
 const AI_TIMEOUT_MS = 20000;
 export const ASK_CHOSEN_TIMEOUT_MS = 12000;
 export const ASK_FALLBACK_TIMEOUT_MS = 9000;
-export const ASK_DEADLINE_MS = 24000;
+// 26 s (was 24 s): the Claude hop needs up to 22 s (the hard end, deadline minus a sixth; research/claude.js). The ask runs under ctx.waitUntil, which Cloudflare ends 30 s after the response is sent, and the Discord edit
+// has a 28 s budget from the ask's start (discord.js DELIVERY_BUDGET_MS): 26 s leaves the delivery edit its 2 s first-attempt floor before that 28 s. Do not raise it past 26 s without moving the delivery budget and the 30 s waitUntil cap.
+export const ASK_DEADLINE_MS = 26000;
+// The delivery deadline in force (discord.js answerAndDeliver reads the same override): research mode takes its margin from this, not from the constant.
+export const askDeadlineMs = (env) => (Number(env && env.ASK_DEADLINE_MS) > 0 ? Number(env.ASK_DEADLINE_MS) : ASK_DEADLINE_MS);
 
 export class AiTimeoutError extends Error {
   constructor(what, ms = AI_TIMEOUT_MS) {
@@ -394,16 +414,27 @@ export async function fetchWithGatewayFallback({
   singleHop = false, // research mode: one send per attempt (the gateway if configured, else direct), never a gateway send followed by a direct one
 }) {
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
-  const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN)) || ""; // never the account-wide deploy token
+  // Research mode (singleHop): friend text goes only to Anthropic's API, direct or through the gateway's anthropic route; any other URL is refused before a send (research/real-names.js).
+  if (singleHop) { assertAnthropicUrl(defaultEndpoint); assertAnthropicUrl(gwUrl); }
+  // never the account-wide deploy token. Edge whitespace (a dashboard paste, a trailing newline) is trimmed; a value that still has whitespace or control characters inside, or is absurdly long, would make
+  // the runtime's header check throw before any send, so it is not used: a research or BYOK send (no direct hop to fall back to) stops with a fixed code, any other send goes on without the gateway token.
+  const rawAigToken = env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN);
+  const aigToken = typeof rawAigToken === "string" ? rawAigToken.trim() : "";
+  const aigTokenBad = aigToken.length > 0 && (aigToken.length > 512 || /[\s\x00-\x1f\x7f]/.test(aigToken));
   if (!allowDirectFallback) {
     if (gwUrl === defaultEndpoint || !gatewayReady(env)) {
       throw new Error("Anthropic BYOK needs the AI Gateway configured (account id, gateway id and gateway token)");
     }
   }
+  if (aigTokenBad && (singleHop || !allowDirectFallback)) {
+    const e = new Error("AI Gateway token is not usable as a header value");
+    e.code = "AI_GATEWAY_TOKEN_INVALID"; // fixed text and code: never the value
+    throw e;
+  }
   const cacheHeaders = env && env.AI_GATEWAY_ID ? {
     "cf-aig-cache-ttl": String(env.AI_GATEWAY_CACHE_TTL || 21600), // 6 hours matching the cron update cycle
     "cf-aig-metadata": gatewayMetadata(metadata),
-    ...(aigToken ? { "cf-aig-authorization": `Bearer ${aigToken}` } : {}),
+    ...(aigToken && !aigTokenBad ? { "cf-aig-authorization": `Bearer ${aigToken}` } : {}),
     ...(skipCache ? { "cf-aig-skip-cache": "true" } : {}),
     ...(cacheKey ? { "cf-aig-cache-key": String(cacheKey) } : {}),
   } : {};
@@ -419,7 +450,8 @@ export async function fetchWithGatewayFallback({
           ...(allowDirectFallback ? {} : { redirect: "manual" }), // BYOK: never follow a redirect with the gateway token attached
         },
         "AI provider request",
-        deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS
+        // The 0.6 share leaves time for the direct hop that follows a gateway failure; a single-hop send has no second hop, so it gets the whole remaining budget.
+        deadlineAt ? (singleHop ? msLeft(deadlineAt) : Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6))) : AI_TIMEOUT_MS
       );
       // If gateway returns success (2xx), return immediately
       if (resp.ok) return resp;
@@ -429,7 +461,7 @@ export async function fetchWithGatewayFallback({
       console.warn(`[AI-Gateway] HTTP ${resp.status} from ${gwUrl}, falling back to direct endpoint`);
     } catch (err) {
       if (!allowDirectFallback || singleHop) throw scrubError(err);
-      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${scrubSecrets(err && err.message, headers["x-api-key"])}, falling back to direct endpoint`);
+      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${shortProviderError(err)}, falling back to direct endpoint`);
     }
   }
 
@@ -446,7 +478,18 @@ export async function fetchWithGatewayFallback({
 }
 
 // modelOverride / wantUsage / beforeSend are research-mode only (research/claude.js); the defaults leave the legacy call exactly as it was.
-export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, modelOverride = null, wantUsage = false, beforeSend = null }) {
+// Claude 5.5 models think by default (adaptive) when no thinking field is sent, and the thinking tokens come out of max_tokens: with the 700-token research cap a real question can spend
+// the whole cap thinking and return NO text block (production showed claude:reply-flagged@empty at about 6.6 s on every full-size compose, while an 8-token ping answered). The answer here is a
+// short chat reply, so thinking is turned off with the form each model accepts (docs: Sonnet 5.5 rejects {type: "disabled"}; "between_tools" is its off switch, accepted at effort high or below,
+// and this body sets no effort; Haiku 5.5 accepts {type: "disabled"} at high or below). Other models get no field, exactly as before.
+export function thinkingOffFor(model) {
+  const m = String(model || "");
+  if (/^claude-sonnet-5-5(?![0-9])/.test(m)) return { type: "between_tools" };
+  if (/^claude-haiku-5-5(?![0-9])/.test(m)) return { type: "disabled" };
+  return null;
+}
+
+export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, modelOverride = null, wantUsage = false, beforeSend = null, systemCachePrefix = "" }) {
   const auth = await anthropicAuth(env);
   if (auth.mode === "none") {
     throw new Error("Anthropic credential is not configured on the Cloudflare Worker (BYOK, Secrets Store binding or ANTHROPIC_API_KEY)");
@@ -460,7 +503,14 @@ export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep,
   const bodyObject = {
     model,
     max_tokens: maxTokens,
-    system: [
+    ...(thinkingOffFor(model) ? { thinking: thinkingOffFor(model) } : {}),
+    // PROMPT_PREFIX_ORDER: when the caller names a stable prefix and the prompt really starts with it, the prefix is its own cached block and the variable rest follows uncached; any mismatch sends one block as before.
+    system: !wantUsage && systemCachePrefix && systemPrompt.length > systemCachePrefix.length && systemPrompt.startsWith(`${systemCachePrefix}\n\n`)
+      ? [
+          { type: "text", text: systemCachePrefix, cache_control: { type: "ephemeral" } },
+          { type: "text", text: systemPrompt.slice(systemCachePrefix.length + 2) },
+        ]
+      : [
       {
         type: "text",
         text: systemPrompt,
@@ -470,7 +520,7 @@ export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep,
     messages: [{ role: "user", content: userPrompt }],
   };
   const body = JSON.stringify(bodyObject);
-  if (beforeSend) beforeSend(bodyObject); // research mode: the outbound guard over the final body; a throw means nothing is sent
+  if (beforeSend) beforeSend(bodyObject, secretKey); // research mode: the outbound guard over the final body (and the secret scan, which knows the key); a throw means nothing is sent
 
   try {
   const resp = await fetchWithGatewayFallback({
@@ -614,7 +664,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   return { answer, model: activeModel, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, strictDeadline = false }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
@@ -641,6 +691,24 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   }
   const reserved = reservation.ok ? reservation.reserved : 0;
 
+  // Research mode, guests only (keys carry tenantSharePct): the same estimate is reserved atomically on the guests' row before the call, so a flood cannot pass the share
+  // between the check and the add. A refused reserve gives the global reservation back and the guest falls to library facts; members never reach this.
+  let shareRes = null;
+  if (budgetKind === "ask" && budgetKeys && budgetKeys.tenantSharePct && budgetKeys.tenantKey) {
+    shareRes = await reserveRow(env, budgetKeys.tenantKey, estimate, (dailyCap(env) * budgetKeys.tenantSharePct) / 100, reserveAt);
+    if (!shareRes.ok) {
+      if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false, key: reservation.key }, reserveAt);
+      throw Object.assign(new Error(shareRes.over ? "Workers AI guest share reached" : "Workers AI budget unavailable"), { code: shareRes.over ? "budget_tenant" : "budget_unavailable" });
+    }
+  }
+
+  // Research mode: the reservations above took time. With under 1 s left before the hard end, give both back and skip the call (the caller answers from library facts).
+  if (strictDeadline && deadlineAt && deadlineAt - Date.now() < 1000) {
+    if (shareRes) await reconcileRow(env, shareRes, 0, { counted: false }, reserveAt);
+    if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false, key: reservation.key }, reserveAt);
+    throw new AiTimeoutError("Workers AI call", 0);
+  }
+
   let result = null;
   let answer;
   try {
@@ -653,15 +721,17 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
             metadata: JSON.parse(gatewayMetadata(metadata)),
             cacheTtl: Number(env.AI_GATEWAY_CACHE_TTL) || 21600, // 6 hours: matches the cron update cycle
           },
-        }, deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS);
+        }, strictDeadline && deadlineAt ? Math.max(1, Math.round((deadlineAt - Date.now()) * 0.6)) : deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS);
       } catch (gwErr) {
-        console.warn(`[AI-Gateway] Workers AI gateway error (${env.AI_GATEWAY_ID}): ${gwErr.message}, falling back to direct run`);
+        console.warn(`[AI-Gateway] Workers AI gateway error (${env.AI_GATEWAY_ID}): ${shortProviderError(gwErr)}, falling back to direct run`);
         result = null;
       }
     }
 
     if (!result) {
-      result = await runWorkersAiWithTimeout(env, model, inputs, undefined, msLeft(deadlineAt));
+      // Research mode: no 1 s floor. A direct run after a failed gateway run only starts when 1 s or more is left before the hard end.
+      if (strictDeadline && deadlineAt && deadlineAt - Date.now() < 1000) throw new AiTimeoutError("Workers AI call", 0);
+      result = await runWorkersAiWithTimeout(env, model, inputs, undefined, strictDeadline && deadlineAt ? Math.floor(deadlineAt - Date.now()) : msLeft(deadlineAt));
     }
 
     answer = String(
@@ -678,8 +748,10 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
     // The reservation becomes the real cost (and counts the ask). With no reservation (budget error, fail open) this adds the cost as before.
     if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, neurons, { counted: true, key: reservation.key }, reserveAt);
     else await recordUsage(env, budgetKind, neurons);
-    if (budgetKind === "ask") await recordAttributed(env, budgetKeys, neurons);
+    if (shareRes) await reconcileRow(env, shareRes, neurons, { counted: true }, reserveAt);
+    if (budgetKind === "ask") await recordAttributed(env, shareRes ? { ...budgetKeys, tenantKey: null } : budgetKeys, neurons); // the guests' row was already settled above
   } catch (callErr) {
+    if (shareRes) await reconcileRow(env, shareRes, 0, { counted: false }, reserveAt);
     if (!reservation.ok) throw callErr;
     await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false, key: reservation.key }, reserveAt);
     throw callErr;
@@ -732,19 +804,21 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, hardDeadlineAt = null , systemCachePrefix = ""}) {
   if (modelOverride && !modelAllowed(provider, modelOverride)) {
     throw new Error(`model ${String(modelOverride).slice(0, 60)} is not allowed for provider ${provider}`);
   }
   if (isPrPreviewEnv(env) && provider !== "workers-ai") {
     provider = "workers-ai";
   }
-  const deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
+  let deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
+  // Research mode passes an absolute end (ask start + deadline - 4 s): the attempt never runs past it, whatever the reservations before the call cost.
+  if (hardDeadlineAt) deadlineAt = deadlineAt ? Math.min(deadlineAt, hardDeadlineAt) : hardDeadlineAt;
   switch (provider) {
     case "gemini":
       return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, modelOverride, maxTokens });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, metadata, deadlineAt, modelOverride, maxTokens });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, metadata, deadlineAt, modelOverride, maxTokens, strictDeadline: Boolean(hardDeadlineAt) });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
@@ -813,7 +887,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
       });
     case "claude":
     default:
-      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, maxTokens });
+      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, maxTokens, systemCachePrefix });
   }
 }
 
@@ -866,9 +940,23 @@ export function shortProviderError(err) {
   const raw = String((err && (err.code === "ai_timeout" ? `timeout ${err.message}` : err.message)) || err || "error");
   const http = /^([A-Za-z0-9_.-]+) API HTTP (\d{3})/.exec(raw);
   if (http) return `${http[1]} API HTTP ${http[2]}`; // status only: never a provider body
+  // No provider text at all: a fixed message plus the error name and, when numeric, its status. Provider message text can carry a body, a binding or a key.
+  if (err && err.code === "ai_timeout") return "provider timeout";
+  const name = err && typeof err.name === "string" && /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(err.name) ? err.name : "Error";
+  const status = err && Number.isInteger(err.status) && err.status >= 100 && err.status <= 599 ? ` status ${err.status}` : "";
+  return `provider error (${name}${status})`;
+}
+
+// An operator-typed failure reason (admin POST /answer, Discord /answer): the operator wrote it, so it is kept readable, but secrets, key-shaped tokens and
+// bearer values are stripped and it is cut to 60 characters. It is stored on the model field (the asker-facing read strips it, but the asker's own data export returns the stored model, so it is scrubbed) and goes in the room broadcast.
+export function operatorFailureReason(failed) {
+  const raw = String((failed && failed.message) || failed || "error");
+  const http = /^([A-Za-z0-9_.-]+) API HTTP (\d{3})/.exec(raw);
+  if (http) return `${http[1]} API HTTP ${http[2]}`; // status only, as before: never a provider body
   return scrubSecrets(raw)
     .replace(/[?&]key=[^\s&"]+/gi, "")
     .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "")
+    .replace(/\bhttps?:\/\/\S+/gi, "")
     .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "")
     .replace(/\s+/g, " ")
     .trim()
@@ -882,11 +970,22 @@ export const PROMPT_VARIANTS = ["production", "plain", "examples-6", "format-rem
 const FORMAT_REMINDER =
   "Format contract: the first line is one bold sentence that answers the question. Then at most a few short bullets (`- **Name** · value`). Then `-# Sources: id1, id2`. No emoji, no greeting, no filler opener, no bare web addresses.";
 
+// What a failed ask may show to anyone: the bare "<known provider> API HTTP <status>" (never a body) or one fixed line.
+// The prefixes the throw sites really use: "Anthropic" (callAnthropicClaude), "Gemini" (callGemini) and the lowercase provider id of the generic OpenAI-style call (groq, cerebras, github, openrouter).
+const PUBLIC_ERROR_PROVIDERS = { Anthropic: 1, Gemini: 1, groq: 1, cerebras: 1, github: 1, openrouter: 1 };
+export const ASK_FAILED_LINE = "Leeroy could not answer that just now. Try again in a moment.";
+export function publicAskError(err) {
+  const short = shortProviderError(err);
+  const m = /^([A-Za-z0-9_.-]+) API HTTP \d{3}$/.exec(short);
+  return m && Object.prototype.hasOwnProperty.call(PUBLIC_ERROR_PROVIDERS, m[1]) ? short : ASK_FAILED_LINE; // only our own provider names; anything else is the fixed line
+}
+
 // Timestamp ids go to the page as numbers, random (UUID) ids whole, so the page can poll GET /api/ask?id= with them.
 const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13)) : String(id));
 
 const MAX_RANK_PASSES = 4; // the question itself, one more for a follow-up's combined retry, and the abstain page lookups (class + two professions) share this; a plain abstain keeps full coverage, an opener that abstains gets class + one profession
-export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null, research = false }) {
+export const promptPrefixOrderOn = (env) => legacyOn(env, "PROMPT_PREFIX_ORDER");
+export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null, research = false, priorTurns = null, researchReal = false, groupMemory = null, gameFacts = false }) {
   const isCoach = journey === "guided" && share !== true;
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
     const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets, idxRow] = await Promise.all([
@@ -947,7 +1046,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets0 = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     // Research mode: names on the sheets join the roster as keys, and a free-text field that fails the strict guard is dropped before any block is rendered (research/claude.js).
-    const rparty = research ? researchParty(sheets0, stateMap) : null;
+    const rparty = research ? researchParty(sheets0, stateMap, { real: researchReal, env }) : null; // RESEARCH_NAMES "real": nothing is dropped for a name (the Claude path sends real names)
     const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
     const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
@@ -1022,7 +1121,22 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       "Display names only in full every time (Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward; never real first names). Inform, never instruct: facts, options, and trade-offs.",
       "Keep answers concise (2 to 4 sentences), warm and plain-spoken. End with one line `-# Sources: id1, id2` listing only the library page ids you actually used (plain ids separated by commas, no brackets); the system turns them into links. Never write bare web addresses.",
     ].join(" ");
+    // GROUP_MEMORY (research + the Claude path with real names + a roster member + the flag; the caller passes groupMemory only then): the group's notes and recent rows as one fenced block, one or two D1 reads.
+    // The asker's slug must exist on the party sheets or in the roster: a board-key holder who is on neither (a web "member" in name only) gets and leaves nothing.
+    let groupMember = false;
+    if (groupMemory && askerIsMember && isGroupSlug(memberSlug)) {
+      groupMember = sheets0.some((s) => s && s.slug === memberSlug);
+      if (!groupMember) { const roster = await loadConfigKey(env, "discord_members"); groupMember = Array.isArray(roster) && roster.some((m) => m && m.slug === memberSlug); }
+    }
+    const groupText = groupMember && researchReal
+      ? await buildGroupMemoryBlock(env, { askerSlug: memberSlug, isMember: true, channel: groupMemory.channel, share: groupMemory.share !== false, names: sheets0.filter((s) => s && s.slug).map((s) => ({ slug: s.slug, display: s.name || s.slug })), mentionText: `${question}\n${prevText}` })
+      : "";
+    // GAME_FACTS_READ (off by default; research asks only): the client table rows that match the question, one lookup (3 D1 reads) started beside the persona load; readGameFacts never throws, and null means nothing changes.
+    const gfTrace = research && gameFacts === true && retrieve && gameFactsReadOn(env) ? {} : null; // filled by readGameFacts; only the shadow recorder reads it
+    const gfPromise = gfTrace ? readGameFacts(env, question, { trace: gfTrace }) : null; // gameFacts: the caller says Claude will answer (a member, a key); a guest or any path without Claude never reads the table
     const persona = await loadPersona(env);
+    let gf = gfPromise ? await gfPromise : null;
+    let gfActive = Boolean(gf && (gf.block || gf.tableFact)); // the table-fact rules go in when a block is shown or the question asks for a table figure
     const usePersona = persona && promptVariant !== "plain";
     let systemPrompt = usePersona
       ? buildSystemPrompt(persona, {
@@ -1031,8 +1145,21 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
         })
       : isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
     if (promptVariant === "format-reminder") systemPrompt = `${systemPrompt}\n\n${FORMAT_REMINDER}`;
+    // Research mode: the persona pack's "Keep the reply under N characters" line (persona.js) would undercut the research cap, so a shorter N is replaced for this ask.
+    const personaCap = Number(persona && persona.format && persona.format.chatMaxChars);
     // Research mode with nothing in the library: the research rules go after VOICE_RULE and override the "only from LIBRARY" lines for this question.
-    systemPrompt = `${systemPrompt}\n\n${PERSONALISE_RULE}\n\n${VOICE_RULE}${research && abstain ? `\n\n${RESEARCH_RULES}` : ""}\n\n${FENCE_RULE}`;
+    systemPrompt = `${systemPrompt}\n\n${PERSONALISE_RULE}\n\n${VOICE_RULE}${research && abstain ? `\n\n${RESEARCH_RULES}` : ""}${research && (abstain || !usePersona || (personaCap > 0 && personaCap < RESEARCH_HARD_CHARS)) ? `\n\n${RESEARCH_LENGTH_OVERRIDE}` : ""}\n\n${FENCE_RULE}${groupText ? `\n\n${GROUP_MEMORY_RULE}` : ""}`;
+    // PROMPT_PREFIX_ORDER (off by default; the legacy Claude path of a production prompt only, never research or an evaluation variant): the same parts in a new order, the stable ones first, so the stable block
+    // can be sent as its own cached system block (callAnthropicClaude). Off or unset: byte-identical to before. See docs/runbooks/prompt-prefix.md.
+    let systemCachePrefix = "";
+    if (promptPrefixOrderOn(env) && usePersona && promptVariant === "production" && !research) {
+      const parts = buildSystemPromptParts(persona, { journey, question, partySummary, libraryStamp, isCoach, coachPrompt: COACH_PROMPT });
+      const stableText = [...parts.stable, PERSONALISE_RULE, VOICE_RULE, FENCE_RULE].join("\n\n");
+      const variableText = [...parts.variable, ...(groupText ? [GROUP_MEMORY_RULE] : [])].join("\n\n");
+      systemPrompt = variableText ? `${stableText}\n\n${variableText}` : stableText;
+      systemCachePrefix = stableText;
+    }
+    const systemBase = systemPrompt; // the table-fact rules (GAME_FACTS_READ) are appended to it below, after the request is sized
 
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.
     // The abstain answer is written by code (self-rag.js composeAbstain): the Library pages that cover the asker's own class, spec and professions.
@@ -1072,17 +1199,25 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     // page the prompt only summarised), plus the build, the party and the question.
     const shownFacts = hits.slice(0, 20).map((h) => h.value).join(" ");
     const shownPages = ranked.map((p) => `${p.title}${p.blurb ? ` ${p.blurb}` : ""}`).join(" ");
-    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, question, prevQ, by].join(" "); // the earlier question was shown too: a name or number only it holds may be repeated
+    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, question, prevQ, by, ...(research && priorTurns ? priorTurns.map((t) => t.q) : [])].join(" "); // the earlier question was shown too: a name or number only it holds may be repeated
     const groundingText = groundingWithIds(groundingBase, retrievedIds, abstain);
     const NL = "\n";
-    const libraryBlock = !retrieve
+    const libraryFor = (tableRules) => !retrieve
       ? ["(not needed for this message)", skip === "build" ? BUILD_RULE : SKIP_RULE].join(NL)
       : abstain
-        ? ["(no library fact matches this question)", research ? RESEARCH_NOTHING_RULE : ABSTAIN_RULE].join(NL)
+        ? ["(no library fact matches this question)", research ? (tableRules ? GAME_FACTS_NOTHING_RULE : RESEARCH_NOTHING_RULE) : ABSTAIN_RULE].join(NL)
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
-    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
+    const turnsText = research && priorTurns ? renderTurns(priorTurns) : ""; // ASK_RESEARCH only: the asker's own last turns (research/turns.js); empty when off, so the prompt is byte-identical
+    const userFor = (blockText, libraryBlock) => `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${turnsText ? `${fence("PRIOR_TURNS", turnsText)}\n${PRIOR_TURNS_RULE}\n\n` : ""}${groupText ? `${groupText}\n\n` : ""}${blockText}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
+    let userPrompt = userFor(gfActive && gf.block ? `${gf.block}\n\n` : "", libraryFor(gfActive));
+    if (gfActive) systemPrompt = `${systemBase}\n\n${GAME_FACTS_RULE}`;
+    // One shared budget (research/claude.js MAX_PROMPT_CHARS): when the block and the rules would push the request over it, they go (never the question or the library) and the ask is the one it would be without the flag.
+    const gfForCompose = gf; // the budget below drops the table block from the MODEL prompt; a code-written answer calls no model and has no prompt to fit
+    if (gfActive && systemPrompt.length + userPrompt.length > MAX_PROMPT_CHARS) { gf = null; gfActive = false; systemPrompt = systemBase; userPrompt = userFor("", libraryFor(false)); if (gfTrace) gfTrace.dropped = "prompt-budget"; }
+    if (gfTrace) gfTrace.used = gfActive;
+    const tableAnswer = gfForCompose && gfForCompose.res && gameFactsComposeOn(env) ? composeTableAnswer(question, gfForCompose.res) : null; // GAME_FACTS_COMPOSE: the row is the answer; null = the model answers as before
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, ...(systemCachePrefix ? { systemCachePrefix } : {}), userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, ...(gfActive ? { gameFactIds: gf.ids, gameFactGround: gf.ground } : {}), ...(gfTrace ? { gfTrace } : {}), ...(tableAnswer ? { tableAnswer } : {}), abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1094,12 +1229,14 @@ const eggFor = (persona) => {
   return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
 };
 
-export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "", research = false }) {
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "", research = false, factIds = null, factGround = "", tableCites = null }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
-    let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
+    // GAME_FACTS_COMPOSE: a composed table answer is the row's own text. The house-voice repair (name_map, Skippy to Leeroy, snowflake strip) and the egg and intro strips are for model prose and could change a name or a digit of it, so the
+    // text leaves the worker byte-identical to the row-derived text apart from the Sources line; link and mention neutralising below still runs.
+    const composedTable = research && trusted && Array.isArray(tableCites);
+    let repaired = composedTable ? String(rawAnswer || "").trim() : repairHouseVoice(rawAnswer, { isCoach, nameMap, ...(research ? { keepAdvice: true } : {}) });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
-    repaired = stripEggLine(repaired, eggFor(persona).line);
-    repaired = stripPersonaIntro(repaired);
+    if (!composedTable) { repaired = stripEggLine(repaired, eggFor(persona).line); repaired = stripPersonaIntro(repaired); }
     // A spell, place or item the library never gave is replaced by the honest line.
     // Research mode (ASK_RESEARCH on) replaces these deleters with labellers (research/label.js): the same checks tag a sentence "Classic value, not confirmed for Forever" instead of cutting it.
     if (typeof groundingText === "string" && !trusted && !research) {
@@ -1116,14 +1253,18 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
     }
     // Research text step: refusal sentences out, labels, mention and link safety, whole-sentence trim, one sources line with one confidence word (appended after formatting).
     let researchBasis = null;
+    let factCites = []; // GAME_FACTS_READ: the client-table row ids the answer cites (researchPrepare); always empty with the flag off
     // The original voice runs 600-900 characters, hard 1500 for the body (the persona's 1200 chat cap would cut it); the finished answer, sources and confidence line included, stays at or under 1900 (Discord's limit is 2000).
     const researchCap = research ? RESEARCH_FINAL_CHARS : 0;
     let boardHost = "";
     if (research) { try { boardHost = new URL(env.BOARD_PUBLIC_URL || "https://leeroy.party").hostname; } catch {} }
     if (research && !trusted) {
-      const rp = researchPrepare(repaired, { groundingText: typeof groundingText === "string" ? groundingText : "", retrievedIds: retrieved ? retrieved.ids : null, budget: RESEARCH_HARD_CHARS, allow: boardHost ? [boardHost] : [] });
+      const rp = researchPrepare(repaired, { groundingText: typeof groundingText === "string" ? groundingText : "", retrievedIds: retrieved ? retrieved.ids : null, budget: RESEARCH_HARD_CHARS, allow: boardHost ? [boardHost] : [], ...(factIds ? { factIds: new Set(factIds), factGround } : {}) });
       repaired = rp.text;
       researchBasis = rp.basis;
+      factCites = rp.factCites || [];
+    } else if (research && trusted && Array.isArray(tableCites)) {
+      factCites = tableCites; // GAME_FACTS_COMPOSE: the composed answer's own row id, for the "client table" item of the Sources line
     }
     const libPages = parsedPages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
     const known = new Set(libPages.map((p) => p.id));
@@ -1146,7 +1287,9 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
       : { main: repaired, more: "", sources: "" };
     parts.main = classPageFallback(parts.main, { question, pages: parsedPages, boardUrl: env.BOARD_PUBLIC_URL }); // ask-fallback.js hook
     // The confidence line is for answers the library did not ground (the research prompt state); a library-backed answer keeps its own Sources line.
-    if (research && researchBasis && retrieved && retrieved.abstain) parts.main = appendBasis(parts.main, researchBasis);
+    const basisAppended = Boolean(research && researchBasis && retrieved && retrieved.abstain && !(factIds && !factCites.length && isTableAbstention(parts.main))); // GAME_FACTS_READ: the one-line table abstention gets no "general knowledge" footer
+    if (basisAppended) parts.main = appendBasis(parts.main, researchBasis);
+    if (research && factCites.length && !basisAppended) parts.main = addClientTableSources(parts.main, factCites); // GAME_FACTS_READ: the compact "client table" item of the Sources line
     if (research) {
       // Last step, on the FINAL assembled text (formatter links, class-page fallback, the basis line): link and mention safety, then the length guarantee (also with ANSWER_FORMAT off).
       parts.main = fitToCap(neutraliseMentions(defuseLinks(parts.main, { allow: boardHost ? [boardHost] : [] })), Math.min(researchCap, 1999));
@@ -1221,19 +1364,27 @@ export async function answerWithAi({
   budget = null, // optional { userKey, tenantKey, guest }; without it only the global soft cap applies
   isMember, // is the asker a party member? Defaults to "not the Visitor placeholder".
   storeDetails = false, // ANSWER_UX: keep the ---more--- and ---sources--- text in answer_details for the Discord buttons
+  channel = "", // the Discord channel id of the ask ("" for the website): group memory (GROUP_MEMORY) files and reads by channel
+  noFanout = false, // the listener: a turn that is shared in the reply channel only. No webhook post, no stats.recent, no site broadcast of the question or answer
+  messageTarget = null, // the right-click "Ask Leeroy": { authorSlug } of the message asked about; group memory files that text as the author's message, not as this asker's ask
+  sink = null, // SHADOW_ASK (shadow-ask.js) only: { shadow: true, record(result), subSpend }. Every production caller passes nothing and gets exactly the behaviour below. With a shadow sink the compose path runs unchanged but nothing is
+  // written or sent anywhere (no ask_turns, answer_details, group log, stats, cache purge, socket message or webhook): the result goes to sink.record, and sink.subSpend is the Claude hop's own sub-cap counter.
 }) {
   const t0 = Date.now();
+  const shadow = Boolean(sink && sink.shadow === true);
   const nowIso = () => new Date().toISOString();
   const isCoach = journey === "guided" && share !== true;
   let budgetCode = null;
+  let memberNoWall = false; // ASK_RESEARCH on and the asker is a member: no budget verdict can refuse this ask (research/no-wall.js)
 
   try {
     // ASK_RESEARCH (off by default; never in a PR preview, which is already Workers AI only): the research prompt state, labellers, Workers-AI-only provider and token budget.
     // Fails closed: a flag read that throws counts as ON for provider forcing (research/provider.js).
     const research = await researchModeOn(env, { preview: isPrPreviewEnv(env) });
+    memberNoWall = research && isMember === true; // only an explicit true opens the no-wall path; an omitted isMember is a guest here (buildAnswerInputs keeps its own name rule for the prompt)
     // 0. The same member asking the same question again within 10 minutes gets the same answer text, with no new model call.
     // Not in research mode: a stored refusal or abstain row from before the flag was turned on must never come back as the answer (W5 decides what reuse means for research).
-    const prior = research ? null : await findRecentSameAnswer(env, { intentId, question, share });
+    const prior = research || shadow ? null : await findRecentSameAnswer(env, { intentId, question, share });
     if (prior) {
       const reusedAt = nowIso();
       // Bad stored JSON must not turn a good stored answer into an error row.
@@ -1262,11 +1413,16 @@ export async function answerWithAi({
 
     // 1. Retrieval, party state and prompts (shared with the admin evaluation, see buildAnswerInputs)
     const previousQuestion = isFollowUp(question) ? await findPreviousQuestion(env, { intentId, share: Boolean(share) }) : null;
-    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research });
+    // Research mode only: the asker's own last turns, one D1 read (research/turns.js). Flag off: no read.
+    const priorTurns = research ? await findAskerTurns(env, { intentId, share: Boolean(share) }) : [];
+    // RESEARCH_NAMES (research code only): "real" sends the Claude hop the real names and the asker's turns untokenised; "tokenised" is the earlier behaviour. Guests never reach Claude.
+    const namesReal = research && namesAreReal(env);
+    const groupOn = research && groupMemoryOn(env); // GROUP_MEMORY: only with research mode on (so never in a PR preview); off means no read, no write, no prompt text
+    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research, priorTurns, researchReal: namesReal && memberNoWall, ...(memberNoWall && anthropicAvailable(env) ? { gameFacts: true } : {}), ...(groupOn ? { groupMemory: { channel, share: Boolean(share) } } : {}) }); // real only for a member: a guest's Workers AI prompt always takes the tokenised, dropping path
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
     // Research mode: names become per-request tokens before any model sees the prompt (research/claude.js). Workers AI gets the same tokenised prompt; with the flag off these are the
     // untouched prompts. If tokenising fails Claude is skipped and Workers AI (inside Cloudflare) takes the prompt as it is.
-    const priv = research ? prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, by, party: inputs.researchParty }) : null;
+    const priv = research ? prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, priorTurns, by, party: inputs.researchParty }) : null;
     const sendSystem = priv && priv.ok ? priv.system : systemPrompt;
     const sendUser = priv && priv.ok ? priv.user : userPrompt;
     let researchNote = "";
@@ -1289,8 +1445,12 @@ export async function answerWithAi({
     // Daily budget: past the soft cap (or a per-user / per-tenant cap), answer in voice without calling AI. Every provider is checked,
     // so choosing a different model does not skip the caps.
     let rawAnswer, model, provider;
+    let claudeUsage = null; // measured Claude usage of the answer that was used (shadow recorder only)
     let fallbackNote = "";
-    const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
+    let guestUntokenised = false; // a guest whose prompt could not be tokenised: library facts only, labelled +degraded
+    let degraded = false; // ASK_RESEARCH member: Claude could not answer, so the row is marked +degraded (never silent)
+    let libOnly = false; // research guest with a spent budget: library facts only
+    const composed = inputs.abstainAnswer || (inputs.tableAnswer ? inputs.tableAnswer.text : null); // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
     // ASK_RESEARCH seam (off by default; never in a PR preview). The stub handles nothing; any error, empty answer or "not handled" runs the path below unchanged.
     let researched = null;
     if (!composed && !isPrPreviewEnv(env)) {
@@ -1300,12 +1460,12 @@ export async function answerWithAi({
           if (r && r.handled === true && typeof r.answer === "string" && r.answer.trim()) researched = r.answer;
         }
       } catch (e) {
-        console.error("research seam failed, using the standard answer path:", e && e.message);
+        console.error("research seam failed, using the standard answer path:", shortProviderError(e));
       }
     }
     if (composed) {
       rawAnswer = composed;
-      model = "abstain";
+      model = inputs.abstainAnswer ? "abstain" : "table";
       provider = "library";
     } else if (researched) {
       rawAnswer = researched;
@@ -1314,9 +1474,13 @@ export async function answerWithAi({
     } else {
     {
       // The global cap counts Workers AI neurons only, so it is skipped for other providers; the user and tenant caps still apply.
-      const verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null, new Date(), { skipGlobal: chosenProvider !== "workers-ai", failClosed: chosenProvider === "workers-ai" && Boolean(budget && budget.guest) });
-      if (verdict) {
+      // Research mode, member asker: no verdict. The counters keep counting (recordAttributed) but nothing refuses; the chain below degrades instead: Claude, Workers AI (which stops
+      // at the neuron cap by itself), library facts. Guests keep the check, on their own keys.
+      const verdict = memberNoWall ? null : await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null, new Date(), { skipGlobal: chosenProvider !== "workers-ai", failClosed: chosenProvider === "workers-ai" && Boolean(budget && budget.guest) });
+      libOnly = guestLibraryOnly(research, verdict); // research guest over the share, the global cap or unreadable counters: library facts, no model, no refusal text
+      if (verdict && !libOnly) {
         budgetCode = verdict.code;
+        if (shadow) { await sink.record({ status: "refused", reason: budgetCode, latencyMs: Date.now() - t0 }); return { code: budgetCode }; }
         const limitedAt = nowIso();
         const retryAfter = verdict.retryAfter;
         const limitText = pickLine(persona, "errorLines", intentId);
@@ -1332,42 +1496,81 @@ export async function answerWithAi({
     }
 
     try {
+      if (libOnly) {
+        await recordAttributed(env, budget, 0); // a library answer counts toward the per-user cap too, so it cannot be asked for without bound
+        throw new Error("research: guest budget spent, library facts only");
+      }
       // Research mode: Claude first (tokenised, guarded, token-capped; research/claude.js). Any skip or failure leaves rawAnswer unset and Workers AI answers below.
-      if (research) {
-        const viaClaude = await tryResearchClaude({ env, priv, deep, call: callAnthropicClaude });
-        if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
+      if (research && memberNoWall) { // Claude is for members only: a guest never spends the Claude token cap
+        // The Claude hop ends no later than the hard end (research/claude.js hands its own 9 s deadline to the call; this clamps it), and is skipped with under 2.5 s left.
+        const hardEnd = t0 + hardEndMs(askDeadlineMs(env));
+        const viaClaude = hardEnd - Date.now() < 2500
+          ? { reason: "claude:no-time" }
+          : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, real: namesReal ? { system: systemPrompt, user: userPrompt, friend: [question, previousQuestion, by, ...(Array.isArray(priorTurns) ? priorTurns.flatMap((t) => [t.q, t.a]) : [])] } : null, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }), ...(shadow && sink.subSpend ? { subSpend: sink.subSpend } : {}) });
+        if (viaClaude.answer) { ({ answer: rawAnswer, model, provider } = viaClaude); claudeUsage = viaClaude.usage || null; }
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
+      // A member's friend text never reaches Workers AI (or any other provider) under ASK_RESEARCH: no Claude answer means the honest degraded line below.
+      if (!rawAnswer && research && memberNoWall) throw new Error("research: Claude gave no answer");
+      // A guest whose prompt could not be tokenised gets library facts only: the raw prompt (real names) never goes to Workers AI.
+      if (!rawAnswer && research && !memberNoWall && !(priv && priv.ok)) { guestUntokenised = true; researchNote = " [guard:tokenise]"; throw new Error("research: the prompt could not be tokenised"); }
       if (!rawAnswer) {
+      const deadlineMs = askDeadlineMs(env);
+      const waiMs = research ? researchTimeoutMs(Date.now() - t0, ASK_CHOSEN_TIMEOUT_MS, deadlineMs) : ASK_CHOSEN_TIMEOUT_MS;
+      if (waiMs === null) throw new Error("research: no time left for Workers AI"); // under 1 s before the margin: library facts, never an attempt past it
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
         provider: chosenProvider,
         env,
         systemPrompt: sendSystem,
         userPrompt: sendUser,
         deep,
+        ...(!(priv && priv.ok) && inputs.systemCachePrefix ? { systemCachePrefix: inputs.systemCachePrefix } : {}),
         cacheKey,
         metadata,
         budgetKeys: budget,
-        timeoutMs: ASK_CHOSEN_TIMEOUT_MS,
-        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS } : {}),
+        timeoutMs: waiMs,
+        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS, hardDeadlineAt: t0 + hardEndMs(deadlineMs) } : {}),
       }));
       if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? ""; // a name we never send, or a token that is not ours: the reply is dropped (the retry below, then library facts)
       }
       // Research mode: an empty, refusal-only, banter-only or sources-only model answer is not shown. One retry of the same Workers AI call, then (via the catch below)
       // library facts with an honest line, or the honest line alone.
+      if (research && memberNoWall && !usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from Claude"); }
       if (research && !usableAnswer(rawAnswer)) {
         rawAnswer = undefined;
-        if (Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
-          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: ASK_FALLBACK_TIMEOUT_MS, maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
+        const retryDeadline = askDeadlineMs(env);
+        const retryMs = researchTimeoutMs(Date.now() - t0, ASK_FALLBACK_TIMEOUT_MS, retryDeadline);
+        if (Date.now() - t0 <= retryDeadline / 2 && retryMs !== null) { // half the deadline (12 s of 24 s) // the second send only starts early enough that its own timeout still ends 4 s before the deadline
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: retryMs, hardDeadlineAt: t0 + hardEndMs(retryDeadline), maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
           if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? "";
         }
         if (!usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from the model"); }
       }
       // Workers AI records its own use; any other provider counts as one ask (no neurons) so the per-user cap still fills up.
-      if (chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
+      // (Research mode: a Claude answer counts too, so the per-user counter fills the same way on either hop.)
+      if (research ? provider !== "workers-ai" : chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
     } catch (providerErr) {
       fallbackNote = ` (after ${chosenProvider}: ${shortProviderError(providerErr)})`;
-      if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
+      if (research && (memberNoWall || guestUntokenised)) {
+        // Degraded (ASK_RESEARCH, member): Claude (compose, then the Haiku-class retry) could not answer. No Workers AI, no Gemini, no other provider ever sees the question.
+        // An honest in-voice line, plus the library's own facts when the question matches the library. The row is marked +degraded so it is never silent.
+        degraded = true;
+        fallbackNote = "";
+        const lines = degradedLines(researchNote);
+        const facts = hits && hits.length > 0
+          ? hits.slice(0, 3).map((h) => `${h.value} [${h.page}~${h.key}]`)
+          : ranked.length > 0 ? ranked.slice(0, 3).map((p) => { const t = (p.facts || [])[0]; return t ? `${t.value} [${p.id}~${t.key}]` : `${p.blurb || p.title} [${p.id}]`; }) : [];
+        if (facts.length) {
+          const pages = hits && hits.length > 0 ? hits.slice(0, 3).map((h) => h.page) : ranked.slice(0, 3).map((p) => p.id);
+          rawAnswer = `${facts.join(" ")}\n${lines.note}\n-# Sources: ${[...new Set(pages)].join(", ")}`;
+          model = "degraded-library-facts";
+        } else {
+          rawAnswer = lines.answer;
+          model = "degraded-honest-line";
+        }
+        provider = "library";
+      } else {
+      if (!research && activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) { // research: only Workers AI ever answers a non-member, never a configured outside provider
         try {
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: activeProvider,
@@ -1381,7 +1584,7 @@ export async function answerWithAi({
         } catch {}
       }
       // Skip the last-resort Workers AI hop when the chain has already used most of the Discord deadline.
-      if (!rawAnswer && chosenProvider !== "workers-ai" && isProviderConfigured(env, "workers-ai") && Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
+      if (!rawAnswer && chosenProvider !== "workers-ai" && isProviderConfigured(env, "workers-ai") && Date.now() - t0 < askDeadlineMs(env) - ASK_FALLBACK_TIMEOUT_MS) {
         try {
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: "workers-ai",
@@ -1397,7 +1600,7 @@ export async function answerWithAi({
             timeoutMs: ASK_FALLBACK_TIMEOUT_MS,
           }));
         } catch (waiErr) {
-          console.warn("[AI-Failover] Workers AI fallback failed:", waiErr.message);
+          console.warn("[AI-Failover] Workers AI fallback failed:", shortProviderError(waiErr));
         }
       }
       if (!rawAnswer) {
@@ -1433,15 +1636,22 @@ export async function answerWithAi({
           throw providerErr;
         }
       }
+      } // end of the non-degraded fallback chain
     }
 
     }
 
     // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
     const uxOn = answerUxEnabled(env);
-    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener, research });
+    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener, research, ...(inputs.gameFactIds ? { factIds: inputs.gameFactIds, factGround: inputs.gameFactGround } : {}), ...(inputs.tableAnswer && !inputs.abstainAnswer ? { tableCites: inputs.tableAnswer.ids } : {}) });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
+    // The model column exactly as an ask_turns row carries it. A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
+    const modelLabel = degraded ? `${provider}:${model}+research${researchNote}`.slice(0, 120 - DEGRADED_SUFFIX.length) + DEGRADED_SUFFIX : `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120);
+    if (shadow) { // record-only: the same text and the same model label an ask would have stored, and nothing else happens
+      await sink.record({ status: degraded ? "degraded" : "answered", answer, cites, model: modelLabel, reason: (/\[([^\]]{1,60})\]/.exec(researchNote) || [])[1] || null, latencyMs, groupMemory: groupOn && Boolean(inputs.groupMember), research: Boolean(research), usage: degraded ? null : claudeUsage, ...(inputs.gfTrace ? { gameFactsTrace: inputs.gfTrace } : {}) });
+      return;
+    }
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.
     if (uxOn && storeDetails && (parts.more || parts.sources)) {
       try {
@@ -1449,7 +1659,7 @@ export async function answerWithAi({
           .bind(String(intentId), parts.more || null, parts.sources || null, answeredAt)
           .run();
       } catch (e) {
-        console.error("answer_details write failed:", e && e.message);
+        console.error("answer_details write failed:", shortProviderError(e));
       }
     }
 
@@ -1457,17 +1667,22 @@ export async function answerWithAi({
     await env.DB.prepare(
       "UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
     )
-      // A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
-      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
+      .bind(answer, JSON.stringify(cites), modelLabel, latencyMs, answeredAt, intentId)
       .run();
 
-    const statsRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();
+    // GROUP_MEMORY: a roster member's answered ask goes into the group log, one INSERT, never failing the ask (appendGroupLog swallows its own errors). Claude's own answer only is filed as Leeroy's:
+    // a degraded line, library facts and a code-written abstain are not. Flag off, a guest or a missing slug: nothing runs.
+    if (groupOn && memberNoWall && inputs.groupMember) {
+      await appendGroupLog(env, groupRowsForAsk({ channel, slug: memberSlug, question, answer, intentId, share: Boolean(share), at: answeredAt, answered: provider === "claude" && !degraded, messageTarget }));
+    }
+
+    const statsRow =await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();
     if (statsRow) {
       try {
         const stats = JSON.parse(statsRow.json);
         stats.answers = (Number(stats.answers) || 0) + 1;
         stats.updated = answeredAt.slice(0, 10);
-        if (share) stats.recent = [
+        if (share && !noFanout) stats.recent = [
           {
             id: intentId,
             by,
@@ -1486,7 +1701,7 @@ export async function answerWithAi({
           .run();
         await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/stats.json", "/api/data/stats", "/api/state"]); // the site fetches /api/data/stats (js/board.js apiFetch)
       } catch (e) {
-        console.error("Failed updating stats row:", e);
+        console.error("Failed updating stats row:", shortProviderError(e));
       }
     }
 
@@ -1510,7 +1725,7 @@ export async function answerWithAi({
     // A private turn (share false: every guest ask, "private" asks) puts no question or answer on the shared socket or in stats.
     // The bare "ask" message makes the owner's page re-read its turn with its own key or id.
     const broadcastSlug = memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    if (share) {
+    if (share && !noFanout) {
       await broadcastToRoom(env, { type: "data", key: "stats", intent: completedItem });
       await broadcastToRoom(env, { type: "ask", slug: broadcastSlug, ask: completedItem });
     } else {
@@ -1520,7 +1735,7 @@ export async function answerWithAi({
     }
 
     // 5. Optional Discord Webhook post to #wow-forever
-    if (share && env.DISCORD_WEBHOOK_URL) {
+    if (share && !noFanout && env.DISCORD_WEBHOOK_URL) {
       const label = AI_PROVIDER_LABELS[provider] || provider;
       await fetch(env.DISCORD_WEBHOOK_URL, {
         signal: AbortSignal.timeout(AI_TIMEOUT_MS),
@@ -1535,7 +1750,13 @@ export async function answerWithAi({
     }
   } catch (err) {
     const failedAt = nowIso();
-    const msg = String((err && err.message) || err);
+    // The turn is read back by its asker (a guest included) and, for a shared ask, by member sockets: it gets the public text only. The log line carries
+    // no provider text either: shortProviderError is a fixed message plus the error name and status.
+    console.error("ask failed:", shortProviderError(err));
+    if (shadow) { try { await sink.record({ status: "error", reason: "ask:error", latencyMs: Date.now() - t0 }); } catch {} return; }
+    let msg = publicAskError(err);
+    // Research mode, member: the stored error text is shown on the board and in Discord, so it is an in-voice line, never a message that could read as a wall.
+    if (memberNoWall) msg = memberLine(null, intentId);
     await env.DB.prepare("UPDATE ask_turns SET status = 'error', answer = ?, answered_at = ? WHERE id = ?")
       .bind(msg, failedAt, intentId)
       .run()
