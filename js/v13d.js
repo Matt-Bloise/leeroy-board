@@ -43,7 +43,7 @@ function startJourneySwitch() {
   const phone = window.matchMedia("(max-width: 699px)");
   if (!nav) return;
 
-  const sceneNav = h("nav", { class: "journey journey-scene", "aria-label": nav.getAttribute("aria-label") || "How do you want to explore?" }, JOURNEYS.map((j) => h("button", { type: "button", "data-journey": j, "aria-pressed": String(V.picked && j === journey()) }, j.charAt(0).toUpperCase() + j.slice(1)))); sceneNav.setAttribute("id", "journey-scene");
+  const sceneNav = h("div", { class: "journey journey-scene", role: "group", "aria-label": nav.getAttribute("aria-label") || "How do you want to explore?" }, JOURNEYS.map((j) => h("button", { type: "button", "data-journey": j, "aria-pressed": String(V.picked && j === journey()) }, j.charAt(0).toUpperCase() + j.slice(1)))); sceneNav.setAttribute("id", "journey-scene");
   const top = $(".sheet-top"), peek = $("#scene-peek"); if (top) top.insertBefore(sceneNav, peek && peek.parentNode === top ? peek : null);
   const plates = [nav, sceneNav];
   const onClick = (pl) => (e) => { const b = e.target.closest("[data-journey]"); if (!b) return; if (phone.matches && !pl.classList.contains("open") && (b.getAttribute("aria-pressed") === "true" || !V.picked)) { pl.classList.add("open"); b.setAttribute("aria-expanded", "true"); return; } pl.classList.remove("open"); pl.querySelectorAll("[aria-expanded]").forEach((x) => x.removeAttribute("aria-expanded")); setJourney(b.dataset.journey); };
