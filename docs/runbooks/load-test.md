@@ -1,6 +1,6 @@
 # Runbook: load and soak test
 
-Last checked: 2026-11-02. The script is `tests/load/soak.js` (k6). It is **not run in CI** and has **not been run yet**: no result below is measured. Every number is labelled **speculative** until a report exists.
+Last checked: 2026-11-22. The script is `tests/load/soak.js` (k6). It is **not run in CI** and has **not been run yet**: no result below is measured. Every number is labelled **speculative** until a report exists.
 
 ## Rules
 1. Preview environments only. The script refuses any API origin containing `leeroy.party`. Never point it at production.
@@ -12,11 +12,11 @@ Last checked: 2026-11-02. The script is `tests/load/soak.js` (k6). It is **not r
 ## What it does
 | Scenario | Endpoint | Shape |
 | :--- | :--- | :--- |
-| bootstrap | `GET /api/bootstrap` (edge cached 60 s per `docs/openapi.yaml`) | Ramp to N virtual users over 1 min, hold 8 min, ramp down |
+| bootstrap | `GET /api/bootstrap` (not cached: sent `no-store` and never held in a Worker cache, `infrastructure/worker/index.js:198-201`; `docs/openapi.yaml` still says edge cached 60 s) | Ramp to N virtual users over 1 min, hold 8 min, ramp down |
 | ask | `POST /api/intent` with `kind: "ask"` and a member key | 6 per minute, only with `ASK=1` |
 | room | WebSocket `/api/live` upgrade to `BoardRoom` | Half of N users connect, hold 30 to 60 s, reconnect |
 
-Profiles: `small` = 5 VUs, `large` = 500 VUs (`-e PROFILE=large`). Notes: the `ask` path in the code is `POST /intent` with `kind: "ask"` (`worker/index.js` near line 1346); the prompt text is fixed and carries no real member data.
+Profiles: `small` = 5 VUs, `large` = 500 VUs (`-e PROFILE=large`). Notes: the `ask` path in the code is `POST /intent` with `kind: "ask"` (`infrastructure/worker/index.js` near line 1811); the prompt text is fixed and carries no real member data.
 
 ## Run
 ```bash
@@ -29,10 +29,10 @@ Then repeat with `-e PROFILE=large`. Add `-e ASK=1` for the ask probe. Save the 
 | :--- | :--- | :--- | :--- |
 | Bootstrap p95 | under 800 ms | under 800 ms | The only figure that appears in the roadmap (Q47). The rest below are guesses. |
 | Bootstrap error rate | under 1 percent | under 1 percent | Guess |
-| Websocket handshake success | over 98 percent | over 95 percent | Guess; per-isolate and Durable Object limits not checked |
+| Websocket handshake success | over 98 percent | over 98 percent | Guess; `tests/load/soak.js` sets one threshold (`ws_handshake_ok` rate over 0.98) for both profiles, so a large run below 98 percent shows red even if 95 is acceptable to you; per-isolate and Durable Object limits not checked |
 | Member ask p95 | under 8 s | not tested | Guess; depends on the AI provider |
 
-Because bootstrap is edge-cached for 60 s, high hit rates will flatter the numbers. Note the cache status header in a few manual requests, and treat a cached-only result as a CDN test, not a Worker test. Add `?cb=<random>` only with the owner's agreement, since that bypasses the cache and loads D1.
+Bootstrap is not cached, so every request is a fresh read of D1 (about 3 to 5 reads, `infrastructure/worker/index.js:198-200`) and a `?cb=<random>` query string changes nothing. A large run therefore loads D1 directly: agree it with the owner first.
 
 ## Reading the result
 - Pass: all thresholds in the k6 output are green and no Worker exceptions appear in `wrangler tail` during the run.
