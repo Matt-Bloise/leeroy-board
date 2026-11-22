@@ -163,6 +163,8 @@
 .stale-note { opacity: 0.75; font-size: 0.85em; }
 .retry-btn { min-height: 44px; margin: 0.3em 0.5em 0.3em 0; padding: 0 1.1em; border: 1px solid var(--wax); border-radius: 6px; background: transparent; color: var(--ink); font: inherit; cursor: pointer; }
 .retry-btn:disabled { opacity: 0.6; cursor: progress; }
+/* When the board's data does not load, the line and its button go in the footer (js/board.js), which sits on the dark wall, not on parchment: the parchment ink above was dark on dark there. */
+.wall-foot .data-fail, .wall-foot .retry-btn { color: var(--cream); }
 
 /* portrait pass: on a tall narrow window the sheet stops at a comfortable height and sits centred, so the parchment is not a mostly empty page.
    The body already scrolls inside the sheet, so taller scenes keep working. */
