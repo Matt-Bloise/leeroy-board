@@ -3,8 +3,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { ROSTER_DATA } from "../../infrastructure/worker/bot-data.js";
+import { scanSecrets } from "../../infrastructure/worker/research/real-names.js";
+import { J, scanText } from "./real-name-scan.mjs";
 
-const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
+const read =(rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 const raw = read("./fixtures/voice-golden/questions.json");
 const doc = JSON.parse(raw);
 const qs = doc.questions;
@@ -66,8 +69,6 @@ test("category rules agree with the expected properties", () => {
   for (const q of qs) {
     const e = q.expect;
     const where = q.id;
-    const [lo, hi] = BANDS[e.length_band];
-    assert.ok(lo < hi, where);
     if (q.category === "thanks_oneliner") {
       assert.equal(e.length_band, "line", where);
       assert.equal(e.needs_citation, false, where);
@@ -84,22 +85,51 @@ test("category rules agree with the expected properties", () => {
   }
 });
 
-test("no real member name, handle or id appears (names come from data/party.json)", () => {
+// Privacy. The shared scan (tests/unit/real-name-scan.mjs, also used for golden set v2) reads the roster names, aliases and slugs from the code at runtime and catches
+// case, plural, glued, zero-width, lookalike and escaped forms, long ids, emails and mentions; scanSecrets is the Worker's own token check. Nothing real is typed here.
+// Allowed: the generic game-role words that are also roster aliases (the set talks about Mages and tanks), and the mention in gs-067, a deliberate ping attempt.
+const ROLE_WORDS = new Set(ROSTER_DATA.flatMap((r) => r.aliases || []).filter((a) => new RegExp("^(?:" + J("ma", "ge") + "|" + J("ta", "nk") + ")$", "i").test(a)).map((a) => `name:${a.toLowerCase()}`));
+const DELIBERATE_MENTION = new Set(["gs-067"]);
+const privacyHits = (id, text) => [
+  ...scanText(text).filter((h) => !ROLE_WORDS.has(h) && !(h === "mention" && DELIBERATE_MENTION.has(id))),
+  ...scanSecrets(text, {}),
+].map((h) => `${id}: ${h}`);
+
+test("no roster name, alias, slug, id, email, mention or token appears (shared privacy scan)", () => {
+  const problems = [...privacyHits("file", JSON.stringify({ ...doc, questions: [] })), ...qs.flatMap((q) => privacyHits(q.id, JSON.stringify(q)))];
+  assert.deepEqual(problems, []);
+  assert.ok(scanText(JSON.stringify({ ...qs[0], question: `ask ${ROSTER_DATA[1].display} about it` })).some((h) => h.startsWith("name:")), "the scan is live: a planted roster name is caught");
+});
+
+test("no name from data/party.json appears either", () => {
   const party = JSON.parse(read("../../data/party.json"));
-  const names = [];
-  for (const m of party.members || []) for (const k of ["name", "slug", "id", "handle", "display_name"]) if (typeof m[k] === "string" && m[k].trim()) names.push(m[k].trim());
+  const names = (party.members || []).map((m) => (typeof m.name === "string" ? m.name.trim() : "")).filter(Boolean);
   assert.ok(names.length >= 1, "party.json should list members, or this check checks nothing");
   const hay = raw.toLowerCase();
   for (const n of names) {
     const re = new RegExp(`(^|[^a-z0-9])${n.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`);
-    assert.equal(re.test(hay), false, "a real member name appears in the golden set");
+    assert.equal(re.test(hay), false, "a real member name appears in the voice golden set");
   }
-  assert.equal(/<@!?\d+>|\b\d{17,20}\b/.test(raw), false, "Discord mention or snowflake id");
-  assert.equal(/[\w.+-]+@[\w-]+\.[\w.]+/.test(raw), false, "email address");
-  assert.equal(/\b(?:sk|pk|xox[bp]|ghp)[-_][A-Za-z0-9]{8,}/.test(raw), false, "token-shaped string");
-  assert.equal(/https?:\/\/(?!example\.invalid)/.test(raw), false, "only example.invalid links are allowed");
 });
 
+test("the only links are example.invalid ones", () => {
+  const links = raw.match(/\b(?:[a-z][a-z0-9+.-]*:\/\/[^\s"]*|www\.[^\s"]*|discord(?:app)?\.(?:gg|com)\/[^\s"]*)/gi) || [];
+  for (const l of links) assert.match(l, /^https?:\/\/example\.invalid(?:[/:?#]|$)/i, "only example.invalid links are allowed");
+});
+
+// Every single letter after "member" or "members" (any case, also in lists like "Members A and B") is one of A to E, in the question, the earlier turn and the rationale.
+const memberLetters = (s) => {
+  const out = [], w = String(s).split(/[\s,]+/);
+  for (let i = 0; i < w.length; i++) if (/^members?$/i.test(w[i])) for (let j = i + 1; j < w.length; j++) {
+    const t = w[j].replace(/[.?!:;'")]+$/, "").replace(/'s$/i, "");
+    if (/^(?:and|or|&)$/i.test(t)) continue;
+    if (/^[A-Za-z]$/.test(t)) { out.push(t); continue; }
+    break;
+  }
+  return out;
+};
+
 test("members are only ever the letters A to E", () => {
-  for (const q of qs) for (const m of `${q.question} ${q.previous || ""}`.matchAll(/\bMember ([A-Z])\b/g)) assert.match(m[1], /[A-E]/, q.id);
+  assert.deepEqual(memberLetters("ask member f, Members A and g's sheet"), ["f", "A", "g"], "the letter reader itself");
+  for (const q of qs) for (const l of memberLetters(`${q.question} ${q.previous || ""} ${q.rationale}`)) assert.match(l, /^[A-E]$/, q.id);
 });

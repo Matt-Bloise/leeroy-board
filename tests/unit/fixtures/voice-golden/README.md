@@ -2,9 +2,9 @@
 
 `questions.json` holds 80 fictional questions used to measure the voice and behaviour of the `/ask` answer path. Tests and fixtures only: nothing here calls a model, and no Worker code reads it.
 
-This is not the answer-grading golden set. That one is `tests/unit/fixtures/golden/` (golden set v2: slices, reference texts, read by `tools/grade-answers.mjs`). This set labels voice properties per question, against the rules in `tools/voice-eval/rubric.md`. Its 80 question texts are also the first 80 of `tests/fixtures/ask-cpu/questions.json` (the ranker CPU benchmark).
+This is not the answer-grading golden set. That one is `tests/unit/fixtures/golden/` (golden set v2: slices, reference texts, read by `tools/grade-answers.mjs`). This set labels voice properties per question, against the rules in `tools/voice-eval/rubric.md`. The ranker CPU benchmark copied its 80 question texts as the first 80 of `tests/fixtures/ask-cpu/questions.json`; that copy is not kept in sync.
 
-- Members are `A` to `E`. No real member name, handle or Discord id appears; `tests/unit/voice-golden.test.mjs` fails if one of the names in `data/party.json` shows up.
+- Members are `A` to `E`, placeholders in no particular order (not positions in the real roster). No real member name, handle or Discord id appears: `tests/unit/voice-golden.test.mjs` runs the shared privacy scan (`tests/unit/real-name-scan.mjs`: roster names, aliases and slugs read from the code at runtime, ids, emails, mentions) and the Worker's token check, and fails on a name from `data/party.json` or a link other than `example.invalid`.
 - `asker_role` is `visitor` (no sheet, no earlier turns) or `member` (`asker_member` is `A` to `E`).
 - `followup` questions carry `previous`, the asker's earlier question. A visitor has none (`null`), so the expected answer asks which question is meant.
 
@@ -19,6 +19,6 @@ This is not the answer-grading golden set. That one is `tests/unit/fixtures/gold
 | `needs_pick` | the asker wants a recommendation; options with trade-offs first, then one clear pick |
 | `needs_citation` | a Sources line is expected (a library page backs the answer) |
 
-`must_not_name` tags: `other_member_sheet`, `other_member_question`, `asker_sheet` (a visitor has none), `system_prompt`, `secrets`, `skippy`, `invented_names`, `invented_numbers`, `real_life_details`, `ping_mention`, `bare_url`, `game_facts`.
+`must_not_name` tags: `other_member_sheet` (a field another member keeps private; fields they show on the board may be used, as in gs-074), `other_member_question`, `asker_sheet` (a visitor has none), `system_prompt`, `secrets`, `skippy`, `invented_names`, `invented_numbers`, `real_life_details`, `ping_mention`, `bare_url`, `game_facts`.
 
 These are labels for a scorer to apply; the file does not say how. Library coverage can drift: a `library_gap` question may become answerable when the library grows, and then it should be replaced.
