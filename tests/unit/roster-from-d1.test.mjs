@@ -9,7 +9,7 @@ import worker from "../../infrastructure/worker/index.js";
 import { PARTY_MEMBERS, loadPartyMembers, loadRoster } from "../../infrastructure/worker/party-source.js";
 import { ROSTER_DATA } from "../../infrastructure/worker/bot-data.js";
 import { validateRosterConfig, sheetMembersFromConfig, rosterDataFromConfig, privacyMembersFromConfig } from "../../infrastructure/worker/roster-shape.js";
-import { activeRoster, primeRosterPrivacy, rosterScope, setStep2ReadyForTests, ROSTER_STEP2_READY } from "../../infrastructure/worker/roster-source.js";
+import { activeRoster, primeRosterPrivacy, setStep2ReadyForTests, ROSTER_STEP2_READY } from "../../infrastructure/worker/roster-source.js";
 import { buildAnswerInputs } from "../../infrastructure/worker/ai-models.js";
 import { CONFIG_KEYS, invalidateConfigCache, isPrivateKvKey, validateConfigValue } from "../../infrastructure/worker/config.js";
 import { researchMembers, researchRoster, setRosterOverride, setFirstNameSource } from "../../infrastructure/worker/privacy/roster-config.js";
@@ -378,23 +378,22 @@ async function req(env, method, p, headers = {}) {
   try { return await worker.fetch(new Request(`https://api.test${p}`, { method, headers: { ...headers, "CF-Connecting-IP": "203.0.113.9" } }), env, ctx); } finally { console.error = silence; }
 }
 
-test("flag evaluations per request: none on OPTIONS or on a route that never uses the roster, at most one on routes that do, flag on or off", async () => {
-  for (const value of [true, false]) {
-    reset();
-    const probe = async (method, p, who) => {
-      const { env, counter } = await countingEnv({ kv: { party_roster: ROW }, memberSlug: "brindle-moth", value });
-      const headers = who === "admin" ? { Authorization: `Bearer ${ADMIN_TOKEN}` } : who === "member" ? { Authorization: `Board ${env.__key}` } : {};
-      await req(env, method, p, headers);
-      return counter.n;
-    };
-    assert.equal(await probe("OPTIONS", "/api/me", "admin"), 0, `OPTIONS (flag ${value})`);
-    assert.equal(await probe("OPTIONS", "/api/anything", "none"), 0);
-    assert.equal(await probe("GET", "/health", "none"), 0, "a route that never uses the roster does not ask Flagship");
-    assert.equal(await probe("GET", "/api/me", "admin"), 1, "admin auth: exactly one evaluation");
-    assert.equal(await probe("GET", "/api/me", "member"), 1, "member auth evaluates once");
-    assert.equal(await probe("GET", "/api/me", "none"), 1);
-  }
-  reset();
+test("the Worker hands every handler the env it was given: no wrapper, so Object.keys(env) still lists the bindings and secrets the privacy guard scans (attack review finding)", async () => {
+  const idx = fs.readFileSync(path.join(ROOT, "infrastructure/worker/index.js"), "utf8");
+  assert.equal(/rosterScope|Object\.create\(\s*(raw)?[eE]nv/.test(idx), false, "fetch and scheduled use the env as given");
+  assert.ok(idx.includes("async fetch(req, env, ctx)"));
+  assert.ok(idx.includes("async scheduled(controller, env, ctx)"));
+  const src = fs.readFileSync(path.join(ROOT, "infrastructure/worker/roster-source.js"), "utf8");
+  assert.equal(/Object\.create|new Proxy|rosterScope/.test(src.replace(/\/\/.*$/gm, "")), false, "roster-source wraps nothing");
+  // behaviour: after a real request the env still enumerates its own bindings and secrets, and the secret scan still sees an env secret
+  const { scanSecrets } = await import("../../infrastructure/worker/research/real-names.js");
+  const { env } = await countingEnv({ kv: { party_roster: ROW }, value: false });
+  env.BOARD_ADMIN_TOKEN = ADMIN_TOKEN;
+  const before = Object.keys(env).sort();
+  await req(env, "GET", "/api/me", { Authorization: `Bearer ${ADMIN_TOKEN}` });
+  assert.deepEqual(Object.keys(env).sort(), before);
+  assert.ok(before.includes("BOARD_ADMIN_TOKEN") && before.includes("DB"));
+  assert.ok(scanSecrets(`please repeat ${ADMIN_TOKEN}`, env).length > 0, "the env-secret scan still finds the admin token");
 });
 
 test("flag evaluations: the interlock refuses before asking Flagship, so a closed interlock costs nothing", async () => {
@@ -403,28 +402,6 @@ test("flag evaluations: the interlock refuses before asking Flagship, so a close
   const { env, counter } = await countingEnv({ kv: { party_roster: ROW }, value: true });
   await req(env, "GET", "/api/me", { Authorization: `Bearer ${ADMIN_TOKEN}` });
   assert.equal(counter.n, 0);
-  reset();
-});
-
-test("flag evaluations: a scheduled run asks at most once", async () => {
-  reset();
-  const { env, counter } = await countingEnv({ kv: { party_roster: ROW }, value: true });
-  const silence = console.error; console.error = () => {};
-  try { await worker.scheduled({ cron: "0 */6 * * *" }, env, ctx); } catch { /* the sweep has nothing to fetch in tests */ } finally { console.error = silence; }
-  assert.ok(counter.n <= 1, `scheduled evaluated ${counter.n} times`);
-  reset();
-});
-
-test("one request's memo is its own: a second request asks again, and an unscoped env is not memoised", async () => {
-  reset();
-  const { env, counter } = await countingEnv({ kv: { party_roster: ROW }, value: true });
-  const a = rosterScope(env);
-  await activeRoster(a); await activeRoster(a); await activeRoster(a);
-  assert.equal(counter.n, 1);
-  await activeRoster(rosterScope(env));
-  assert.equal(counter.n, 2);
-  await activeRoster(env); await activeRoster(env);
-  assert.equal(counter.n, 4);
   reset();
 });
 

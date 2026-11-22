@@ -68,7 +68,7 @@ import { collectInterest } from "./interest.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { activeRoster, rosterScope } from "./roster-source.js";
+import { activeRoster } from "./roster-source.js";
 import { projectDataDoc, projectBroadcast, loadPublicInputs, writeSheetValueToDoc, SHEET_FIELD_NAMES, MEMBER_DOCS as MEMBER_DOC_KEYS } from "./public-party.js";
 import { PARTY_MEMBERS, loadPartyMembers, normName, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
@@ -539,8 +539,7 @@ export const ROUTES = [
 ];
 
 const worker = {
-  async fetch(req, rawEnv, ctx) {
-    const env = rosterScope(rawEnv); // ROSTER_FROM_D1: one roster decision (one flag evaluation, and none unless something asks) for this request
+  async fetch(req, env, ctx) {
     try { gauge.hit(env, ctx); } catch (e) { /* the gauge can never fail a request */ } // REQUEST_GAUGE (default off): one in-memory add, a batched D1 write every 25 requests; see worker/gauge.js
     const url = new URL(req.url);
     const verdict = originVerdict(req, env);
@@ -2104,8 +2103,7 @@ const worker = {
     }
   },
 
-  async scheduled(controller, rawEnv, ctx) {
-    const env = rosterScope(rawEnv); // see fetch
+  async scheduled(controller, env, ctx) {
     // The every-minute trigger runs only the timed posts; every other trigger is the source sweep. Timed posts are off until MOMENTS_ENABLED.
     if (controller && controller.cron === MOMENTS_CRON) {
       ctx.waitUntil(
