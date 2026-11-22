@@ -98,7 +98,6 @@ export function usageTokens(usage, estimate) {
   return sum > 0 ? Math.ceil(sum) : estimate; // a real response always used some input; 0 total is not believable
 }
 
-// Conservative upper bound on what a prompt costs: ASCII at 3 characters per token, every other UTF-16 unit (CJK, emoji, accents) at 1.5 tokens, plus the full answer allowance.
 // Measured usage for the shadow recorder: integers only, each field clamped to [0, MEASURED_CLAMP]; anything else is null (never a guess).
 export const MEASURED_CLAMP = 1e7;
 export function measuredUsage(usage) {
@@ -116,10 +115,29 @@ export function sumMeasured(list) {
   return { input_tokens: sum("input_tokens"), output_tokens: sum("output_tokens"), cache_creation_input_tokens: sum("cache_creation_input_tokens"), cache_read_input_tokens: sum("cache_read_input_tokens") };
 }
 
-export function estimateTokens(systemText, userText) {
-  const text = `${systemText ?? ""}${userText ?? ""}`;
-  const nonAscii = (text.match(/[^\u0000-\u007f]/g) || []).length;
-  return Math.ceil((text.length - nonAscii) / 3 + nonAscii * 1.5) + RESEARCH_MAX_TOKENS;
+// Safe upper bound on what one send costs, from the bytes actually sent (the JSON-escaped system and user strings, so quotes, newlines and control characters count as the
+// extra bytes they are). A token is never shorter than one byte, so UTF-8 bytes are a hard ceiling: every non-ASCII byte (CJK, emoji, accents, combining marks) counts as a whole
+// token, which is above any real tokenizer; ASCII counts at one token per byte too (the same hard ceiling: dense code, digits and base64 cannot beat it). Then a 10% margin, a fixed framing
+// allowance, and the FULL max_tokens answer allowance, because a response is billed up to max_tokens. Never NaN or Infinity: a bad max_tokens means the answer allowance, a non-finite total the cap value.
+export const INPUT_ASCII_RATIO = 1;
+export const INPUT_MARGIN = 1.1;
+export const INPUT_FRAMING_TOKENS = 128;
+export const MAX_ESTIMATE = 1000000;
+export function estimateTokens(systemText, userText, maxTokens = RESEARCH_MAX_TOKENS) {
+  let ascii = 0;
+  let wide = 0; // UTF-8 bytes of everything above U+007F
+  for (const part of [JSON.stringify(String(systemText ?? "")), JSON.stringify(String(userText ?? ""))]) {
+    for (let i = 0; i < part.length; i++) {
+      const c = part.charCodeAt(i);
+      if (c < 0x80) ascii++;
+      else if (c < 0x800) wide += 2;
+      else if (c >= 0xd800 && c <= 0xdbff) { wide += 4; i++; } // a surrogate pair is one 4-byte character
+      else wide += 3;
+    }
+  }
+  const out = typeof maxTokens === "number" && Number.isFinite(maxTokens) ? Math.max(0, Math.floor(maxTokens)) : RESEARCH_MAX_TOKENS;
+  const total = Math.ceil((ascii * INPUT_ASCII_RATIO + wide) * INPUT_MARGIN) + INPUT_FRAMING_TOKENS + out;
+  return Number.isFinite(total) ? total : MAX_ESTIMATE;
 }
 
 // One atomic statement: add the estimate only if the WHOLE reservation fits under the cap (both branches) (and the stored value is a plain integer). Rows come back only on success.
@@ -132,7 +150,7 @@ export async function reserveTokens(env, estimate, cap, now = new Date(), key = 
   const res = await env.DB.prepare(RESERVE_SQL).bind(key, Math.max(1, Math.floor(estimate)), now.toISOString(), cap).all();
   return Boolean(res && Array.isArray(res.results) && res.results.length === 1);
 }
-async function adjustTokens(env, delta, now = new Date(), key = counterKey(now)) {
+export async function adjustTokens(env, delta, now = new Date(), key = counterKey(now)) {
   if (!delta) return;
   await env.DB.prepare(ADJUST_SQL).bind(key, Math.trunc(delta), now.toISOString()).run();
 }
