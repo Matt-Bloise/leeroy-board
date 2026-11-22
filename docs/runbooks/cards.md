@@ -8,6 +8,7 @@ Last checked: 2026-11-02. Code: `infrastructure/worker/cards.js`, `cards-handler
 | `CARDS_ENABLED` | Sign-up buttons, modals, card edits, `POST /api/admin/cards/post`. Off: the Worker behaves as before. |
 | `CARDS_SHADOW=1` | With `CARDS_ENABLED`: no call to Discord for cards or lines. "Would edit" and "would post" are counted in `noise_ledger` under `shadow:edit:<channel>` and `shadow:post:<channel>`. |
 | `BOARD_LINES_ENABLED` | Needed, besides `CARDS_ENABLED`, for the first real board line. |
+| `REPLY_STYLE` | Optional, absent = off; only `on` turns it on. With `CARDS_ENABLED`: the sign-up card and the party board are drawn in the house style (`docs/discord-reply-style.md`) on their next redraw. Same names, field text and button ids; near the 6000-character limit the party board may fit a person or two fewer (or one more) and counts the rest in "+N more on the board". Off, the cards are exactly as before. |
 
 The PC bot stays authoritative for the sign-up cards until after launch (Nov 4, 6 PM ET). Run shadow mode first; do not post a Worker card into the channel where the PC bot's card lives until the owner switches over.
 
