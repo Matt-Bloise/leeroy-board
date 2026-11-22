@@ -136,7 +136,7 @@ export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = fals
   });
 }
 
-// A response with status >= 400: "fail" or "warn" (same rule as tests/browser/live-smoke.mjs): anything from the site itself fails; from the API a 5xx fails,
+// A response with status >= 400: "fail" or "warn" (this is the rule; tests/browser/live-smoke.mjs answers /api/ from the fixtures and no longer has an API 4xx WARN): anything from the site itself fails; from the API a 5xx fails,
 // a 4xx only warns, except on /api/bootstrap and /api/state, which the board cannot open without (those fail on any 4xx).
 export function classifyHttp(url, status, siteOrigin, apiOrigin) {
   if (!(status >= 400)) return "ok";

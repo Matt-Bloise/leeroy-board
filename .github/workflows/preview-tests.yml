@@ -83,6 +83,8 @@ jobs:
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "22"
+          cache: npm # the npm download cache, keyed on the lockfile; npm ci still installs from the lockfile every run
+          cache-dependency-path: tests/package-lock.json
 
       - name: Install test dependencies (yaml, for the snapshot contract test)
         working-directory: tests
