@@ -37,8 +37,9 @@ const tipState = (page) => page.evaluate(() => {
   return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, hits, text: t.textContent, side: t.dataset.side };
 }).catch(() => null);
 
-// Helpers for the tip checks. The tip hides on any #sheet-body scroll on desktop (scenes/place.js), and a focus() can scroll the sheet at 768 px height, so the tip can vanish before a key is pressed.
-// Escape on a hidden tip closes the SCENE, so Escape is only ever pressed while the tip is visible, and every pin first checks the scene is still open (one failure stays one failure, no cascade).
+// Helpers for the tip checks. On desktop a #sheet-body scroll hides a tip opened by hover or tap (scenes/place.js); a tip opened by keyboard focus moves with its zone instead (checked below).
+// Escape on a hidden tip closes the SCENE, so Escape is pressed only while the tip is visible (except in the scroll check, which is about exactly that), and every pin first checks
+// the scene is still open (one failure stays one failure, no cascade).
 const tipVisible = (page) => page.evaluate(() => { const t = document.getElementById("road-card"); return !!t && !t.hidden; }).catch(() => false);
 const roadsUp = (page) => page.evaluate(() => { const p = document.getElementById("panel-roads"); return !!p && !p.hidden && location.hash === "#roads"; }).catch(() => false);
 // Resolves when #sheet-body scrollTop has been equal across two consecutive animation frames (bounded at 60 frames).
@@ -95,17 +96,20 @@ async function run(label, viewport, mobile) {
   await focusZone(page, 1);
   await page.evaluate(() => document.activeElement.blur());
   ok(`${label}: blur closes the tip`, await tipGone(page));
-  // A scroll on the sheet right after focus (what a focus() scroll does at 768 px height), then Esc. On desktop the scroll hides the tip, so the Esc that follows reaches the scene.
-  // Known product behaviour on master (scenes/place.js hides the card on scroll and only swallows Esc while the card is open): reported as FIXME, not counted as a failure, until the product changes.
+  // A scroll of the sheet while a zone holds keyboard focus (what a focus() scroll does at 768 px height), then Esc. The tip opened by focus stays with its zone through the scroll
+  // (scenes/place.js re-places it), so this Esc closes the tip, not the scene. It is pressed whatever the tip's state: a tip lost to the scroll would let it close the scene, which is the bug.
+  // The sheet really scrolls by 40 px when it can; the dispatched event covers a size where it cannot.
   if (!(await roadsUp(page))) await open(page, "roads");
   await focusZone(page, 2);
-  await page.evaluate(() => { const b = document.getElementById("sheet-body"); if (b) b.dispatchEvent(new Event("scroll")); });
+  const moved = await page.evaluate(() => { const b = document.getElementById("sheet-body"); if (!b) return null; const before = b.scrollTop, max = b.scrollHeight - b.clientHeight; b.scrollTop = before + (before + 40 <= max ? 40 : -40); b.dispatchEvent(new Event("scroll")); return { before, after: b.scrollTop, max }; }).catch(() => null);
   await page.waitForTimeout(150);
+  ok(`${label}: a scroll while a zone has focus keeps its tip open`, await tipVisible(page), JSON.stringify(moved));
+  ts = await tipState(page);
+  ok(`${label}: after that scroll the tip is inside the viewport and covers no pin or name card`, !!ts && ts.l >= 0 && ts.t >= 0 && ts.r <= ts.w && ts.b <= ts.h && ts.hits.length === 0, JSON.stringify({ moved, ts }));
   await page.keyboard.press("Escape");
+  ok(`${label}: Esc after that scroll closes the tip`, await tipGone(page));
   await page.waitForTimeout(250);
-  const scrollEsc = await roadsUp(page);
-  if (scrollEsc) ok(`${label}: a scroll after focus, then Esc, leaves the scene open`, true);
-  else console.log(`FIXME ${label}: a scroll after focus, then Esc, closes the scene (scenes/place.js hides the card on scroll, then Esc is not swallowed); product behaviour, not fixed here`);
+  ok(`${label}: Esc after that scroll leaves the scene open`, await roadsUp(page));
   if (!(await roadsUp(page))) { await open(page, "roads"); await until(page, () => document.querySelectorAll("#map .map-pin").length >= 3); await page.waitForTimeout(700); }
   // pointer: mouse hover on desktop, tap on touch, every pin
   for (let i = 0; i < pins.length; i++) {

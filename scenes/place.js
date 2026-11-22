@@ -247,7 +247,7 @@ function roads(M) {
     return { rc: K.classVar((m || ms[0] || {}).class_key), title: m ? m.name : r.zone, sub: m ? K.raceClass(m) : "", crest: m ? m.class_key : null, lines };
   };
   const sticky = () => legend.querySelector('.road-btn[aria-pressed="true"]');
-  let cur = null, pinned = null;
+  let cur = null, pinned = null, kept = null; /* kept: the zone whose card keyboard focus opened */
   const setCtx = (id) => {
     const M = RM.M, all = id.key === "all", k = id.key;
     M.svg.classList.add("focusing");
@@ -277,12 +277,12 @@ function roads(M) {
   const show = (t, via) => {
     if (!t.isConnected || $("#scene").hidden) return;
     const id = idOf(t); if (!id.key) return;
-    cur = { t, id }; setCtx(id); fill(id);
+    cur = { t, id }; kept = via === "focus" ? t : null; setCtx(id); fill(id);
     card.hidden = false; t.setAttribute("aria-describedby", "road-card");
     place(t);
     card.classList.remove("flipin"); void card.offsetWidth; card.classList.add("flipin");
   };
-  const hide = () => { cur = null; pinned = null; card.hidden = true; clearCtx(); panel.querySelectorAll("[aria-describedby=road-card]").forEach((e) => e.removeAttribute("aria-describedby")); };
+  const hide = () => { cur = null; pinned = null; kept = null; card.hidden = true; clearCtx(); panel.querySelectorAll("[aria-describedby=road-card]").forEach((e) => e.removeAttribute("aria-describedby")); };
   const ctl = hover({ root: panel, sel: SEL, card: () => card, open: show, close: () => { if (!pinned) hide(); }, pinned: () => !!pinned, isOpen: () => !card.hidden,
     enter: (t) => { const id = idOf(t); if (id.key) { cur = { t, id }; setCtx(id); } }, leave: () => { if (!pinned && card.hidden) clearCtx(); } });
   K.on("scene", () => { ctl.cancel(); if (!card.hidden) hide(); });
@@ -303,7 +303,15 @@ function roads(M) {
   addEventListener("pointerdown", (e) => { if (!card.hidden && pinned && !e.target.closest("#road-card") && !e.target.closest(SEL)) hide(); }, true);
   addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) { hide(); e.preventDefault(); e.stopImmediatePropagation(); } }, true); /* slice 6: Esc closes the card first, hovered or pinned; the next Esc leaves the scene */
   K.sceneHooks.push((on) => { if (!on) hide(); });
-  const bodyEl = $("#sheet-body"); if (bodyEl) bodyEl.addEventListener("scroll", () => { if (!card.hidden && !coarse()) hide(); }, { passive: true });
+  /* A card opened by keyboard focus stays while its zone keeps focus: a scroll of the sheet (the one a focus() itself can cause at 768 px height, or the reader's) moves the card with its zone instead of hiding it, so the next Esc closes the card and not the scene.
+     Any other desktop card still hides on scroll, and so does a focus card whose zone has left the visible sheet. */
+  const held = () => { const t = kept, a = document.activeElement; return t && t.isConnected && a && (a === t || t.contains(a)) && lap(R(t), visibleBounds(0)) > 0 ? t : null; };
+  let rf = 0;
+  const bodyEl = $("#sheet-body"); if (bodyEl) bodyEl.addEventListener("scroll", () => {
+    if (card.hidden || coarse()) return;
+    const t = held(); if (!t) { hide(); return; }
+    if (!rf) rf = requestAnimationFrame(() => { rf = 0; if (card.hidden || !cur || cur.t !== t) return; if (held() === t) place(t); else hide(); });
+  }, { passive: true });
 }
 
 function context() {
