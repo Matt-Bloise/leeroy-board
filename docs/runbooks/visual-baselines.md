@@ -81,6 +81,15 @@ What 0.2 percent catches, measured on the first screen:
 
 So a change smaller than about 650 pixels on the phone or 2,100 on the desktop passes. Once the gate has run green for a while with 0 px of noise, `maxRatio` in `THRESHOLD` can come down to 0.0002 (66 and 210 pixels), which catches the recoloured link. Do that in its own PR, with the calibration numbers from Visual Baselines runs with `commit` off.
 
+## What the gate does not see
+
+Known limits, stated so nobody trusts it for more than it does:
+- Only the viewport is shot (390x844, 1366x768). Content below the fold of a long scene or the landing page is not compared.
+- One state per screen: light scheme, reduced motion, device pixel ratio 1, no hover or focus, Chromium only (no WebKit or Firefox), the wall only in Guided.
+- A change smaller than the threshold passes: about 650 pixels on the phone (a 25x26 icon vanishing or turning black is 650) and 2,100 on the desktop. A tint of up to 8/255 over the whole page passes, and a refresh keeps the old bytes of such a screen.
+- Real timing cannot show: the clock is pinned and `Math.random` seeded.
+- The member-name check reads page text, `document.title`, `aria-label`, `title`, `alt`, `placeholder` and input values, and needs a whole name. It does not read canvas pixels or CSS `content`; the fixtures are the real defence.
+
 ## When the gate fails
 
 1. Open the failed `visual` job. Each failing screen prints `FAIL <screen>-<size>: <n>% of pixels changed (<px> px, limit 0.200%), inside x .. y .. w .. h ..`.

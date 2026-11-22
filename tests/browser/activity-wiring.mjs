@@ -96,7 +96,7 @@ try {
     ok(`[${label}] Discord mode started only after the SDK said it was ready`, m.ready !== null && m.discord !== null && m.discord >= m.ready, marks);
     if (delay > 4000) {
       ok(`[${label}] the SDK was late: ready() resolved ${delay / 1000} s after the frame started, on the frame's clock`, m.ready !== null && m.ready - m.start >= delay - 50, marks);
-      ok(`[${label}] the board first came up in preview mode (the 4 s fallback), before the SDK was ready`, m.board !== null && m.ready !== null && m.board <= m.ready && m.boardSdk === false, marks);
+      ok(`[${label}] the board first came up in preview mode, 4 s after the frame started (3.9 to 4.8 s), before the SDK was ready`, m.board !== null && m.ready !== null && m.board <= m.ready && m.boardSdk === false && m.board - m.start >= 3900 && m.board - m.start <= 4800, marks);
       ok(`[${label}] and Discord mode followed it on the same page, once the SDK was ready`, m.board !== null && m.discord !== null && m.board < m.discord, marks);
     }
     ok(`[${label}] Discord mode is on: presence reads "In this Activity now"`, /In this Activity now/.test(await presence(page)), await presence(page));

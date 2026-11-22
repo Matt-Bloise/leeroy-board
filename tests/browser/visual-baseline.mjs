@@ -211,6 +211,13 @@ const pageState = (page) => page.evaluate(() => {
     tile: getComputedStyle(root).getPropertyValue("--tile").trim(), dpr: window.devicePixelRatio, vw: innerWidth, vh: innerHeight,
     media: { dark: mq("(prefers-color-scheme: dark)"), light: mq("(prefers-color-scheme: light)"), hdr: mq("(dynamic-range: high)"), res15: mq("(min-resolution: 1.5dppx)"), reduce: mq("(prefers-reduced-motion: reduce)"), coarse: mq("(pointer: coarse)") },
     attrs: [...root.attributes].filter((a) => a.name !== "class" && a.name !== "style").map((a) => `${a.name}=${String(a.value).slice(0, 40)}`),
+    // the elements stacked at a point of bare paper (a third of the way down the sheet), top first: an overlay or a veil above the sheet shows here with its opacity and background
+    stack: (() => { try { const x = Math.round(innerWidth / 2), y = Math.round(innerHeight * 0.3); return document.elementsFromPoint(x, y).slice(0, 9).map((e) => { const c = getComputedStyle(e); return `${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ""}${e.classList.length ? `.${[...e.classList].slice(0, 3).join(".")}` : ""} op=${c.opacity} bg=${c.backgroundColor}${c.mixBlendMode !== "normal" ? ` blend=${c.mixBlendMode}` : ""}${c.filter !== "none" ? ` filter=${c.filter}` : ""}`; }); } catch (e) { return []; } })(),
+    // large elements of the page and of the scene, and the root's pseudo-elements: an overlay that is not the sheet shows here even when it ignores the pointer
+    covering: (() => { try { const out = [], W = innerWidth, H = innerHeight, nm = (e) => `${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ""}${e.classList.length ? `.${[...e.classList].slice(0, 3).join(".")}` : ""}`;
+      for (const e of document.querySelectorAll("body > *, #scene, #scene > *, #scene .sheet, #scene .sheet > *")) { const b = e.getBoundingClientRect(); if (b.width < W * 0.6 || b.height < H * 0.4) continue; const c = getComputedStyle(e); if (c.display === "none" || c.visibility === "hidden") continue; out.push(`${nm(e)} ${c.position} z=${c.zIndex} op=${c.opacity} bg=${c.backgroundColor}${c.filter !== "none" ? ` filter=${c.filter}` : ""}${c.mixBlendMode !== "normal" ? ` blend=${c.mixBlendMode}` : ""}`); }
+      return out.slice(0, 18); } catch (e) { return []; } })(),
+    pseudo: (() => { try { return [["html", "::before"], ["html", "::after"], ["body", "::before"], ["body", "::after"]].map(([t, p]) => { const c = getComputedStyle(document.querySelector(t), p); return `${t}${p} content=${c.content} pos=${c.position} z=${c.zIndex} op=${c.opacity} bg=${c.backgroundColor}`; }).filter((x) => !/content=(none|normal)/.test(x)); } catch (e) { return []; } })(),
     animations: document.getAnimations().slice(0, 12).map((a) => `${a.animationName || a.transitionProperty || a.id || a.constructor.name}:${a.playState}`),
     textures: performance.getEntriesByType("resource").filter((e) => /(paper-baked|parchment-tile|oak-tile)/.test(e.name)).map((e) => `${e.name.split("/").pop().split("?")[0]} ${Math.round(e.duration)}ms ${e.transferSize}B`),
   };
@@ -279,7 +286,7 @@ async function shoot(browser, size, screen) {
     const state = await pageState(page);
     if (!(await page.evaluate(screen.ready, screen.arg ?? null))) throw new Error("the screen left its expected state while settling");
     const named = await page.evaluate((names) => {
-      const text = [document.body.innerText, ...[...document.querySelectorAll("[aria-label],[title],[alt],[placeholder],input,textarea")].map((e) => [e.getAttribute("aria-label"), e.getAttribute("title"), e.getAttribute("alt"), e.getAttribute("placeholder"), e.value].join(" "))].join("\n").toLowerCase();
+      const text = [document.title, document.body.innerText, ...[...document.querySelectorAll("[aria-label],[title],[alt],[placeholder],input,textarea")].map((e) => [e.getAttribute("aria-label"), e.getAttribute("title"), e.getAttribute("alt"), e.getAttribute("placeholder"), e.value].join(" "))].join("\n").toLowerCase();
       return names.map((n, i) => (new RegExp(`(^|[^a-z0-9])${n.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(text) ? i : -1)).filter((i) => i >= 0);
     }, REAL_NAMES);
     if (named.length) throw new Error(`the screen shows a real member name (data/party.json member index ${named.join(", ")}); a baseline must show fixture names only`);
@@ -334,7 +341,7 @@ try {
         console.log(`REPEAT ${id}: ${REPEAT} shots ${row.repeatIdentical ? "byte-identical" : "differ"}, ${(row.repeatRatio * 100).toFixed(4)}% of pixels beyond ${THRESHOLD.tolerance}/255, max channel delta ${row.repeatMaxDelta}`);
         // A screen whose repeat shots disagree is not stable: writing one of them as the baseline would bake a coin flip into the gate, so a write fails it (a comparison judges every shot).
         const bad = noise.findIndex((n) => !judge(n, THRESHOLD).pass);
-        if (WRITE && bad >= 0) { fail(row, `the screen is not stable: shot ${bad + 2} of ${REPEAT} differs from shot 1 (${judge(noise[bad], THRESHOLD).why}); not written`); continue; }
+        if (bad >= 0) { fail(row, `the screen is not stable: shot ${bad + 2} of ${REPEAT} differs from shot 1 (${judge(noise[bad], THRESHOLD).why})${WRITE ? "; not written" : ""}`); continue; }
       }
       if (WRITE) {
         // An existing baseline with no pixel beyond the tolerance is kept byte for byte, so a refresh rewrites only the screens that really changed

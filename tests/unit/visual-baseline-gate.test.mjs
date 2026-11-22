@@ -90,8 +90,12 @@ test("preview-tests.yml: the visual job serves this checkout, runs the gate, the
   const run = job.steps.map((s) => s.run || "").join("\n");
   assert.match(run, /tools\/static-server\.mjs/);
   assert.match(run, /browser\/visual-baseline\.mjs --url "?http:\/\/127\.0\.0\.1/);
+  const gate = job.steps.find((s) => s.name === "Visual baselines (gating)");
+  assert.ok(gate && /visual-baseline\.mjs --url/.test(gate.run) && !/--inject-css|--block|--only/.test(gate.run), "the gating step runs the whole suite, unmodified");
+  assert.ok(!("continue-on-error" in job) && job.steps.every((s) => !("continue-on-error" in s)), "no job or step of visual may continue on error (it would report success on a red run)");
   const mutation = job.steps.find((s) => /mutation/i.test(s.name || ""));
   assert.ok(mutation, "a mutation step exists");
+  assert.equal(mutation.if, "${{ !cancelled() }}", "the mutation step runs even when the gate step failed");
   assert.match(mutation.run, /--inject-css/); assert.match(mutation.run, /--block/, "a file the page cannot load is a second injected fault");
   assert.match(mutation.run, /cannot catch/); assert.match(mutation.run, /broke some other way/, "a pass and a crash are told apart");
   assert.equal(job.steps[0].with["persist-credentials"], false, "the checkout keeps no token");

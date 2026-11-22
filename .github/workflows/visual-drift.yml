@@ -99,7 +99,7 @@ jobs:
         run: |
           set -eu -o pipefail
           RUN="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          BODY=$(printf 'The daily visual drift check failed: master no longer renders what its committed baselines show, or a screen is not stable.\n\nRun, the diffs and the log (artifact visual-drift, 30 days): %s\n\nWhat to do: docs/runbooks/visual-baselines.md, section "Stale baselines". Run Actions > Visual Baselines on a branch from master to re-render them (commit on), and review the new PNGs in that pull request.\n\nThis issue is never closed automatically. Close it once a later run is green.' "$RUN")
+          BODY=$(printf 'The daily visual drift check failed. Open the run: it is either drift (master renders something other than its committed baselines), a screen that is not stable, or a setup problem such as a failed install.\n\nRun, the diffs and the log (artifact visual-drift, 30 days): %s\n\nWhat to do: docs/runbooks/visual-baselines.md, section "Stale baselines". Run Actions > Visual Baselines on a branch from master to re-render them (commit on), and review the new PNGs in that pull request.\n\nThis issue is never closed automatically. Close it once a later run is green.' "$RUN")
           # Exact title match among open issues, so there is only ever one.
           N=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --limit 100 --json number,title --jq "[.[] | select(.title == \"$TITLE\")] | sort_by(.number) | .[0].number // empty")
           if [ -n "$N" ]; then
