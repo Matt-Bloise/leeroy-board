@@ -759,13 +759,13 @@ test("R1. an ask whose estimate alone exceeds the cap skips Claude, the degraded
   assert.equal(rowOf(db, `claude_tokens_${month()}`), undefined, "nothing was reserved");
 });
 
-test("R2. the estimate is a conservative upper bound: non-ASCII text counts at 1.5 tokens per character, not 1/3", () => {
+test("R2. the estimate is a conservative upper bound: every non-ASCII byte counts as a whole token, not 1/3 per character", () => {
   const ascii = "a".repeat(3000);
-  assert.equal(estimateTokens(ascii, ""), 1000 + RESEARCH_MAX_TOKENS);
+  assert.ok(estimateTokens(ascii, "") > 1000 + RESEARCH_MAX_TOKENS, "ASCII is no longer chars/3 (see ask-research-estimate.test.mjs for the full bound)");
   const cjk = "中文字".repeat(1000); // 3000 CJK characters
-  assert.ok(estimateTokens(cjk, "") >= 3000 * 1.5 + RESEARCH_MAX_TOKENS);
+  assert.ok(estimateTokens(cjk, "") >= 9000 + RESEARCH_MAX_TOKENS); // 9000 UTF-8 bytes
   const emoji = "\u{1F600}".repeat(1000); // 2000 UTF-16 units
-  assert.ok(estimateTokens("", emoji) >= 2000 * 1.5 + RESEARCH_MAX_TOKENS);
+  assert.ok(estimateTokens("", emoji) >= 4000 + RESEARCH_MAX_TOKENS); // 4000 UTF-8 bytes
   // scales with the input: ten times the CJK text is about ten times the estimate
   const ratio = (estimateTokens(cjk.repeat(10), "") - RESEARCH_MAX_TOKENS) / (estimateTokens(cjk, "") - RESEARCH_MAX_TOKENS);
   assert.ok(ratio > 9.5 && ratio < 10.5, String(ratio));
