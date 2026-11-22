@@ -11,6 +11,7 @@
 //   https://discord.com/developers/docs/resources/message#edit-message
 // Channel and message ids live only in the D1 kv_state row `cards`, written through PUT /api/config/cards or POST /api/admin/cards/post.
 
+import { signupCardUrl } from "./card-images.js";
 import { noiseDay, recordShadow } from "./noise.js";
 import { cardMembers, parseClassEmoji, iconFor, claimEntries } from "./card-members.js";
 import { loadPublicInputs, projectForAnonymous, WITHHELD_LINE } from "./public-party.js";
@@ -34,12 +35,15 @@ export const boardLinesEnabled = (env) => flag(env && env.BOARD_LINES_ENABLED);
 export const RSVP_STATES = ["in", "maybe", "late", "out"];
 export const RSVP_LABEL = { in: "In", maybe: "Tentative", late: "Running late", out: "Out" };
 export const RSVP_PHRASE = { in: "is in", maybe: "is tentative", late: "is running late", out: "is out" };
+// The four answer buttons on the pinned sign-up card, in order (renderSignupCard's first row; tests/unit/card-images.test.mjs keeps them equal).
+// The card's picture (CARD_IMAGES) draws these same words.
+export const RSVP_BUTTON_LABELS = Object.freeze(["I'm in", RSVP_LABEL.maybe, RSVP_LABEL.late, RSVP_LABEL.out]);
 // A stored rsvp is friend data: "constructor" or "__proto__" must read as no answer, not as an inherited property of the table.
 const rsvpLabel = (v) => (typeof v === "string" && Object.hasOwn(RSVP_LABEL, v) ? RSVP_LABEL[v] : "No answer");
 export const DEFAULT_MEET = ["Valley of Strength", "The Crossroads"];
 export const DEFAULT_WHEN = ["6pm", "8pm", "later"];
 
-const meetOptions = (options) => (Array.isArray(options && options.meet) && options.meet.length ? options.meet.map(String) : DEFAULT_MEET);
+export const meetOptions = (options) => (Array.isArray(options && options.meet) && options.meet.length ? options.meet.map(String) : DEFAULT_MEET);
 // A `when` option ends up in a custom_id (`signup:when:<option>`, max 100 characters) and is split on ":" when clicked, so only short
 // printable options without a colon are accepted. Anything else is dropped; if nothing is left the defaults apply. At most 5 (one row).
 export const WHEN_OPTION_MAX = 40;
@@ -212,6 +216,7 @@ export function renderSignupCard(state, opts = {}) {
   if (when) embed.footer = { text: `Updated ${when}` };
   const thumb = assetUrl(state, "img/seal.png");
   if (thumb) embed.thumbnail = { url: thumb };
+  if (state && typeof state.cardImage === "string") embed.image = { url: state.cardImage }; // CARD_IMAGES (off): set by loadCardState
   capEmbedText(embed);
 
   const mopts = meetOptions(state && state.options).slice(0, 2);
@@ -424,6 +429,10 @@ export async function loadCardState(env) {
     }
   } catch { /* legacy shape */ }
   state.classEmoji = parseClassEmoji(env.CARD_CLASS_EMOJI);
+  // CARD_IMAGES (off): null, card unchanged. This runs in the deferred redraw, never in the 3 s interaction path, so the file check may wait longer and
+  // ignores a remembered miss: a miss here would take the picture off the pinned card until the next redraw.
+  const picture = await signupCardUrl(env, RSVP_BUTTON_LABELS, meetOptions(state.options).slice(0, 2), whenOptions(state.options).slice(0, 5), { timeoutMs: 3000, retryMiss: true });
+  if (picture) state.cardImage = picture;
   return state;
 }
 
