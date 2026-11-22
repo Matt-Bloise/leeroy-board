@@ -10,6 +10,7 @@
 //   G7 the redaction roster is always the union of the built-ins and the row
 //   G8 flag off and interlock closed: no extra D1 query, no flag evaluation
 //   G9 nothing wraps, copies or proxies env
+//   G11 every route-level roster read carries its operation (sheet writes, public data reads): one resolution per request (attack review F1 and F3)
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -219,12 +220,36 @@ test("G9 nothing wraps, copies or proxies env: the handlers get the env they wer
   reset();
 });
 
+test("G11 every route-level roster read carries its operation, so a request resolves the roster once (sheet writes and public data reads included)", async () => {
+  const src = (f) => fs.readFileSync(path.join(ROOT, "infrastructure/worker", f), "utf8");
+  const idx = src("index.js"), dis = src("discord.js"), pub = src("public-party.js");
+  // every call site is found by splitting on the call text; the argument list that follows must name op
+  // (a definition, `function name(...`, is not a call)
+  const callsOf = (text, head, len = 60) => text.split(head).map((rest, i, parts) => ({ rest, before: i > 0 ? parts[i - 1] : null })).slice(1).filter((x) => !x.before.endsWith("function ")).map((x) => x.rest.slice(0, len));
+  for (const [name, text] of [["index.js", idx], ["discord.js", dis]]) {
+    const writes = [...callsOf(text, "recordSheetEventInD1(env, url.origin, {"), ...callsOf(text, "recordSheetEventInD1(env, origin, {")];
+    assert.ok(writes.length > 0 && writes.every((w) => w.includes("op: req")), `${name}: every recordSheetEventInD1 call passes op: req`);
+    const reads = callsOf(text, "loadPublicInputs(env", 40).filter((c) => !c.startsWith(")"));
+    assert.ok(reads.every((c) => c.includes("op: req")), `${name}: every loadPublicInputs call that has options passes op: req`);
+  }
+  assert.ok(callsOf(idx, "loadPublicInputs(env", 40).filter((c) => c.includes("op: req")).length >= 3, "the three public data routes in index.js pass op");
+  assert.ok(pub.includes("buildPartySheetsFromD1(env, { persist: false, partyDoc: doc, strict: true, op })"), "public-party passes op on to the sheet build");
+  assert.ok(idx.includes("{ persist: false, partyDoc, strict: true, op }"), "the sheet write commit passes op on to the sheet build");
+  // behaviour: two reads for one operation resolve the roster once
+  reset();
+  const env = await envOf({ flagValues: [true], kv: { party_roster: ROW } });
+  const op = {};
+  await loadPartyMembers(env, op); await loadPartyMembers(env, op); await rosterSnapshot(env, op);
+  assert.equal(env.__counter.flag, 1);
+  reset();
+});
+
 test("G10 the interlock stays closed unless every gate test above is present and not skipped", () => {
   const src = fs.readFileSync(path.join(ROOT, "infrastructure/worker/roster-source.js"), "utf8");
   const open = /^export const ROSTER_STEP2_READY = true;$/m.test(src);
   assert.equal(ROSTER_STEP2_READY, open, "the exported constant matches the source line");
   assert.equal(ROSTER_STEP2_READY, false, "this PR ships the interlock closed; opening it is the owner's decision, in its own change");
   const me2 = fs.readFileSync(fileURLToPath(import.meta.url), "utf8");
-  for (const id of ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9"]) assert.ok(new RegExp(`test\\("${id} `).test(me2), `${id} is present`);
+  for (const id of ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G11"]) assert.ok(new RegExp(`test\\("${id} `).test(me2), `${id} is present`);
   assert.equal(/\btest\.(skip|todo|only)\b|\{\s*skip\s*:/.test(me2.replace(/\/\/.*$/gm, "").replace(/"[^"]*"/g, '""')), false, "no gate test is skipped or narrowed");
 });

@@ -223,6 +223,19 @@ Nothing wraps, copies or proxies `env`, and there is no module-level roster stat
 
 **Not testable here.** The roster code was not run against a real Workers env object: `wrangler dev --local` (wrangler 4.148.0, the version CI deploys with) does not start this Worker, because the entry module exports non-handler values (`KEPT_CACHE_CONTROL`, `MEMBER_NO_STORE`, `SHEET_FIELDS`, `ROUTES` and others) and the local workerd refuses them ("Incorrect type for map entry"). What would make it testable: move those exports out of `worker/index.js`. Until then the unit tests use plain objects for env, and the first run on the real runtime is the deploy itself (flag off).
 
+**Attack review of step 2 (fresh agent, adversarial, no repo edits; scripts kept outside the repository).** With the flag off and the interlock closed it found no difference from master over 63 compared records (outputs, errors, SQL text and order, bind arguments, env access); the step 1 defect class (env enumeration) is gone and the roster row does not leak through the export, the public data route, `/api/me` or any response it read. Findings that apply once the interlock is opened, and what was done:
+
+| id | finding | status |
+|---|---|---|
+| F1 | the sheet-write commit and the public data routes called the sheet build without the operation, so each re-resolved the roster; a flag that changed between the two could persist a `party_sheets` row missing a row-only member | fixed in this change: `op` is passed through `recordSheetEventInD1`, `loadPublicInputs` and the sheet build (test G11) |
+| F2 | a flag timeout or throw, a false answer or an unreadable row falls back to the built-ins: the admin token then acts as built-in index 3 and redaction covers the built-ins only. Today that is the flag-off behaviour, but once real names live only in the row it would send them verbatim | **pre-flip gate, not fixed here**: before the built-ins are removed (step 3) or the interlock opens, the flag-on path must fail closed (no outside model call, no admin action) when the roster cannot be resolved |
+| F3 | "one resolution per operation" was false for `POST /sheet` and `GET /data/party` | fixed with F1 |
+| F4 | the validator cannot see the built-ins, so a row member can reuse a built-in display name or alias under another slug (duplicate names in the sheet list; no cross-write reproduced) | **pre-flip gate, not fixed here**: collision check against the built-ins at write and read time, before the interlock opens |
+| F5 | the 60 s per-isolate config cache means a changed roster or default admin reaches other isolates up to 60 s late | accepted; documented here |
+| F6 to F8 | export filter and public routes sound (the filter is an exact-case match; the Worker cannot write a variant-case key); env enumeration unchanged; local `wrangler dev` does not start on master or this branch | info |
+
+The attack agent ran the Worker under the real workerd runtime through a scratch wrapper entry that re-exports only the handlers: env was a plain, unfrozen object with enumerable data properties, no getters and no proxy, and the secret scan worked on it. Not tested: getter-style bindings, a frozen or proxied env, real Flagship timeout behaviour.
+
 ## Council review
 
 An outside review (two independent model seats, one round; sent only this ADR text and the public file list) accepted D1 as the source of truth and found the problems below. All are applied above except where noted. The raw answer is kept by the owner outside the repository.
