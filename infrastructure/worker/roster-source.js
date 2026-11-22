@@ -1,16 +1,24 @@
-// Where the roster comes from when the flag ROSTER_FROM_D1 is on (ADR 0002 step 1). Flag off: nothing here reads D1 and every caller keeps its built-in list.
-// Flag on and a valid kv_state 'party_roster' row: the roster, the default admin and the redaction names come from that row.
-// Flag on and the row absent, unreadable or invalid: null, so the caller uses the built-in lists exactly as with the flag off (and the redaction roster keeps
-// covering the built-in names). Never throws.
+// Where the roster comes from when the flag ROSTER_FROM_D1 is on (ADR 0002). Flag off: nothing here reads D1 and every caller keeps its built-in list.
+// Flag on and a valid kv_state 'party_roster' row: the roster, the default admin and the redaction names come from that row, UNIONED with the built-ins (a built-in
+// member the row omits keeps the member match, and the redaction roster always covers the built-ins: see withBuiltIns in roster-shape.js and researchMembers in
+// privacy/roster-config.js). Flag on and the row absent, unreadable or invalid: null, so every caller uses the built-in lists exactly as with the flag off. Never throws.
 //
-// INTERLOCK (ADR 0002 step 2 gate): the redaction roster is still module state (privacy/roster-config.js setRosterOverride), which concurrent requests in one
-// isolate can race. Until step 2 replaces it with a per-operation snapshot, ROSTER_FROM_D1 on is REFUSED: it behaves as off, for auth and for redaction alike,
-// so turning the flag on cannot change either roster. The constant below is flipped to true only by the step 2 PR. Tests may open the interlock through
-// setStep2ReadyForTests; nothing in the Worker does.
+// OPERATION SNAPSHOT (ADR 0002 step 2). rosterSnapshot(env, op) resolves the roster ONCE per operation and hands every consumer of that operation the same frozen
+// snapshot, so the flag or the row cannot change between auth and redaction inside one operation. An operation is whatever object the caller passes as `op`:
+//   - fetch:      the Request (index.js routes pass `req` to resolveMemberAuth, loadPartyMembers, loadRoster and answerWithAi({ rosterOp: req }));
+//   - scheduled:  the controller of the run (no scheduled handler reads the roster today; a future one passes `controller`);
+//   - listener:   the listen event (listener.js answerEvent passes `rosterOp: ev`);
+//   - answerWithAi / buildAnswerInputs called without an op: a fresh object per answer, so one answer is still one snapshot.
+// The memo is a WeakMap keyed by `op`, so it holds nothing past the operation and shares nothing between operations. There is NO module-level mutable roster state in the
+// Worker (the old privacy override is gone), and nothing wraps, copies or proxies env (the step 1 finding: a wrapper hid every secret from Object.keys(env), which the
+// outbound privacy guard uses). Without an `op` (a test or an entry point that has none) every call resolves afresh and memoises nothing.
+//
+// INTERLOCK (ROSTER_STEP2_READY): stays false in this PR. While it is false ROSTER_FROM_D1 on is REFUSED: it behaves as off for auth and redaction alike, and the flag is
+// not even read. Flipping it is the owner's decision after the step 2 gates have run green in production with the flag off; tests/unit/roster-step2-gates.test.mjs fails
+// if the constant is true while the gate tests are missing. Tests may open the interlock through setStep2ReadyForTests; nothing in the Worker does.
 import { flagOn } from "./flags.js";
 import { loadConfigKeyStrict } from "./config.js";
 import { validateRosterConfig, sheetMembersFromConfig, rosterDataFromConfig, privacyMembersFromConfig } from "./roster-shape.js";
-import { setRosterOverride } from "./privacy/roster-config.js";
 
 export const ROSTER_FLAG = "ROSTER_FROM_D1";
 export const ROSTER_STEP2_READY = false;
@@ -18,35 +26,34 @@ let step2Override = null;
 export function setStep2ReadyForTests(v) { step2Override = v === null || v === undefined ? null : Boolean(v); }
 const step2Ready = () => (step2Override === null ? ROSTER_STEP2_READY : step2Override);
 
-// No per-request memo and no wrapper around env: the Worker passes the env it was given everywhere, untouched. A wrapper (Object.create(env)) hides every binding and
-// secret from Object.keys(env), which the outbound privacy guard uses to find secret values (research/real-names.js secretValues): it silently turned that layer off even
-// with the flag off (found by the attack review of this step). The per-operation snapshot is a step 2 gate (ADR 0002), designed without touching env.
+const deepFreeze = (v) => {
+  if (v && typeof v === "object" && !Object.isFrozen(v)) { Object.freeze(v); for (const x of Object.values(v)) deepFreeze(x); }
+  return v;
+};
 
 async function resolve(env) {
   try {
-    if (!step2Ready()) return null; // interlock: checked before the flag, so a refused flag costs nothing
+    if (!step2Ready()) return null; // interlock: checked before the flag, so a refused flag costs nothing (no Flagship call, no D1 read)
     if (!(await flagOn(env, "ROSTER_FROM_D1"))) return null;
     const read = await loadConfigKeyStrict(env, "party_roster");
     if (read.status !== "ok" || validateRosterConfig(read.value) !== null) return null;
-    return {
+    return deepFreeze({
       sheetMembers: sheetMembersFromConfig(read.value),
       rosterData: rosterDataFromConfig(read.value),
       privacyMembers: privacyMembersFromConfig(read.value),
       defaultAdminSlug: read.value.default_admin,
-    };
+    });
   } catch {
     return null;
   }
 }
 
-// -> null | { sheetMembers, rosterData, privacyMembers, defaultAdminSlug }
-export function activeRoster(env) {
-  return resolve(env);
-}
+const memo = new WeakMap(); // op -> Promise<snapshot | null>
 
-// Points the privacy layer (tokeniser and outbound guard) at the same roster. Called where research privacy is about to be used (ai-models.js), not on every
-// request. Flag off, interlock closed or no valid row: clears any override, so the privacy roster is the built-in one only.
-export async function primeRosterPrivacy(env) {
-  const r = await activeRoster(env);
-  setRosterOverride(r ? r.privacyMembers : null);
+// -> Promise<null | { sheetMembers, rosterData, privacyMembers, defaultAdminSlug }> (frozen). One resolution per `op`.
+export function rosterSnapshot(env, op) {
+  if (op === null || (typeof op !== "object" && typeof op !== "function")) return resolve(env);
+  let p = memo.get(op);
+  if (!p) { p = resolve(env); memo.set(op, p); }
+  return p;
 }

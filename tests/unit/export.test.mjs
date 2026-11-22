@@ -25,7 +25,7 @@ function seeded() {
   r.prepare("INSERT INTO sessions_v2 (token_hash, discord_user_id, created_at, expires_at) VALUES (?, ?, '2026-01-01', '2026-02-01')").run(HASH_T2, U);
   r.prepare("INSERT INTO provider_tokens (discord_user_id, provider, access_token_enc, updated_at) VALUES (?, 'discord', 'CIPHERTEXT-never-exported', 'now')").run(U);
   r.prepare("INSERT INTO guest_rate_limits (ip_hash, created_at) VALUES ('iphash-never-exported', 1)").run();
-  for (const [k, v] of [["party", '{"members":[]}'], ["signups", '{"entries":[]}'], ["secret_x", SECRET_ROW], ["secrets", SECRET_ROW], ["feed_cache:stats", "{}"], ["persona", '{"p":1}']]) r.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, ?, 'now')").run(k, v);
+  for (const [k, v] of [["party", '{"members":[]}'], ["signups", '{"entries":[]}'], ["secret_x", SECRET_ROW], ["secrets", SECRET_ROW], ["feed_cache:stats", "{}"], ["party_roster", '{"version":1,"members":[{"slug":"made-up","name":"Made Up"}]}'], ["persona", '{"p":1}']]) r.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, ?, 'now')").run(k, v);
   for (let i = 0; i < 5; i++) r.prepare("INSERT INTO intents (at, slug, kind, body, ver) VALUES ('now', 'santa', 'signup', ?, 1)").run(`{"n":${i}}`);
   return db;
 }
@@ -103,7 +103,7 @@ test("a full export of every table never contains a secret value", async () => {
   assert.ok(all.includes("user_key"), "user_state is exported");
 });
 
-test("kv_state: secret* and feed_cache:* rows are filtered, the rest (including private config rows) are exported", async () => {
+test("kv_state: secret*, feed_cache:* and party_roster rows are filtered (the roster holds names, ADR 0002), the rest (including private config rows) are exported", async () => {
   const lines = await ndjson(await get(env(seeded()), "/api/admin/export?table=kv_state"));
   assert.deepEqual(lines.filter((l) => l.t === "row").map((l) => l.r.key).sort(), ["party", "persona", "signups"]);
 });

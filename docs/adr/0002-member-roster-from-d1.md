@@ -115,7 +115,7 @@ Verified by reading each (`git grep` over the tree at 714cbf09; not re-counted f
 ## Delivery plan and owner decision (Nov 22 2026)
 
 - This PR: the ADR alone.
-- Next PR: step 1, flag off, with the flag-off identity proof re-run on current master and an independent attack on the auth member match and the default admin before it is reported ready. Turning the flag on is the owner's decision, not part of any step 1 PR.
+- Step 1 (merged as PR 449): flag off, with the flag-off identity proof re-run on current master and an independent attack on the auth member match and the default admin before it is reported ready. Turning the flag on is the owner's decision, not part of any step 1 PR.
 - After the flag is on and proven: the built-in member list is removed from the public tree (the later steps below), and the names in tests, docs and data are replaced by fictional ones.
 - The repository history is not rewritten. The owner decided this on Nov 22 2026 (leave history as it is, no rewrite, ever, on this repository). Names already in the history stay there; the rule is for the tree from here on.
 
@@ -170,7 +170,7 @@ Rollback is a supported security state, not only a code state: after the flag ha
 | **Default admin** | Auth must not fail open or pick the wrong person. With the flag on and a valid row, the admin token resolves to `default_admin`. A `default_admin` that is not in the roster is refused on write. In step 1 a row that is missing or invalid falls back to the built-in default (today's behaviour); from step 6 it fails closed (Decision 3). The two policies differ on purpose, and the step-1 one is what the flag-off identity proof requires. | Validation on PUT and again on read; tests for configured admin, invalid row, missing row. The admin-only routes use `adminGate`, which does not use the roster. |
 | **Redaction coverage** | The commit that moves names out of code must not uncover them for the model. In step 1 the privacy roster is a module-level override set by `primeRosterPrivacy` just before research privacy runs. Concurrent handlers in one isolate can interleave: a request that sees the flag off (or a Flagship timeout, which reads as off) clears the override while another request is mid-flight, and `waitUntil` work can outlive its handler. While the built-ins exist the union keeps their names covered, but a name that exists only in D1 is exposed to that race. | **Gate, step 2:** replace the module override with a per-operation snapshot and make privacy fail closed. **Step 1 interlock:** `ROSTER_FROM_D1` on is refused (behaves as off, for auth and redaction) while `ROSTER_STEP2_READY` is `false`, so the race cannot occur; a test pins the constant to `false` and checks that the flag on changes nothing. In step 1: union with the built-ins, override cleared when the flag is off or the row is invalid (flag off equals the built-in roster exactly), tests tokenise and guard a prompt containing a name, an alias and a first name from a fictional D1 roster. The union is per redaction key (Decision 5): a D1 member that names a built-in keeps the built-in's aliases and first names, and a built-in with no D1 match is kept whole. Test renamed and overlapping members in step 2. |
 | **Cache staleness** | `loadConfigKeyStrict` caches 60 seconds per isolate; `PUT /api/config` invalidates only the isolate that served the write. A name added to the roster is unredacted in other isolates for up to 60 seconds, and "add the name first" is not an enforceable boundary. | Step 2 gate: a fresh authoritative read of the roster (or a revision check against the sheet content) before any outside call, with stated stale-on-error behaviour (fail closed). A shorter TTL alone is not accepted as the fix. |
-| **Backups and export** | `GET /admin/export` exports every `kv_state` row except `secret%` and `feed_cache:%` (`worker/export.js:36`), so `party_roster`, including `first_names`, enters backup files. A private config key is not private in a backup. | Treat export files as holding real names: owner-only storage, no repository, no shared drive. Step 2 decides whether `party_roster` joins the excluded rows and is backed up by a separate controlled path. **(unverified)** where the owner's backups are stored. |
+| **Backups and export** | `GET /admin/export` exports every `kv_state` row except `secret%` and `feed_cache:%` (`worker/export.js:36`), so `party_roster`, including `first_names`, enters backup files. A private config key is not private in a backup. | Treat export files as holding real names: owner-only storage, no repository, no shared drive. Decided in step 2 (owner's ruling, Nov 22 2026): `party_roster` is EXCLUDED from `/admin/export` by default (`worker/export.js` ROW_FILTERS), because it will hold names, aliases and first names. The cost: a restore from an export does not bring the row back, so the owner re-PUTs it from the copy they keep (`PUT /api/config/party_roster`). There is no include option in step 2; adding one needs its own decision. **(unverified)** where the owner's backups are stored. |
 | **Rollout evidence** | A one-day smoke test shows neither concurrency nor failure safety. | Step 2 gates: checks for every member and the default admin, warm and cold isolates, cron-first execution, a D1 outage and a roster update, with privacy-safe counters (revision, source, initialisation failures, blocked calls; never a value). |
 | **Identity integrity** | Unique slugs are not enough: an alias can collide across the roster, the party document and `discord_members`, and two concurrent roster edits can lose an update. Rename and delete have no defined effect on history. | Step 2: collision rejection with a stated normalisation, a revision field checked on PUT, a rename and delete policy. The authenticated binding is the member key or Discord session, not a name (`worker/auth.js`, `worker/members.js`); roster names are display and matching data. |
 | **Seed guard** | The deploy seeds only when `kv_state` has 0 rows. A fresh database, a restore drill or a `--allow-create` run seeds from `data/`, which holds real names until step 6. Conversely a populated database never picks up a changed data file. | Step 4 seeds the sample roster for previews and local; step 6 changes the data files; the owner never relies on the seed to carry the real roster. Restore drills use `/admin/export`, which includes `kv_state` and so the roster row. |
@@ -187,17 +187,41 @@ Rollback is a supported security state, not only a code state: after the flag ha
 3. Author attribution (`LICENSE.md`, `CONTRIBUTING.md`, addon `.toc`) names the author, who may or may not be a roster member. Decide separately from the roster.
 4. Where do character names on party sheets (not the roster) belong? They are already picked up by `researchMembersFor` from the sheets at request time; no change proposed.
 
-## Step 1 as designed (implemented in the next PR, not in this one)
+## Step 1 as implemented (PR 449, merged)
 
-- `worker/roster-shape.js` (shape, validation, converters), `worker/roster-source.js` (`activeRoster`, `primeRosterPrivacy`).
+- `worker/roster-shape.js` (shape, validation, converters), `worker/roster-source.js` (`activeRoster`, `primeRosterPrivacy`; both replaced by the snapshot in step 2, below).
 - `config.js`: `party_roster` added to `CONFIG_KEYS`, the validator and the private key list.
 - `party-source.js`: `loadPartyMembers` and `loadRoster` take the D1 roster as the base when `activeRoster` returns one.
-- `index.js`: `resolveMemberAuth` (member match, configured default admin); `fetch` and `scheduled` run on a request-scoped env.
-- `privacy/roster-config.js`: `setRosterOverride`; `researchMembers()` returns the per-key union of the override and the built-ins, or the built-ins exactly when no override is set.
+- `index.js`: `resolveMemberAuth` (member match, configured default admin). `fetch` and `scheduled` take `env` unchanged (a request-scoped env wrapper was tried and removed: it hid the secrets from the outbound guard).
+- `privacy/roster-config.js`: `setRosterOverride` (removed in step 2); `researchMembers()` returns the per-key union of the override and the built-ins, or the built-ins exactly when no override is set.
 - `roster-source.js`: `ROSTER_STEP2_READY` interlock, `ai-models.js` primes the privacy roster where research privacy is used.
 - `roster-shape.js` validation: version required, name, alias, first-name and slug collisions on the tokeniser skeleton, reserved words, `P<digits>`, one-letter names, regex or markup characters, object-prototype words, empty alias and first-name arrays.
 - Flag plumbing: `wrangler.toml` (`ROSTER_FROM_D1 = "off"`), `flagship-flags.txt`, `docs/runbooks/flags.md`, `tests/unit/flags.test.mjs`.
 - Tests: `tests/unit/roster-from-d1.test.mjs` (flag-off differential over auth, admin default, membership, redaction roster and the SQL issued; flag-on behaviour; fallbacks; redaction with a fictional roster including aliases and first names; flag plumbing).
+
+## Step 2 as implemented (flag still off, interlock still closed)
+
+Goal: make `ROSTER_FROM_D1` safe to turn on later. Nothing a friend sees changes; the flag value in `wrangler.toml` stays `off` and `ROSTER_STEP2_READY` stays `false`.
+
+**Operation boundary.** An operation is the object a caller passes as `op` to `rosterSnapshot(env, op)` (`worker/roster-source.js`). The first call for an `op` resolves the roster (one flag evaluation, one `party_roster` read, validation) and memoises the frozen snapshot in a `WeakMap` keyed by `op`; every later call for the same `op` returns the same object.
+
+| Entry point | `op` | What shares the snapshot |
+|---|---|---|
+| `fetch` | the `Request` | `resolveMemberAuth` (member match, default admin), `loadPartyMembers` and `buildPartySheetsFromD1` on that route, `loadRoster` in the Discord interaction handler, and `answerWithAi` (`rosterOp: req`), so the redaction roster is the same one |
+| `scheduled` | the run's `controller` | nothing reads the roster in a scheduled run today; a future reader passes `controller` |
+| Discord listener | the listen event | `answerEvent` calls `answerWithAi({ rosterOp: ev })` |
+| `answerWithAi` / `buildAnswerInputs` without an `op` | a fresh object per answer | one answer is still one snapshot (party build and tokenising) |
+| a caller with no `op` | none | resolves afresh and memoises nothing |
+
+Nothing wraps, copies or proxies `env`, and there is no module-level roster state: the old privacy override (`setRosterOverride`, `primeRosterPrivacy`) is gone. The snapshot reaches the redaction layer as an argument (`researchParty(..., { roster })` then `researchMembersFor(sheets, roster.privacyMembers)`), so two requests in one isolate cannot see each other's roster and the flag or the row changing mid-operation changes nothing for that operation. `AsyncLocalStorage` was not used: it needs a `nodejs_compat` flag, which this Worker does not set, and a runtime flag is not a documentation change.
+
+**No lockout.** With the row active, member lists are the row's members followed by every built-in the row omits (`sheetMembersWithBuiltIns`, `rosterDataWithBuiltIns` in `roster-shape.js`), so a built-in member the row leaves out keeps the member match until step 3 removes the built-ins. A row whose `default_admin` is not one of its members is refused on write and ignored on read (the built-in default admin answers). **Redaction** is always the union of the built-ins and the row.
+
+**Export.** `party_roster` is excluded from `/admin/export` (see Risks, Backups and export).
+
+**Tests.** `tests/unit/roster-step2-gates.test.mjs` (G1 to G10): one read per operation, mid-operation flag and row changes, interleaved operations, no lockout, default admin refusal, export exclusion, redaction union, flag-off and interlock-closed identity (no extra D1 query, no flag evaluation), env untouched, and a guard that fails if `ROSTER_STEP2_READY` is true while those tests are missing or skipped.
+
+**Not testable here.** The roster code was not run against a real Workers env object: `wrangler dev --local` (wrangler 4.148.0, the version CI deploys with) does not start this Worker, because the entry module exports non-handler values (`KEPT_CACHE_CONTROL`, `MEMBER_NO_STORE`, `SHEET_FIELDS`, `ROUTES` and others) and the local workerd refuses them ("Incorrect type for map entry"). What would make it testable: move those exports out of `worker/index.js`. Until then the unit tests use plain objects for env, and the first run on the real runtime is the deploy itself (flag off).
 
 ## Council review
 

@@ -68,8 +68,9 @@ import { collectInterest } from "./interest.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { activeRoster } from "./roster-source.js";
+import { rosterSnapshot } from "./roster-source.js";
 import { projectDataDoc, projectBroadcast, loadPublicInputs, writeSheetValueToDoc, SHEET_FIELD_NAMES, MEMBER_DOCS as MEMBER_DOC_KEYS } from "./public-party.js";
+import { sheetMembersWithBuiltIns } from "./roster-shape.js";
 import { PARTY_MEMBERS, loadPartyMembers, normName, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
 export { BoardRoom };
@@ -79,12 +80,12 @@ export const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "profes
 async function resolveMemberAuth(req, url, env) {
   // 1. Try cryptographic salted hash lookup in `members` table
   const authWho = await authenticate(req, env);
-  const rost = await activeRoster(env); // ROSTER_FROM_D1: null while the flag is off (or the row is missing or invalid), so everything below is today's code
+  const rost = await rosterSnapshot(env, req); // ROSTER_FROM_D1: this request's one roster snapshot; null while the flag is off or refused (or the row is missing or invalid), so everything below is today's code
   if (authWho && authWho.slug) {
-    const found = (rost ? rost.sheetMembers : PARTY_MEMBERS).find((m) => m.slug === authWho.slug);
+    const found = (rost ? sheetMembersWithBuiltIns(rost.sheetMembers, PARTY_MEMBERS) : PARTY_MEMBERS).find((m) => m.slug === authWho.slug);
     if (found) return { ok: true, member: found };
     // Not one of the built-in five: the party document in D1 may know them (read only on this miss, so the five cost no extra query).
-    const fromDoc = (await loadPartyMembers(env)).find((m) => m.slug === authWho.slug);
+    const fromDoc = (await loadPartyMembers(env, req)).find((m) => m.slug === authWho.slug);
     if (fromDoc) return { ok: true, member: fromDoc };
     return { ok: true, member: { slug: authWho.slug, name: authWho.name || authWho.slug } };
   }
@@ -94,7 +95,7 @@ async function resolveMemberAuth(req, url, env) {
   if (env.BOARD_ADMIN_TOKEN && k && timingSafeEqualStr(k, env.BOARD_ADMIN_TOKEN)) {
     if (rost) {
       // ROSTER_FROM_D1: the default admin is the configured slug, never an array position. validateRosterConfig guarantees it is in the roster.
-      const admin = rost.sheetMembers.find((m) => m.slug === rost.defaultAdminSlug);
+      const admin = sheetMembersWithBuiltIns(rost.sheetMembers, PARTY_MEMBERS).find((m) => m.slug === rost.defaultAdminSlug);
       return admin ? { ok: true, member: admin } : { ok: false, member: null };
     }
     return { ok: true, member: PARTY_MEMBERS[3] }; // Default admin: member #4 of the built-in list
@@ -352,7 +353,7 @@ async function hideFromEvents(env, rows, known, partyDoc, strict, memo = null) {
   });
 }
 
-export async function buildPartySheetsFromD1(env, { persist = true, partyDoc, strict = false } = {}) {
+export async function buildPartySheetsFromD1(env, { persist = true, partyDoc, strict = false, op } = {}) {
   const now = new Date().toISOString();
 
   // 1. Fast path: Read pre-materialized party sheets from kv_state (single point lookup)
@@ -378,7 +379,7 @@ export async function buildPartySheetsFromD1(env, { persist = true, partyDoc, st
   // 2. Slow path / bootstrap fallback: Reconstruct from base + sheet_events
   const bySlug = new Map();
 
-  for (const m of await loadPartyMembers(env)) {
+  for (const m of await loadPartyMembers(env, op)) {
     const fields = {};
     for (const f of SHEET_FIELDS) {
       if (m[f] !== undefined) {
@@ -644,7 +645,7 @@ const worker = {
         }
         const m = auth.member;
         if (req.method === "GET") {
-          const { party, seq } = await buildPartySheetsFromD1(env);
+          const { party, seq } = await buildPartySheetsFromD1(env, { op: req });
           const mine = party.find((p) => p.slug === m.slug) || { slug: m.slug, name: m.name, fields: {}, updated: null };
           return jsonResp(
             {
@@ -671,7 +672,7 @@ const worker = {
           // Only a vocabulary line is looked up, and only after the vocabulary refused, so the normal write costs no extra read.
           if (problem && VOCAB_LIST[field] && body.value !== undefined && body.value !== null) {
             try {
-              const cur = (await buildPartySheetsFromD1(env, { persist: false })).party.find((p) => p.slug === m.slug);
+              const cur = (await buildPartySheetsFromD1(env, { persist: false, op: req })).party.find((p) => p.slug === m.slug);
               const stored = cur && cur.fields && cur.fields[field];
               if (stored && stored.value !== undefined && JSON.stringify(stored.value) === JSON.stringify(body.value)) problem = null;
             } catch { /* unreadable: the refusal stands */ }
@@ -863,7 +864,7 @@ const worker = {
         if (problem) return jsonResp({ error: problem }, 400, cors);
         if (body.visible !== undefined && body.visible !== false) return jsonResp({ error: "visible may only be false: the admin never shows a hidden field" }, 400, cors);
         const slug = typeof body.slug === "string" ? body.slug : "";
-        const member = /^[a-z0-9-]{1,32}$/.test(slug) ? (await loadPartyMembers(env)).find((m) => m.slug === slug) : null;
+        const member = /^[a-z0-9-]{1,32}$/.test(slug) ? (await loadPartyMembers(env, req)).find((m) => m.slug === slug) : null;
         if (!member) return jsonResp({ error: "Unknown party member" }, 404, cors);
         const now = new Date().toISOString();
         let saved;
@@ -1919,6 +1920,7 @@ const worker = {
           ctx.waitUntil(
             answerWithAi({
               env,
+              rosterOp: req,
               origin: url.origin,
               intentId,
               by: askBy,

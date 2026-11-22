@@ -14,7 +14,9 @@
 //   tables  sessions, sessions_v2 (session token hashes), provider_tokens (encrypted OAuth tokens), account_keys (key hashes),
 //           guest_rate_limits (hashed visitor addresses, short lived), game_facts and game_fact_loads (derived from files on the owner's PC and reloadable from there; plain `wrangler d1 export` and Time Travel carry them), plus anything SQLite, Cloudflare or the migration bookkeeping owns
 //   columns members.key_hash (the member's salted key hash: keys are re-issued after a restore)
-//   rows    kv_state keys starting with `secret` (the Worker never serves them) and `feed_cache:` (a derived cache)
+//   rows    kv_state keys starting with `secret` (the Worker never serves them), `feed_cache:` (a derived cache) and `party_roster` (ADR 0002: once the flag is on it holds the
+//           members' real names, aliases and first names; a backup file must not carry them. A restore therefore does not bring the row back: the owner re-PUTs it
+//           from the source they keep, PUT /api/config/party_roster)
 // Everything else is exported, including pseudonymous hashes that a restore needs as keys (user_state.user_key, answer_feedback.user_hash,
 // answer_details.asker_hash). A new table is exported by default; if it holds a secret, add it here: the schema test fails until it is classified.
 // No secret values are read, logged or returned. The response is private and never cached.
@@ -35,7 +37,7 @@ export const EXCLUDED_COLUMNS = Object.freeze({
 });
 // Row filters as SQL fragments appended with AND. Constants only, never built from input.
 export const ROW_FILTERS = Object.freeze({
-  kv_state: "key NOT LIKE 'secret%' AND key NOT LIKE 'feed_cache:%'",
+  kv_state: "key NOT LIKE 'secret%' AND key NOT LIKE 'feed_cache:%' AND key <> 'party_roster'",
 });
 export const PAGE = Object.freeze({ default: 200, max: 1000 });
 const SYSTEM_TABLE = /^(sqlite_|_cf_|d1_)/;

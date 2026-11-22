@@ -135,7 +135,7 @@ async function answerEvent(env, origin, ev, member, mode, { fetchImpl, tag = "",
   let budget = null;
   try { ({ budget } = await askWallPlan(env, { isMember: true, userPart: await hashId(ev.author_id), preview: false })); } catch {}
   try {
-    await answerWithAi({ env, origin, intentId, by: member.name, memberSlug: member.slug, question, provider: resolveAiProvider(env), share, budget, isMember: true, channel: ev.channel_id, noFanout: true });
+    await answerWithAi({ env, rosterOp: ev, origin, intentId, by: member.name, memberSlug: member.slug, question, provider: resolveAiProvider(env), share, budget, isMember: true, channel: ev.channel_id, noFanout: true });
   } catch {
     console.warn(JSON.stringify({ evt: "listen_answer_failed" }));
   }
