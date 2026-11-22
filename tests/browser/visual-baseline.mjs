@@ -35,7 +35,7 @@ const SIZES = Object.freeze([
 // Next steps panel landed 10 px higher in some runs; the light (js/board.js) followed wherever the mouse was left. Hence also: taps are dispatched events, the pointer is never used.
 const PAUSE_AT_MS = 60000, SUB_MS = 250, QUIET_MS = 150, QUIET_MAX_MS = 5000;
 const SCHEDULE = Object.freeze({ load: 2000, look: 3000, close: 2000, open: 3000, flush: 12000 }); // fake ms after each action; flush covers the wall's 10 s settle
-const SETTLE_TRIES = 12, STABLE_GAP_MS = 250; // up to 12 shots a quarter second apart (clock paused) to find two identical ones in a row
+const SETTLE_ROUNDS = 48, STABLE_ROUNDS = 3, ART_MAX_MS = 5000; // the final settle: up to 48 rounds of SUB_MS page time; 3 identical screenshots in a row count
 const BASELINES = path.resolve(arg("--baselines") || path.join(here, "baselines")); // --baselines DIR compares with another set (calibration: two renders against each other)
 const OUT = path.resolve(arg("--out") || path.join(here, "out", "visual-baseline")), ACTUAL = path.join(OUT, "actual"), DIFF = path.join(OUT, "diff");
 const wi = argv.indexOf("--write-baselines");
@@ -44,6 +44,9 @@ const ONLY = arg("--only") ? new Set(arg("--only").split(",").filter(Boolean)) :
 const ONLY_SIZES = arg("--sizes") ? new Set(arg("--sizes").split(",").filter(Boolean)) : null;
 const REPEAT = Math.max(1, Number(arg("--repeat", "1")) || 1);
 const INJECT_CSS = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
+// Imitating a slow runner, to test the settling (calibration, 2026-11-22: two screens differed on a slower CI CPU): --throttle N slows the page's CPU N times (CDP),
+// --slow-art MS holds every image response back MS milliseconds. Neither may change a single pixel of the result; only the run gets slower.
+const THROTTLE = Number(arg("--throttle", "0")) || 0, SLOW_ART = Number(arg("--slow-art", "0")) || 0;
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
 const PARTIAL = !!(ONLY || ONLY_SIZES);
 const TZ = "UTC", LOCALE = "en-US", SEED = 20261122;
@@ -129,16 +132,80 @@ const sceneScreen = (k) => ({
   arg: k,
 });
 
-// Two consecutive identical screenshots, with the clock paused (no timer or animation frame runs between them). Returns { png, shots } or throws.
-async function stableShot(page) {
-  let prev = null;
-  for (let i = 1; i <= SETTLE_TRIES; i++) {
+// Waits (bounded) until the art on screen is downloaded and decoded: every <img> in the viewport, and every CSS background image of an element in the viewport.
+async function artReady(page) {
+  const work = page.evaluate(async () => {
+    const W = innerWidth, H = innerHeight, inView = (r) => r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < H && r.left < W;
+    const waits = [], urls = new Set();
+    for (const img of document.images) {
+      if (!inView(img.getBoundingClientRect())) continue;
+      if (!img.complete) waits.push(new Promise((r) => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); }));
+      else if (img.naturalWidth) waits.push(img.decode().catch(() => {}));
+    }
+    for (const el of document.querySelectorAll("body, body *")) {
+      if (!inView(el.getBoundingClientRect())) continue;
+      for (const pseudo of [null, "::before", "::after"]) {
+        const bg = getComputedStyle(el, pseudo).backgroundImage;
+        if (bg && bg !== "none") for (const m of bg.matchAll(/url\(["']?([^"')]+)["']?\)/g)) if (!m[1].startsWith("data:")) urls.add(m[1]);
+      }
+    }
+    for (const u of urls) { const im = new Image(); im.src = u; waits.push(im.decode().catch(() => {})); }
+    await Promise.all(waits);
+    return waits.length;
+  }).catch(() => -1);
+  return Promise.race([work, new Promise((r) => setTimeout(() => r(-2), ART_MAX_MS))]);
+}
+// The final settle. The page's Date is frozen where the fixed schedule left it (so the launch countdown and every "in 25 hours" read the same however long this
+// takes), while timers, idle callbacks and frames keep running in SUB_MS steps. Work that needs real time as well as timers (the light's shader compiles in the GPU
+// process and is polled every 16 ms; art that arrives late) therefore finishes instead of being frozen half-done. Calibration 2026-11-22: with the clock simply
+// paused, a slower CI CPU (Xeon Platinum 8370C) shot the desktop wall with the light not yet lit. A shot counts once STABLE_ROUNDS rounds in a row, each with the
+// clock advanced, the network quiet and the on-screen art decoded, give byte-identical screenshots with no request in between.
+async function settle(page, net) {
+  await page.clock.setFixedTime(new Date(await page.evaluate(() => Date.now())));
+  let prev = null, same = 0, mark = -1;
+  for (let round = 1; round <= SETTLE_ROUNDS; round++) {
+    await page.clock.runFor(SUB_MS);
+    if (!(await quiet(page, net))) net.loud++;
+    await artReady(page);
+    if (!(await quiet(page, net))) net.loud++;
     const png = await page.screenshot({ animations: "disabled", caret: "hide", scale: "css" });
-    if (prev && png.equals(prev)) return { png, shots: i };
-    prev = png;
-    await page.waitForTimeout(STABLE_GAP_MS);
+    same = prev && png.equals(prev) && net.events === mark && net.inflight <= 0 ? same + 1 : 0;
+    if (same >= STABLE_ROUNDS - 1) return { png, shots: round };
+    prev = png; mark = net.events;
   }
-  throw new Error(`the screen never held still: ${SETTLE_TRIES} screenshots ${STABLE_GAP_MS} ms apart with the page clock paused, no two in a row identical`);
+  throw new Error(`the screen never held still: ${SETTLE_ROUNDS} rounds of ${SUB_MS} ms page time, no ${STABLE_ROUNDS} identical screenshots in a row`);
+}
+// What the page looked like from the inside when it was shot: printed with a failure, so a difference on another runner explains itself in the log.
+const pageState = (page) => page.evaluate(() => {
+  const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return [b.x, b.y, b.width, b.height].map((v) => Math.round(v * 10) / 10).join(","); };
+  let gl = "";
+  try { const c = document.createElement("canvas"), g = c.getContext("webgl"), d = g && g.getExtension("WEBGL_debug_renderer_info"); gl = g ? String(d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER)) : "none"; const l = g && g.getExtension("WEBGL_lose_context"); if (l) l.loseContext(); } catch (e) { gl = "error"; }
+  const sh = document.querySelector("#scene .sheet"), body = document.getElementById("sheet-body"), st = window.__board && typeof window.__board.status === "function" ? window.__board.status() : null;
+  return { cls: document.documentElement.className, sheet: r(sh), sheetZoom: sh ? getComputedStyle(sh).zoom : null, sheetTransform: sh ? getComputedStyle(sh).transform : null, body: r(body), bodyScroll: body ? body.scrollTop : null, main: r(document.getElementById("main")), scrollY: window.scrollY, fonts: document.fonts.status, imgsPending: [...document.images].filter((i) => i.getClientRects().length && !i.complete).length, light: st && st.light ? { state: st.light.state, why: st.light.why, draws: st.light.draws } : null, railPad: document.getElementById("scene") ? document.getElementById("scene").style.getPropertyValue("--rail-pad") : null, cores: navigator.hardwareConcurrency, gl };
+}).catch((e) => ({ error: String(e.message).split("\n")[0] }));
+// Where and how two images differ: a coarse map of the changed pixels, the mean brightness of each side in the changed box, and the small shift of the whole
+// image that matches best (a moved element or a re-laid-out sheet shows as a shift; a lit or unlit light as brightness).
+function explain(base, actual, box, tol) {
+  const { width: W, height: H } = base, A = base.data, B = actual.data, lum = (d, i) => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  const cols = Math.min(32, W), rows = Math.max(1, Math.round((cols * H) / W / 2)), cw = W / cols, ch = H / rows, grid = [];
+  for (let gy = 0; gy < rows; gy++) {
+    let line = "";
+    for (let gx = 0; gx < cols; gx++) {
+      let n = 0, c = 0;
+      for (let y = Math.floor(gy * ch); y < Math.floor((gy + 1) * ch); y += 2) for (let x = Math.floor(gx * cw); x < Math.floor((gx + 1) * cw); x += 2) { const i = (y * W + x) * 4; n++; if (Math.max(Math.abs(A[i] - B[i]), Math.abs(A[i + 1] - B[i + 1]), Math.abs(A[i + 2] - B[i + 2])) > tol) c++; }
+      const f = n ? c / n : 0; line += f === 0 ? "." : f < 0.1 ? ":" : f < 0.5 ? "+" : "#";
+    }
+    grid.push(line);
+  }
+  let la = 0, lb = 0, n = 0;
+  for (let y = box.y; y < box.y + box.h; y += 2) for (let x = box.x; x < box.x + box.w; x += 2) { const i = (y * W + x) * 4; la += lum(A, i); lb += lum(B, i); n++; }
+  let best = { dx: 0, dy: 0, match: -1 };
+  for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+    let m = 0, t = 0;
+    for (let y = Math.max(box.y, 4); y < Math.min(box.y + box.h, H - 4); y += 3) for (let x = Math.max(box.x, 4); x < Math.min(box.x + box.w, W - 4); x += 3) { const i = (y * W + x) * 4, j = ((y + dy) * W + x + dx) * 4; t++; if (Math.max(Math.abs(A[j] - B[i]), Math.abs(A[j + 1] - B[i + 1]), Math.abs(A[j + 2] - B[i + 2])) <= tol) m++; }
+    if (t && m / t > best.match) best = { dx, dy, match: m / t };
+  }
+  return { grid, meanLumBaseline: Math.round(la / Math.max(1, n)), meanLumActual: Math.round(lb / Math.max(1, n)), bestShift: { dx: best.dx, dy: best.dy, matching: `${(best.match * 100).toFixed(1)}%` } };
 }
 
 async function newContext(browser, size) {
@@ -152,16 +219,19 @@ async function newContext(browser, size) {
 async function shoot(browser, size, screen) {
   const ctx = await newContext(browser, size), problems = [];
   try {
-    const page = await ctx.newPage(), net = { inflight: 0, last: Date.now(), loud: 0 };
-    page.on("request", () => { net.inflight++; net.last = Date.now(); });
-    for (const ev of ["requestfinished", "requestfailed"]) page.on(ev, () => { net.inflight--; net.last = Date.now(); });
+    const page = await ctx.newPage(), net = { inflight: 0, last: Date.now(), loud: 0, events: 0 };
+    if (THROTTLE > 1) await (await ctx.newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
+    if (SLOW_ART > 0) await page.route(/\.(png|jpe?g|webp|avif|gif|svg)(\?|$)/i, async (route) => { await new Promise((r) => setTimeout(r, SLOW_ART)); return route.fallback(); });
+    page.on("request", () => { net.inflight++; net.events++; net.last = Date.now(); });
+    for (const ev of ["requestfinished", "requestfailed"]) page.on(ev, () => { net.inflight--; net.events++; net.last = Date.now(); });
     page.on("pageerror", (e) => problems.push(`page error: ${String(e.message).split("\n")[0]}`));
     await screen.go(page, net);
     await advance(page, net, SCHEDULE.flush);
     await expect(page, screen.ready, screen.arg ?? null, "its expected state (element missing or scene not open)");
     if (INJECT_CSS) await page.addStyleTag({ content: INJECT_CSS });
     await page.evaluate(() => document.fonts.ready);
-    const { png, shots } = await stableShot(page);
+    const { png, shots } = await settle(page, net);
+    const state = await pageState(page);
     if (!(await page.evaluate(screen.ready, screen.arg ?? null))) throw new Error("the screen left its expected state while settling");
     const named = await page.evaluate((names) => {
       const text = [document.body.innerText, ...[...document.querySelectorAll("[aria-label],[title],[alt],[placeholder],input,textarea")].map((e) => [e.getAttribute("aria-label"), e.getAttribute("title"), e.getAttribute("alt"), e.getAttribute("placeholder"), e.value].join(" "))].join("\n").toLowerCase();
@@ -172,7 +242,7 @@ async function shoot(browser, size, screen) {
     for (let i = 0; i < img.data.length && colours.size <= 64; i += 4 * 97) colours.add((img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2]);
     if (colours.size < 16) throw new Error(`the screenshot is nearly blank (${colours.size} colours in a sample)`);
     if (problems.length) throw new Error(problems[0]);
-    return { png, img, shots, loud: net.loud };
+    return { png, img, shots, loud: net.loud, state };
   } finally { await ctx.close().catch(() => {}); }
 }
 
@@ -202,7 +272,7 @@ try {
       rows.push(row);
       const takes = [];
       for (let r = 0; r < REPEAT; r++) {
-        try { const t = await shoot(browser, size, screen); takes.push(t); row.shots.push(t.shots); if (t.loud) console.log(`WARN ${id}: the network was still busy after ${t.loud} clock steps (bounded at ${QUIET_MAX_MS} ms each)`); }
+        try { const t = await shoot(browser, size, screen); takes.push(t); row.shots.push(t.shots); if (t.state && t.state.gl) row.gl = t.state.gl; if (t.loud) console.log(`WARN ${id}: the network was still busy after ${t.loud} clock steps (bounded at ${QUIET_MAX_MS} ms each)`); }
         catch (e) { fail(row, String(e.message).split("\n")[0]); break; }
       }
       if (row.status === "FAIL") continue;
@@ -235,7 +305,14 @@ try {
       const verdict = judge(worst, THRESHOLD);
       row.ratio = worst.sizeMismatch ? 1 : worst.ratio; row.changed = worst.changed ?? null; row.maxDelta = worst.maxDelta ?? null; row.box = worst.box || null;
       if (!worst.sizeMismatch && worst.changed > 0) writeFileSync(path.join(DIFF, `${id}.png`), encodePng(diffImage(base, takes[worstAt].img, THRESHOLD)));
-      if (!verdict.pass) { fail(row, `${verdict.why}${worst.box ? `, inside x ${worst.box.x} y ${worst.box.y} w ${worst.box.w} h ${worst.box.h}` : ""}; if the change is intended, commit the new baseline in this PR (docs/runbooks/visual-baselines.md)`); continue; }
+      if (!verdict.pass) {
+        fail(row, `${verdict.why}${worst.box ? `, inside x ${worst.box.x} y ${worst.box.y} w ${worst.box.w} h ${worst.box.h}` : ""}; if the change is intended, commit the new baseline in this PR (docs/runbooks/visual-baselines.md)`);
+        const why = worst.box ? explain(base, takes[worstAt].img, worst.box, THRESHOLD.tolerance) : null;
+        row.diag = { page: takes[worstAt].state, ...(why || {}) };
+        if (why) { console.log(`DIAG ${id}: mean brightness in the box ${why.meanLumBaseline} (baseline) vs ${why.meanLumActual} (now); best whole-image shift dx ${why.bestShift.dx} dy ${why.bestShift.dy} matches ${why.bestShift.matching} of the box`); console.log(`DIAG ${id}: changed pixels by area (. none, : under 10%, + under 50%, # more):\n${why.grid.map((l) => `  ${l}`).join("\n")}`); }
+        console.log(`DIAG ${id}: page ${JSON.stringify(takes[worstAt].state)}`);
+        continue;
+      }
       row.status = "PASS";
       console.log(`PASS ${id}: ${verdict.why}, max channel delta ${worst.maxDelta}`);
     }
@@ -251,8 +328,9 @@ if (!WRITE && !PARTIAL) {
 }
 
 const compared = rows.filter((r) => r.ratio !== null), max = compared.reduce((m, r) => Math.max(m, r.ratio), 0);
-const summary = { mode: WRITE ? "write-baselines" : "compare", url: BASE, threshold: THRESHOLD, sizes: SIZES.map((s) => s.id), repeat: REPEAT, injectedCss: !!INJECT_CSS, cpu: os.cpus()[0] && os.cpus()[0].model, seconds: Math.round((Date.now() - T0) / 1000), maxDiffRatio: compared.length ? max : null, failures: fails, screens: rows };
+const glSeen = (rows.find((r) => r.gl) || {}).gl || "unknown";
+const summary = { mode: WRITE ? "write-baselines" : "compare", url: BASE, threshold: THRESHOLD, sizes: SIZES.map((s) => s.id), repeat: REPEAT, injectedCss: !!INJECT_CSS, cpu: os.cpus()[0] && os.cpus()[0].model, gl: glSeen, seconds: Math.round((Date.now() - T0) / 1000), maxDiffRatio: compared.length ? max : null, failures: fails, screens: rows };
 writeFileSync(path.join(OUT, "summary.json"), JSON.stringify(summary, null, 2));
 writeFileSync(path.join(OUT, "summary.md"), ["| Screen | Status | Changed | Max delta | Held still after |", "| :--- | :--- | ---: | ---: | ---: |", ...rows.map((r) => `| ${r.id} | ${r.status} | ${r.ratio === null ? "-" : (r.ratio * 100).toFixed(3) + "%"} | ${r.maxDelta ?? "-"} | ${(r.shots || []).join("/") || "-"} |`), ""].join("\n"));
-console.log(`visual-baseline: ${WRITE ? `wrote ${rows.filter((r) => r.status === "WROTE").length} of ${rows.length} screens (kept ${rows.filter((r) => r.status === "KEPT").length} unchanged)` : `compared ${compared.length} of ${rows.length} screens, max ${(max * 100).toFixed(3)}% changed`}, ${fails.length} failed, ${summary.seconds} s on ${summary.cpu} (threshold: more than ${THRESHOLD.maxRatio * 100}% of pixels off by more than ${THRESHOLD.tolerance}/255)`);
+console.log(`visual-baseline: ${WRITE ? `wrote ${rows.filter((r) => r.status === "WROTE").length} of ${rows.length} screens (kept ${rows.filter((r) => r.status === "KEPT").length} unchanged)` : `compared ${compared.length} of ${rows.length} screens, max ${(max * 100).toFixed(3)}% changed`}, ${fails.length} failed, ${summary.seconds} s on ${summary.cpu}, WebGL ${glSeen} (threshold: more than ${THRESHOLD.maxRatio * 100}% of pixels off by more than ${THRESHOLD.tolerance}/255)`);
 process.exit(fails.length ? 1 : 0);
