@@ -85,7 +85,7 @@
         <button class="set-open" id="open-settings" type="button" data-open-settings>Settings</button>
         <button class="tilt" id="light-calm" type="button" aria-pressed="false" title="Calm the moving light">Light: warm</button>
         <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Let the tavern lean with your phone</button>
-        <nav class="journey" id="journey" aria-label="How much do you want to see" title="How much do you want to see"><button type="button" data-journey="guided" aria-pressed="false">Guided</button><button type="button" data-journey="curious" aria-pressed="true">Curious</button><button type="button" data-journey="everything" aria-pressed="false">Everything</button></nav>
+        <div class="journey" id="journey" role="group" aria-label="How much do you want to see" title="How much do you want to see"><button type="button" data-journey="guided" aria-pressed="false">Guided</button><button type="button" data-journey="curious" aria-pressed="true">Curious</button><button type="button" data-journey="everything" aria-pressed="false">Everything</button></div>
         <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"><select class="room-pick" id="room-pick" aria-label="Room behind the board"><option value="auto">Room: auto</option><option value="off">Room: off</option><option value="low">Room: low</option><option value="medium">Room: medium</option><option value="high">Room: high</option><option value="ultra">Room: ultra</option></select></span>
       </div>
     </div>
