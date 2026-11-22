@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0806">
+<meta name="description" content="Preview of the Living Board's new first screen: who is coming, what comes next, and your own next step.">
+<title>Dungeons and Drinking · The Living Board</title>
+<link rel="icon" type="image/png" href="/img/icons/tab-five.png">
+<!-- Preview of the reimagined first screen (docs/cinematic/door.md). Nothing links here; the board at / is unchanged. -->
+<link rel="preload" as="image" type="image/avif" media="(max-width: 699px), (orientation: portrait)" imagesrcset="/img/door/door-hero-54.w320.avif 320w, /img/door/door-hero-54.w480.avif 480w, /img/door/door-hero-54.w768.avif 768w, /img/door/door-hero-54.w1200.avif 1200w" imagesizes="100vw" fetchpriority="high">
+<link rel="preload" as="image" type="image/avif" media="(min-width: 700px) and (orientation: landscape)" imagesrcset="/img/door/door-hero-169.w768.avif 768w, /img/tavern-hero.w1200.avif 1200w, /img/tavern-hero.w1672.avif 1672w, /img/tavern-hero-2816.w2816.avif 2816w" imagesizes="100vw" fetchpriority="high">
+<link rel="preload" as="font" type="font/woff2" href="/fonts/grenze-gotisch-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/fonts/alegreya-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/fonts/alegreya-sans-sc-700-latin.woff2" crossorigin>
+<link rel="stylesheet" href="/door/door.css?v=01c73da799">
+<script src="/js/signups-week.js?v=a788265af1" defer></script>
+<script src="/js/brain.js?v=c337586e4c" defer></script>
+<script type="module" src="/door/door.js?v=ff85e3a842"></script>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false" width="0" height="0">
+  <defs>
+    <linearGradient id="brass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f3d68f"/><stop offset=".55" stop-color="#c49343"/><stop offset="1" stop-color="#7a5a26"/></linearGradient>
+    <radialGradient id="enamel" cx=".36" cy=".3" r=".85"><stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".5"/></radialGradient>
+  </defs>
+  <!-- the board's own tile emblems (index.html), stroke-drawn: fill, stroke and width come from the svg that uses them -->
+  <symbol id="i-signups" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12.5l3 3 5-6.5"/></symbol>
+  <symbol id="i-five" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><path d="M6 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="4.5" cy="9.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M1.5 18c0-2.2 1.3-4 3-4.4M22.5 18c0-2.2-1.3-4-3-4.4"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M3 20.5h18"/><path d="M4.5 20.5V6h3v14.5M7.5 20.5V8.5h3v12"/><path d="M11.5 9.2l2.9-.8 3.6 11.6-2.9.8z"/><path d="M5.5 9h1M8.5 11.5h1"/></symbol>
+  <symbol id="i-roads" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></symbol>
+  <symbol id="i-racials" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></symbol>
+  <symbol id="i-legacy" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></symbol>
+  <symbol id="i-buffs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5v6.3M12 14.2v6.3M3.5 12h6.3M14.2 12h6.3"/></symbol>
+  <symbol id="i-ledger" viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2z"/><path d="M9 9h6M9 12h6M9 15h4"/></symbol>
+  <symbol id="i-librarian" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v13M6 12l6 6 6-6"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-door" viewBox="0 0 24 24"><path d="M6 21V4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21M3.5 21h17"/><circle cx="14.5" cy="12.5" r="1"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <!-- seats on the sign-up card: a tankard per member; fill comes from currentColor -->
+  <symbol id="p-full" viewBox="0 0 24 24"><path d="M5 8.5h11v10A2.5 2.5 0 0 1 13.5 21h-6A2.5 2.5 0 0 1 5 18.5z" fill="currentColor"/><path d="M16 10.5h1.8a2.2 2.2 0 0 1 2.2 2.2v2.6a2.2 2.2 0 0 1-2.2 2.2H16" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4.4 9c0-2.1 1.6-3.5 3.4-3.3C8.6 4.1 10.1 3.2 11.6 3.6c1.4-.6 3.1 0 3.7 1.5 1.5.2 2.1 1.6 1.6 3.9z" fill="#fbf4e4"/></symbol>
+  <symbol id="p-half" viewBox="0 0 24 24"><path d="M5 8.5h11v10A2.5 2.5 0 0 1 13.5 21h-6A2.5 2.5 0 0 1 5 18.5z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5.8 14h9.4v4.5a1.7 1.7 0 0 1-1.7 1.7h-6a1.7 1.7 0 0 1-1.7-1.7z" fill="currentColor"/><path d="M16 10.5h1.8a2.2 2.2 0 0 1 2.2 2.2v2.6a2.2 2.2 0 0 1-2.2 2.2H16" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="p-empty" viewBox="0 0 24 24"><path d="M5 8.5h11v10A2.5 2.5 0 0 1 13.5 21h-6A2.5 2.5 0 0 1 5 18.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.2 2"/><path d="M16 10.5h1.8a2.2 2.2 0 0 1 2.2 2.2v2.6a2.2 2.2 0 0 1-2.2 2.2H16" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="p-out" viewBox="0 0 24 24"><path d="M5 8.5h11v10A2.5 2.5 0 0 1 13.5 21h-6A2.5 2.5 0 0 1 5 18.5z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M16 10.5h1.8a2.2 2.2 0 0 1 2.2 2.2v2.6a2.2 2.2 0 0 1-2.2 2.2H16" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3.5 21.5L18.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <!-- class crests: a brass medallion with the class colour as enamel (currentColor) and an original glyph in cream -->
+  <symbol id="crest" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#brass)" stroke="#1d140d" stroke-width="1.4"/><circle cx="32" cy="32" r="25.6" fill="#1d140d"/><circle cx="32" cy="32" r="24.2" fill="currentColor"/><circle cx="32" cy="32" r="24.2" fill="url(#enamel)"/><g fill="url(#brass)" stroke="#1d140d" stroke-width=".8"><path d="M32 .9l3 4.1-3 4.1-3-4.1z"/><path d="M63.1 32l-4.1 3-4.1-3 4.1-3z"/><path d="M32 63.1l-3-4.1 3-4.1 3 4.1z"/><path d="M.9 32l4.1-3 4.1 3-4.1 3z"/></g></symbol>
+  <symbol id="g-druid" viewBox="0 0 24 24"><g fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke"><ellipse cx="12" cy="15.6" rx="4.8" ry="4"/><circle cx="6.2" cy="10" r="2.1"/><circle cx="9.6" cy="6.4" r="2.2"/><circle cx="14.4" cy="6.4" r="2.2"/><circle cx="17.8" cy="10" r="2.1"/></g></symbol>
+  <symbol id="g-priest" viewBox="0 0 24 24"><g fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke"><circle cx="12" cy="12" r="4.2"/></g><path d="M12 2.6v3.6M12 17.8v3.6M2.6 12h3.6M17.8 12h3.6M5.4 5.4l2.5 2.5M16.1 16.1l2.5 2.5M18.6 5.4l-2.5 2.5M7.9 16.1l-2.5 2.5" fill="none" stroke="#fbf4e4" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="g-paladin" viewBox="0 0 24 24"><g fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke"><rect x="5.5" y="4" width="13" height="6" rx="1.2"/><rect x="10.8" y="9.5" width="2.4" height="10" rx="1"/><circle cx="12" cy="20.6" r="1.6"/></g></symbol>
+  <symbol id="g-mage" viewBox="0 0 24 24"><g fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke"><path d="M12 2.5l2.3 7.2 7.2 2.3-7.2 2.3L12 21.5l-2.3-7.2L2.5 12l7.2-2.3z"/><circle cx="18.8" cy="5.2" r="1.3"/><circle cx="5.3" cy="18.7" r="1"/></g></symbol>
+  <symbol id="g-warlock" viewBox="0 0 24 24"><g fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke"><path d="M12 2.5c1 3.2 4.8 5.5 4.8 10.2a4.8 4.8 0 0 1-9.6 0c0-2.3 1.1-3.8 2.3-5 .2 1.6.9 2.6 1.9 3.1-.3-3 .6-5.6.6-8.3z"/></g><path d="M12 13.2c.9 1 1.7 1.9 1.7 3.1a1.7 1.7 0 0 1-3.4 0c0-1.2.8-2.1 1.7-3.1z" fill="#1d140d"/></symbol>
+  <symbol id="g-hunter" viewBox="0 0 24 24"><path d="M4.5 19.5L17 7" fill="none" stroke="#fbf4e4" stroke-width="2.2" stroke-linecap="round"/><g fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke"><path d="M20.5 3.5l-1.6 6.2-4.6-4.6z"/></g><path d="M4.5 19.5l.6-4.2M4.5 19.5l4.2-.6M7 17l.6-4.2M7 17l4.2-.6" fill="none" stroke="#fbf4e4" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="g-rogue" viewBox="0 0 24 24"><g fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke"><path d="M12 2.5l2.2 10.3L12 15l-2.2-2.2z"/><rect x="7" y="14.6" width="10" height="2" rx="1"/><rect x="11" y="16.6" width="2" height="3.6" rx=".8"/><circle cx="12" cy="21.2" r="1.2"/></g></symbol>
+  <symbol id="g-shaman" viewBox="0 0 24 24"><g fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke"><path d="M13.8 2.5L6 13.6h5.2L9.8 21.5l8.2-11.4h-5.3z"/></g></symbol>
+  <symbol id="g-warrior" viewBox="0 0 24 24"><g fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke"><path d="M12 2.8l7.6 2.8v6c0 4.7-3.2 8.2-7.6 9.9-4.4-1.7-7.6-5.2-7.6-9.9v-6z"/></g><path d="M12 6.8v10.6M8.3 10.6h7.4" fill="none" stroke="#1d140d" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="g-none" viewBox="0 0 24 24"><text x="12" y="17.6" text-anchor="middle" font-family="Georgia,serif" font-size="16" font-weight="700" fill="#fbf4e4" stroke="#1d140d" stroke-width=".9" paint-order="stroke">?</text></symbol>
+</svg>
+<a class="skip" href="#table">Skip to the table</a>
+
+<header class="door" id="top">
+  <div class="shot">
+    <picture>
+      <source media="(max-width: 699px), (orientation: portrait)" type="image/avif" srcset="/img/door/door-hero-54.w320.avif 320w, /img/door/door-hero-54.w480.avif 480w, /img/door/door-hero-54.w768.avif 768w, /img/door/door-hero-54.w1200.avif 1200w" sizes="100vw">
+      <source media="(max-width: 699px), (orientation: portrait)" type="image/webp" srcset="/img/door/door-hero-54.w320.webp 320w, /img/door/door-hero-54.w480.webp 480w, /img/door/door-hero-54.w768.webp 768w, /img/door/door-hero-54.w1200.webp 1200w" sizes="100vw">
+      <source type="image/avif" srcset="/img/door/door-hero-169.w768.avif 768w, /img/tavern-hero.w1200.avif 1200w, /img/tavern-hero.w1672.avif 1672w, /img/tavern-hero-2816.w2816.avif 2816w" sizes="100vw">
+      <source type="image/webp" srcset="/img/door/door-hero-169.w768.webp 768w, /img/tavern-hero.w1200.webp 1200w, /img/tavern-hero.w1672.webp 1672w, /img/tavern-hero-2816.webp 2816w" sizes="100vw">
+      <img class="shot-img" src="/img/door/door-hero-54.w768.jpg" width="1200" height="960" alt="A painting of the party at a tavern bar by candlelight: a tauren, three undead and a troll." fetchpriority="high" decoding="async">
+    </picture>
+  </div>
+  <div class="title-card" data-tier="1">
+    <p class="eyebrow">The Living Board <span aria-hidden="true">·</span> Dungeons and Drinking</p>
+    <h1 id="door-h">Who's coming, and what's next.</h1>
+    <p class="lede">The guild's companion for our World of Warcraft: Forever group. One page for the next date, who said yes, and your own next step.</p>
+    <p class="next" id="next" data-tier="2"><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg><span class="next-line"><span class="next-k">Next</span> <span class="next-what" id="next-what">Reading the dates</span></span><span class="next-when" id="next-when">&nbsp;</span></p>
+    <div class="acts">
+      <a class="btn btn-go" id="go" href="/#signups"><span id="go-text">Answer the sign-up card</span><svg class="ico" aria-hidden="true" focusable="false"><use id="go-ico" href="#i-arrow"/></svg></a>
+      <a class="btn btn-quiet" id="look" href="#table"><span>Look around first</span><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-down"/></svg></a>
+    </div>
+  </div>
+</header>
+
+<main id="table" tabindex="-1" aria-labelledby="table-h" aria-busy="true">
+  <h2 class="table-h" id="table-h">At the table</h2>
+  <noscript><p class="nojs">The table needs JavaScript to read the group's dates and answers. <a href="/">The board</a> says the same in plain words.</p></noscript>
+  <div class="grid">
+    <section class="card card-signups" id="c-signups" aria-labelledby="su-h" data-tier="2">
+      <div class="card-head"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-signups"/></svg><div><h3 id="su-h">Sign-ups</h3><p class="card-sub" id="su-sub">Who said they are coming</p></div></div>
+      <p class="you" id="su-you"></p>
+      <div class="tally" id="su-tally"><p class="big"><b>&nbsp;</b><span>in</span></p><p class="big"><b>&nbsp;</b><span>not answered</span></p></div>
+      <ul class="seats" id="su-seats" aria-hidden="true"></ul>
+      <p class="who" id="su-who">Reading the sign-up card.</p>
+      <a class="card-go" href="/#signups"><span>See who is coming</span><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+    </section>
+
+    <section class="card card-party" id="c-party" aria-labelledby="pt-h" data-tier="2">
+      <div class="card-head"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-five"/></svg><div><h3 id="pt-h">The party</h3><p class="card-sub">Who plays what</p></div></div>
+      <ul class="party" id="pt-list"><li class="pm pm-wait">Pinning up the cards.</li></ul>
+      <p class="roles" id="pt-roles"></p>
+      <a class="card-go" href="/#five"><span>Meet the party</span><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+    </section>
+
+    <section class="card card-roads" id="c-roads" aria-labelledby="rd-h" data-tier="3">
+      <div class="card-head"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-roads"/></svg><div><h3 id="rd-h">The roads</h3><p class="card-sub">Where each of us wakes up, and the way to Orgrimmar</p></div></div>
+      <figure class="map">
+        <div class="map-frame"><canvas id="map" width="640" height="360" role="img" aria-label="A map of the roads to Orgrimmar. Every road is written out in the list below the map."></canvas></div>
+        <figcaption class="map-cap" id="rd-cap">The roads are written out below the map.</figcaption>
+      </figure>
+      <ol class="roads" id="rd-list"><li class="road road-wait">Unrolling the map.</li></ol>
+      <a class="card-go" href="/#roads"><span>Open the map on the board</span><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+    </section>
+
+    <section class="card card-room" id="c-room" aria-labelledby="rm-h" data-tier="3">
+      <div class="room-pic">
+        <picture>
+          <source type="image/avif" srcset="/img/door/door-room.w320.avif 320w, /img/door/door-room.w480.avif 480w, /img/door/door-room.w768.avif 768w" sizes="(min-width: 1100px) 34vw, (min-width: 700px) 46vw, 100vw">
+          <source type="image/webp" srcset="/img/door/door-room.w320.webp 320w, /img/door/door-room.w480.webp 480w, /img/door/door-room.w768.webp 768w" sizes="(min-width: 1100px) 34vw, (min-width: 700px) 46vw, 100vw">
+          <img src="/img/door/door-room.w480.webp" width="768" height="432" alt="" loading="lazy" decoding="async">
+        </picture>
+      </div>
+      <div class="card-head"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-door"/></svg><div><h3 id="rm-h">The tavern</h3><p class="card-sub">The room the board hangs in</p></div></div>
+      <p class="room-say" id="rm-say">It moves, so it loads only when you step in: about 1 MB, drawn at most 30 times a second, and it rests when you look away.</p>
+      <button class="btn btn-wood" id="room-go" type="button" aria-haspopup="dialog" aria-controls="room"><span>Step inside</span><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-door"/></svg></button>
+    </section>
+
+    <section class="card card-library" id="c-library" aria-labelledby="lb-h" data-tier="2">
+      <div class="card-head"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-library"/></svg><div><h3 id="lb-h">Library</h3><p class="card-sub">Every fact the group has gathered</p></div></div>
+      <p class="lib-say">Classes, dungeons, dates and the group's own decisions, searchable on the board.</p>
+      <a class="btn btn-wood" href="/#library"><span>Search the library</span><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-arrow"/></svg></a>
+    </section>
+
+    <nav class="card card-places" aria-labelledby="pl-h" data-tier="3">
+      <h3 id="pl-h">Everything else on the board</h3>
+      <ul class="places">
+        <li><a href="/#timeline"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg><span><b>Dates</b><small>Launch, raids and what comes after</small></span></a></li>
+        <li><a href="/#racials"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-racials"/></svg><span><b>Race skills</b><small>Each race's special abilities</small></span></a></li>
+        <li><a href="/#legacy"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-legacy"/></svg><span><b>Bonuses</b><small>Points your whole account earns</small></span></a></li>
+        <li><a href="/#buffs"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-buffs"/></svg><span><b>Who buffs whom</b><small>Spells that help the whole party</small></span></a></li>
+        <li><a href="/#ledger"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-ledger"/></svg><span><b>Ledger</b><small>What is settled, what is open</small></span></a></li>
+        <li><a href="/#librarian"><svg class="ico emb" aria-hidden="true" focusable="false"><use href="#i-librarian"/></svg><span><b>Leeroy</b><small>Ask the group's librarian</small></span></a></li>
+      </ul>
+    </nav>
+  </div>
+</main>
+
+<footer class="foot">
+  <p class="foot-preview">A preview of the board's new front door. <a href="/">Open the board as it is today</a></p>
+  <nav aria-label="Legal"><a href="/landing/addon/">Get the add-on</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="mailto:privacy@leeroy.party">Contact</a></nav>
+  <p>Fan project, not affiliated with Blizzard Entertainment.</p>
+</footer>
+
+<dialog class="room" id="room" aria-labelledby="room-h" aria-describedby="room-d">
+  <div class="room-stage" id="room-stage"><canvas id="room-canvas" aria-hidden="true"></canvas><img class="room-still" id="room-still" alt="" hidden width="1200" height="960"></div>
+  <div class="room-bar">
+    <div><h2 id="room-h">The tavern</h2><p class="room-d" id="room-d" role="status">Lighting the candles.</p></div>
+    <button class="btn btn-quiet room-x" id="room-x" type="button"><span>Back to the table</span><svg class="ico" aria-hidden="true" focusable="false"><use href="#i-x"/></svg></button>
+  </div>
+</dialog>
+</body>
+</html>
