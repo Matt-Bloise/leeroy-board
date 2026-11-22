@@ -1,6 +1,6 @@
 # Runbook: restore drill (offline, with checksums)
 
-Last checked: 2026-11-03. Local only: nothing leaves the machine, no Cloudflare account, no secrets, no AI call, no Worker request on leeroy.party.
+Last checked: 2026-11-22 (the sqlite backend re-run with `--expect`; the wrangler backend was not re-run). Local only: nothing leaves the machine, no Cloudflare account, no secrets, no AI call, no Worker request on leeroy.party.
 
 ## Purpose
 
@@ -40,10 +40,10 @@ Line 1 names the backend (`wrangler --local (real local D1)` or `sqlite (in-proc
 
 ```
 RESTORE DRILL (backend: wrangler --local (real local D1))
-1. source database: 40 tables from schema.sql, seeded with 465 fixture statements
-2. export: 35 tables exported, 5 never exported (account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens), 579 lines
+1. source database: 51 tables from schema.sql, seeded with 467 fixture statements
+2. export: 44 tables exported, 7 never exported (account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens, game_fact_loads, game_facts), 608 lines
    no secret value in the export file (6 checked)
-3. checksums of the source: 35 tables, 464 rows
+3. checksums of the source: 44 tables, 464 rows
 4. wipe: the database is deleted
 5. restore: a fresh database is built from schema.sql and loaded from the export
 6. diff, table by table (rows and sha256 of the exported columns; source vs restored)
@@ -59,22 +59,24 @@ RESTORE DRILL (backend: wrangler --local (real local D1))
    ok   character_profiles     rows    1 ->    1   sha256 d2605a4ada78aaff == d2605a4ada78aaff
    ok   noise_ledger           rows    1 ->    1   sha256 c723059cfe4e6bc7 == c723059cfe4e6bc7
    ok   request_gauge          rows    2 ->    2   sha256 fa6be4c23ff9abc3 == fa6be4c23ff9abc3
-   ok   23 tables are empty in the fixtures (0 -> 0, nothing to compare, not tested): lib_pages, lib_blobs, lib_sources, lib_source_snapshots, wiki_proposals, fact_fixes, sheet_events, dispatches, accounts, identities, humans, human_members, tenant_config, memberships, thread_cursors, audit_log, groups, group_slots, signups_v2, entitlements, discord_events, answer_details, answer_feedback
+   ok   32 tables are empty in the fixtures (0 -> 0, nothing to compare, not tested): lib_pages, lib_blobs, lib_sources, lib_source_snapshots, wiki_proposals, fact_fixes, sheet_events, dispatches, accounts, identities, humans, human_members, tenant_config, memberships, thread_cursors, audit_log, groups, group_slots, signups_v2, entitlements, discord_events, answer_details, answer_feedback, ask_turn_askers, ask_turn_legacy, vote_ballots, group_log, group_wiki, listen_events, listen_quiet, shadow_answers, incidents
    ok   account_keys           rows    0 ->    0   never exported: comes back empty (by design)
    ok   sessions               rows    1 ->    0   never exported: comes back empty (by design)
    ok   guest_rate_limits      rows    1 ->    0   never exported: comes back empty (by design)
    ok   sessions_v2            rows    1 ->    0   never exported: comes back empty (by design)
    ok   provider_tokens        rows    1 ->    0   never exported: comes back empty (by design)
+   ok   game_fact_loads        rows    1 ->    0   never exported: comes back empty (by design)
+   ok   game_facts             rows    2 ->    0   never exported: comes back empty (by design)
 
-RESTORE DRILL PASSED: 35 tables, 464 rows, every count and checksum matches
+RESTORE DRILL PASSED: 44 tables, 464 rows, every count and checksum matches
 ```
 
-Measured on 3 November 2026: both backends produced this text byte for byte (`diff` of the two outputs was empty). The wrangler run took 100 seconds, the sqlite run under a second (0.2 s measured).
+Measured on 3 November 2026, on the schema of that day: both backends produced the same text byte for byte (`diff` of the two outputs was empty). The wrangler run took 100 seconds, the sqlite run under a second (0.2 s measured). The block above is `tests/fixtures/restore-drill.expected.txt` as of 22 November 2026; the sqlite backend reproduced it exactly that day (`--expect`), and the wrangler backend was not re-run on it.
 
 ## Reading it
 
 - `ok` lines: rows and checksum equal. `FAIL` lines: the failing table is named, and the run exits 1 (`RESTORE DRILL FAILED`).
-- `sessions`, `sessions_v2`, `provider_tokens`, `account_keys` and `guest_rate_limits` are never exported (`worker/export.js`), so they come back empty. That is the design, not a loss; people sign in again.
+- `sessions`, `sessions_v2`, `provider_tokens`, `account_keys`, `guest_rate_limits`, `game_fact_loads` and `game_facts` are never exported (`worker/export.js`), so they come back empty. That is the design, not a loss; people sign in again, and the game facts are reloaded from the owner's PC (`tools/facts-load.mjs`).
 - `members.key_hash` is not exported and not in the checksum: restored members get a placeholder hash and need new keys (`infrastructure/scripts/hash-key.mjs`).
 - `kv_state` rows whose key starts with `secret` or `feed_cache:` are not exported; the checksum covers the same filtered set on both sides (4 fixture rows, 2 exported).
 

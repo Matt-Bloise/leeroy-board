@@ -9,7 +9,7 @@ Either shape the board already produces:
 - the signups document: `GET /api/data/signups` or `data/signups.json` (`{ entries: [{ name, pack, meet, meet_other, rsvp, when, updated }] }`), or
 - the intents mailbox: `GET /api/intents` (admin) or `{ intents: [...] }`; every intent of kind `signup` carries `{ patch, entry }`.
 
-Allowed values: `pack` yes or no; `rsvp` in, maybe, late or out; `when` 6pm, 8pm or later; `meet` text (`vos` and `xroads` are expanded like the Worker does); `meet_other` text up to 80 characters; `updated` an ISO date. Other fields are dropped and reported. A wrong value refuses the whole file.
+Allowed values: `pack` yes or no; `rsvp` in, maybe, late or out; `when` 6pm, 8pm or later; `meet` text (`vos` and `xroads` are expanded like the Worker does); `meet` and `meet_other` plain text up to 80 characters; `updated` an ISO date. Other fields are dropped and reported. A wrong value refuses the whole file.
 
 ## Who is allowed
 
