@@ -132,24 +132,17 @@ const sceneScreen = (k) => ({
   arg: k,
 });
 
-// Waits (bounded) until the art on screen is downloaded and decoded: every <img> in the viewport, and every CSS background image of an element in the viewport.
+// Waits (bounded) until every <img> in the viewport is loaded and decoded. CSS background art is covered by the network going quiet: asking for it again from here
+// (new Image()) sends requests of its own, which on CI's Chromium kept every round "busy" (measured 2026-11-22: 20 requests for 28 background URLs).
 async function artReady(page) {
   const work = page.evaluate(async () => {
-    const W = innerWidth, H = innerHeight, inView = (r) => r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < H && r.left < W;
-    const waits = [], urls = new Set();
+    const W = innerWidth, H = innerHeight, waits = [];
     for (const img of document.images) {
-      if (!inView(img.getBoundingClientRect())) continue;
-      if (!img.complete) waits.push(new Promise((r) => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); }));
+      const r = img.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < H && r.left < W)) continue;
+      if (!img.complete) waits.push(new Promise((ok) => { img.addEventListener("load", ok, { once: true }); img.addEventListener("error", ok, { once: true }); }));
       else if (img.naturalWidth) waits.push(img.decode().catch(() => {}));
     }
-    for (const el of document.querySelectorAll("body, body *")) {
-      if (!inView(el.getBoundingClientRect())) continue;
-      for (const pseudo of [null, "::before", "::after"]) {
-        const bg = getComputedStyle(el, pseudo).backgroundImage;
-        if (bg && bg !== "none") for (const m of bg.matchAll(/url\(["']?([^"')]+)["']?\)/g)) if (!m[1].startsWith("data:")) urls.add(m[1]);
-      }
-    }
-    for (const u of urls) { const im = new Image(); im.src = u; waits.push(im.decode().catch(() => {})); }
     await Promise.all(waits);
     return waits.length;
   }).catch(() => -1);
@@ -162,18 +155,23 @@ async function artReady(page) {
 // clock advanced, the network quiet and the on-screen art decoded, give byte-identical screenshots with no request in between.
 async function settle(page, net) {
   await page.clock.setFixedTime(new Date(await page.evaluate(() => Date.now())));
-  let prev = null, same = 0, mark = -1;
+  let prev = null, same = 0, mark = -1, last = "";
   for (let round = 1; round <= SETTLE_ROUNDS; round++) {
     await page.clock.runFor(SUB_MS);
     if (!(await quiet(page, net))) net.loud++;
     await artReady(page);
     if (!(await quiet(page, net))) net.loud++;
     const png = await page.screenshot({ animations: "disabled", caret: "hide", scale: "css" });
-    same = prev && png.equals(prev) && net.events === mark && net.inflight <= 0 ? same + 1 : 0;
+    const pixelsSame = !!prev && png.equals(prev), netSame = net.events === mark && net.inflight <= 0;
+    same = pixelsSame && netSame ? same + 1 : 0;
     if (same >= STABLE_ROUNDS - 1) return { png, shots: round };
+    if (round >= SETTLE_ROUNDS - 1) { // what kept moving, for the failure message
+      const moved = prev && !pixelsSame ? diffImages(decodePng(prev), decodePng(png), { tolerance: 0 }) : null;
+      last = `${last ? `${last}; ` : ""}round ${round}: ${pixelsSame ? "same pixels" : moved && moved.box ? `${moved.changed} px changed inside x ${moved.box.x} y ${moved.box.y} w ${moved.box.w} h ${moved.box.h} (largest step ${moved.maxDelta})` : "pixels changed"}, ${net.events - Math.max(0, mark)} requests, ${net.inflight} in flight`;
+    }
     prev = png; mark = net.events;
   }
-  throw new Error(`the screen never held still: ${SETTLE_ROUNDS} rounds of ${SUB_MS} ms page time, no ${STABLE_ROUNDS} identical screenshots in a row`);
+  throw new Error(`the screen never held still: ${SETTLE_ROUNDS} rounds of ${SUB_MS} ms page time, no ${STABLE_ROUNDS} identical screenshots in a row (${last})`);
 }
 // What the page looked like from the inside when it was shot: printed with a failure, so a difference on another runner explains itself in the log.
 const pageState = (page) => page.evaluate(() => {
