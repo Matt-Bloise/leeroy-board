@@ -1,7 +1,7 @@
 // Visual baselines, GATING. Screenshots the board's first screen, the wall behind it, every scene (window.__boardKit.SCENES) and the landing page at the sizes the
 // board is built for, phone first (390x844, touch) then desktop (1366x768), and compares each with a committed PNG in tests/browser/baselines/<screen>-<size>.png.
 //   node browser/visual-baseline.mjs --url http://127.0.0.1:8080/        compare; exit 1 when a screen changed beyond the threshold, a baseline is missing or extra, or a screen is broken
-//   --write-baselines [dir]   write the screenshots as the new baselines (default tests/browser/baselines) and compare nothing; the Visual Baselines workflow runs this on the CI image
+//   --write-baselines [dir]   write the screenshots as the new baselines (default tests/browser/baselines); a screen with no pixel beyond the tolerance keeps its committed bytes. The Visual Baselines workflow runs this on the CI image
 //   --only first,five         only these screens (ids without the size); --sizes 390x844 only that size; a partial run never reports "extra baseline"
 //   --repeat N                calibration: shoot every screen N times in fresh browser contexts and report the noise between the shots (and against the baseline)
 //   --inject-css <file>       add this stylesheet to every page before shooting (the mutation proof: CI injects a small change and requires this suite to FAIL)
@@ -215,7 +215,17 @@ try {
         takes.slice(1).forEach((t, n) => { if (!noise[n].sizeMismatch && noise[n].changed > 0) { writeFileSync(path.join(ACTUAL, `${id}.take${n + 2}.png`), t.png); writeFileSync(path.join(DIFF, `${id}.take${n + 2}.png`), encodePng(diffImage(takes[0].img, t.img, THRESHOLD))); } });
         console.log(`REPEAT ${id}: ${REPEAT} shots ${row.repeatIdentical ? "byte-identical" : "differ"}, ${(row.repeatRatio * 100).toFixed(4)}% of pixels beyond ${THRESHOLD.tolerance}/255, max channel delta ${row.repeatMaxDelta}`);
       }
-      if (WRITE) { writeFileSync(path.join(WRITE, `${id}.png`), takes[0].png); row.status = "WROTE"; console.log(`WROTE ${id} (held still after ${row.shots.join("/")} shots)`); continue; }
+      if (WRITE) {
+        // An existing baseline with no pixel beyond the tolerance is kept byte for byte, so a refresh rewrites only the screens that really changed
+        // (a render on another runner can differ by 1/255 here and there; new bytes for an unchanged screen would only grow the repository).
+        const prior = path.join(BASELINES, `${id}.png`);
+        let same = false;
+        try { if (existsSync(prior)) { const d = diffImages(decodePng(readFileSync(prior)), takes[0].img, THRESHOLD); same = !d.sizeMismatch && d.changed === 0; } } catch { same = false; }
+        writeFileSync(path.join(WRITE, `${id}.png`), same ? readFileSync(prior) : takes[0].png);
+        row.status = same ? "KEPT" : "WROTE";
+        console.log(`${row.status} ${id} (held still after ${row.shots.join("/")} shots${same ? `; no pixel beyond ${THRESHOLD.tolerance}/255 against the committed baseline, its bytes are kept` : ""})`);
+        continue;
+      }
       const bp = path.join(BASELINES, `${id}.png`);
       if (!existsSync(bp)) { fail(row, `no baseline at ${path.relative(path.join(here, "..", ".."), bp) || bp}: run the Visual Baselines workflow on this branch (docs/runbooks/visual-baselines.md)`); continue; }
       let base;
@@ -244,5 +254,5 @@ const compared = rows.filter((r) => r.ratio !== null), max = compared.reduce((m,
 const summary = { mode: WRITE ? "write-baselines" : "compare", url: BASE, threshold: THRESHOLD, sizes: SIZES.map((s) => s.id), repeat: REPEAT, injectedCss: !!INJECT_CSS, cpu: os.cpus()[0] && os.cpus()[0].model, seconds: Math.round((Date.now() - T0) / 1000), maxDiffRatio: compared.length ? max : null, failures: fails, screens: rows };
 writeFileSync(path.join(OUT, "summary.json"), JSON.stringify(summary, null, 2));
 writeFileSync(path.join(OUT, "summary.md"), ["| Screen | Status | Changed | Max delta | Held still after |", "| :--- | :--- | ---: | ---: | ---: |", ...rows.map((r) => `| ${r.id} | ${r.status} | ${r.ratio === null ? "-" : (r.ratio * 100).toFixed(3) + "%"} | ${r.maxDelta ?? "-"} | ${(r.shots || []).join("/") || "-"} |`), ""].join("\n"));
-console.log(`visual-baseline: ${WRITE ? `wrote ${rows.filter((r) => r.status === "WROTE").length} of ${rows.length} screens` : `compared ${compared.length} of ${rows.length} screens, max ${(max * 100).toFixed(3)}% changed`}, ${fails.length} failed, ${summary.seconds} s on ${summary.cpu} (threshold: more than ${THRESHOLD.maxRatio * 100}% of pixels off by more than ${THRESHOLD.tolerance}/255)`);
+console.log(`visual-baseline: ${WRITE ? `wrote ${rows.filter((r) => r.status === "WROTE").length} of ${rows.length} screens (kept ${rows.filter((r) => r.status === "KEPT").length} unchanged)` : `compared ${compared.length} of ${rows.length} screens, max ${(max * 100).toFixed(3)}% changed`}, ${fails.length} failed, ${summary.seconds} s on ${summary.cpu} (threshold: more than ${THRESHOLD.maxRatio * 100}% of pixels off by more than ${THRESHOLD.tolerance}/255)`);
 process.exit(fails.length ? 1 : 0);

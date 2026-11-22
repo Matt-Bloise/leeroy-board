@@ -67,7 +67,7 @@ See the PR that introduced the gate for the per-run table (CPU model, repeat-sho
 3. If the change is not intended, fix the code.
 4. If it is intended, commit the new baselines in the same PR:
    1. Merge master into the branch first. Preview Tests renders the PR merged with master, so baselines rendered from a stale branch can fail there.
-   2. Actions > **Visual Baselines** > Run workflow > "Use workflow from" = the PR branch (`commit` on, `repeat` 1). The `render` job renders all 30 screens on the CI image with a read-only token. The `commit` job takes only `<screen>-<size>.png` files from that artifact, replaces `tests/browser/baselines/`, and pushes one commit to the branch. It refuses the default branch, and refuses when the branch moved after the render.
+   2. Actions > **Visual Baselines** > Run workflow > "Use workflow from" = the PR branch (`commit` on, `repeat` 1). The `render` job renders all 30 screens on the CI image with a read-only token. A screen with no pixel beyond 8/255 against its committed baseline keeps the committed bytes, so only screens that really changed get new files. The `commit` job takes only `<screen>-<size>.png` files from that artifact, replaces `tests/browser/baselines/`, and pushes one commit to the branch. It refuses the default branch, and refuses when the branch moved after the render.
    3. A push made with the workflow token starts no workflow. Push your next commit, or add `ci-full`, to run Preview Tests on it.
    4. Review the new PNGs in the PR's Files tab (GitHub shows image diffs) before asking for the merge.
 
@@ -85,7 +85,7 @@ These were real timing differences in the page, not in the test. They are left a
 
 ```
 node browser/visual-baseline.mjs --url http://127.0.0.1:8080/                 compare (exit 1 on any failure)
-  --write-baselines [dir]   write the shots as baselines (default tests/browser/baselines); fails, and writes nothing broken, on a broken screen
+  --write-baselines [dir]   write the shots as baselines (default tests/browser/baselines); a screen with no pixel beyond 8/255 keeps its committed bytes; a broken screen fails and is not written
   --only first,wall         only these screens; --sizes 390x844 only that size (a partial run does not report extra baselines)
   --repeat N                shoot every screen N times in fresh contexts and report the noise between the shots
   --inject-css FILE         add this stylesheet before shooting (the mutation step)

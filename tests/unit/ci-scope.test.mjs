@@ -48,3 +48,8 @@ test("CRLF input and a leading ./ are normalised", () => {
 test("a mixed PR with one site file runs the browser jobs", () => {
   assert.equal(siteChanged(["infrastructure/worker/a.js", "css/x.css"]), true);
 });
+test("the recorded API fixtures force the browser, layout and visual jobs: every browser suite and the visual gate render from them", () => {
+  assert.equal(isSitePath("tests/fixtures/api-snapshot/snapshot.json"), true);
+  assert.equal(siteChanged(["tests/fixtures/api-snapshot/snapshot.json"]), true);
+  assert.equal(isSitePath("tests/browser/baselines/first-390x844.png"), true, "a baseline-only PR runs the visual gate");
+});
