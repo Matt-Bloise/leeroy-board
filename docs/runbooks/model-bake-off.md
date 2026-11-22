@@ -15,7 +15,7 @@ Real questions stay on the owner's computer. Never commit them, never paste them
 
 ## 1. Switch the route on (the account admin's deploy)
 
-The route is off by default. It answers 404 unless the Worker has `EVAL_ENABLED=true`, and it always needs `BOARD_ADMIN_TOKEN`.
+The route is off by default (`EVAL_ENABLED` is not declared in `infrastructure/wrangler.toml`, and absent means off). It answers 404 unless the Worker has `EVAL_ENABLED` set to `true`, `1` or `on` (`infrastructure/worker/eval.js:45-48`), and it always needs `BOARD_ADMIN_TOKEN`.
 
 1. Ask the account admin to set `EVAL_ENABLED = "true"` in the Worker vars for the bake-off window and deploy.
 2. When the run is done, have him remove it (or set it to `false`) and deploy again. Confirm with the check below that the route is back to 404.

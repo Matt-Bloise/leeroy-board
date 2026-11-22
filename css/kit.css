@@ -69,7 +69,7 @@ html:not(#k) .fl-name{opacity:1}
 html:not(#k) #sheet-title{padding-bottom:.14em;margin-bottom:-.14em}
 @media(pointer:coarse){html:not(#k) .sense-fab{opacity:1}}
 html:not(#k) :is(.atlas-btn,.atlas-open,.atlas-fold,.ch-bring,.ch-leave,.ch-no,.ch-skip,.ps-back,.dc-all-btn,.ga-stopsbtn,.ga-team,.more-hits,.atlas-chip,.ch-chip){color:#2a1608;background-color:transparent}
-html:not(#k) :is(.ch-ask,.ch-post,.ch-start,.ps-save){color:var(--cream);background-color:transparent}
+html:not(#k) :is(.ch-ask,.ch-post,.ch-start,.ch-send,.ps-save){color:var(--cream);background-color:transparent}
 html:not(#k) :is(.atlas-x,.bsheet-x,.lb-close,.gl-x){border-radius:50%}
 html:not(#k) .toggle{border:0;padding:0;background:none;border-radius:0}
 html:not(#k) .toggle button{min-height:40px;padding:6px 18px;border-radius:0;color:var(--cream);background:url("../img/kit/seg-m-n.webp") 0 0/100% 100% no-repeat}

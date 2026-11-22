@@ -134,8 +134,12 @@
 @media (min-width: 1100px) and (max-height: 740px) {
   #board > #main:not(.has-beam):not(.beam-soon) { margin-top: 6px; }
   #board { --fit-beam: 4px; }
-  #board { padding-bottom: 3px; row-gap: 2px; } #board > #main { margin-bottom: 0; } #board > .wall-foot, #board > .wall-foot *, #board > .legal-foot, #board > .legal-foot * { line-height: 1.1; }
+  #board { padding-bottom: 3px; row-gap: 2px; } #board > #main { margin-bottom: 6px; } #board > .wall-foot, #board > .wall-foot *, #board > .legal-foot, #board > .legal-foot * { line-height: 1.1; }
 }
+/* The wall plate hangs 16 px outside the wall from 640 px wide (board.css), but the short laptop layout (1100 px and wider, 960 px and shorter) leaves only
+   2 to 11 px under the wall, so the plate's lower edge covered the top of the footer line (14 px at 1280x720, 8 px at 1366x768, 5 px at 1440x900).
+   There the plate keeps the phone's 8 px and the wall keeps 6 px above the footer, so the two no longer meet. */
+@media (min-width: 1100px) and (max-height: 960px) { #main > .wall-plate { inset: -8px; } }
 @media (max-height: 450px) {
   html.phone-shell #scene .sheet { width: 100%; height: 100%; border: 0; border-radius: 0; }
   html.phone-shell #lib-head .lib-stat.extra { display: none; }
@@ -158,6 +162,8 @@
 .stale-note { opacity: 0.75; font-size: 0.85em; }
 .retry-btn { min-height: 44px; margin: 0.3em 0.5em 0.3em 0; padding: 0 1.1em; border: 1px solid var(--wax); border-radius: 6px; background: transparent; color: var(--ink); font: inherit; cursor: pointer; }
 .retry-btn:disabled { opacity: 0.6; cursor: progress; }
+/* When the board's data does not load, the line and its button go in the footer (js/board.js), which sits on the dark wall, not on parchment: the parchment ink above was dark on dark there. */
+.wall-foot .data-fail, .wall-foot .retry-btn { color: var(--cream); }
 
 /* portrait pass: on a tall narrow window the sheet stops at a comfortable height and sits centred, so the parchment is not a mostly empty page.
    The body already scrolls inside the sheet, so taller scenes keep working. */

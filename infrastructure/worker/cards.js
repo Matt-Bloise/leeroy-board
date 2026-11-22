@@ -11,9 +11,11 @@
 //   https://discord.com/developers/docs/resources/message#edit-message
 // Channel and message ids live only in the D1 kv_state row `cards`, written through PUT /api/config/cards or POST /api/admin/cards/post.
 
+import { signupCardUrl } from "./card-images.js";
 import { noiseDay, recordShadow } from "./noise.js";
 import { cardMembers, parseClassEmoji, iconFor, claimEntries } from "./card-members.js";
 import { loadPublicInputs, projectForAnonymous, WITHHELD_LINE } from "./public-party.js";
+import { replyStyleOn, styleSignupCard, styleBoardCard, BOARD_STYLE_RESERVE } from "./reply-style.js";
 
 export const CARDS_KEY = "cards";
 export const CARD_EDIT_KEY = "cards_edit";
@@ -33,12 +35,15 @@ export const boardLinesEnabled = (env) => flag(env && env.BOARD_LINES_ENABLED);
 export const RSVP_STATES = ["in", "maybe", "late", "out"];
 export const RSVP_LABEL = { in: "In", maybe: "Tentative", late: "Running late", out: "Out" };
 export const RSVP_PHRASE = { in: "is in", maybe: "is tentative", late: "is running late", out: "is out" };
+// The four answer buttons on the pinned sign-up card, in order (renderSignupCard's first row; tests/unit/card-images.test.mjs keeps them equal).
+// The card's picture (CARD_IMAGES) draws these same words.
+export const RSVP_BUTTON_LABELS = Object.freeze(["I'm in", RSVP_LABEL.maybe, RSVP_LABEL.late, RSVP_LABEL.out]);
 // A stored rsvp is friend data: "constructor" or "__proto__" must read as no answer, not as an inherited property of the table.
 const rsvpLabel = (v) => (typeof v === "string" && Object.hasOwn(RSVP_LABEL, v) ? RSVP_LABEL[v] : "No answer");
 export const DEFAULT_MEET = ["Valley of Strength", "The Crossroads"];
 export const DEFAULT_WHEN = ["6pm", "8pm", "later"];
 
-const meetOptions = (options) => (Array.isArray(options && options.meet) && options.meet.length ? options.meet.map(String) : DEFAULT_MEET);
+export const meetOptions = (options) => (Array.isArray(options && options.meet) && options.meet.length ? options.meet.map(String) : DEFAULT_MEET);
 // A `when` option ends up in a custom_id (`signup:when:<option>`, max 100 characters) and is split on ":" when clicked, so only short
 // printable options without a colon are accepted. Anything else is dropped; if nothing is left the defaults apply. At most 5 (one row).
 export const WHEN_OPTION_MAX = 40;
@@ -172,7 +177,8 @@ const fmtUpdated = (iso) => {
 const NO_MENTIONS = { parse: [] };
 
 // The sign-up card. Returns a message body usable for POST and PATCH: { embeds, components, allowed_mentions }.
-export function renderSignupCard(state) {
+// opts.style (REPLY_STYLE, passed by the executors below and never read from the sign-up document): the house style of reply-style.js on top.
+export function renderSignupCard(state, opts = {}) {
   const t = tallyEntries(state);
   const fields = [];
   const members = state && Array.isArray(state.members) ? state.members : null;
@@ -210,6 +216,7 @@ export function renderSignupCard(state) {
   if (when) embed.footer = { text: `Updated ${when}` };
   const thumb = assetUrl(state, "img/seal.png");
   if (thumb) embed.thumbnail = { url: thumb };
+  if (state && typeof state.cardImage === "string") embed.image = { url: state.cardImage }; // CARD_IMAGES (off): set by loadCardState
   capEmbedText(embed);
 
   const mopts = meetOptions(state && state.options).slice(0, 2);
@@ -228,7 +235,8 @@ export function renderSignupCard(state) {
     },
     { type: 1, components: wopts.map((w) => btn(2, `Arrive ${w}`, `signup:when:${w}`)) },
   ];
-  return { embeds: [embed], components, allowed_mentions: NO_MENTIONS };
+  const body = { embeds: [embed], components, allowed_mentions: NO_MENTIONS };
+  return opts && opts.style === true ? styleSignupCard(body, state) : body;
 }
 
 // Discord rejects an embed whose text (title + description + field names + values + footer) passes 6000 characters, and a rejected
@@ -301,8 +309,8 @@ function fitBlocks(blocks, fixedChars) {
 
 // The party board card: one line per person, no buttons (an optional https link button to the board).
 // With state.members (the party document) each person shows class, role and race, including people with no sign-up and sign-ups
-// from people the party sheets do not list yet. Without it the original one-line shape is kept.
-export function renderBoardCard(state) {
+// from people the party sheets do not list yet. Without it the original one-line shape is kept. opts.style: as renderSignupCard.
+export function renderBoardCard(state, opts = {}) {
   const entries = Array.isArray(state && state.entries) ? state.entries : [];
   const t = tallyEntries(state);
   let fields;
@@ -310,7 +318,9 @@ export function renderBoardCard(state) {
   const description = clampText(`${t.rsvp.in.length} in \u00b7 ${t.rsvp.maybe.length} tentative \u00b7 ${t.rsvp.late.length} running late \u00b7 ${t.rsvp.out.length} out${state && state.withheld ? ` · ${WITHHELD_LINE}` : ""}`, 4096);
   const updatedText = fmtUpdated(state && state.updated);
   if (state && Array.isArray(state.members)) {
-    const fit = fitBlocks(boardBlocks(state, entries), "Party board".length + description.length + (updatedText ? `Updated ${updatedText}`.length : 0));
+    // REPLY_STYLE writes an author line and its own footer in place of "Updated ...", so the styled card reserves those instead (reply-style.js).
+    const reserve = opts && opts.style === true ? BOARD_STYLE_RESERVE : updatedText ? `Updated ${updatedText}`.length : 0;
+    const fit = fitBlocks(boardBlocks(state, entries), "Party board".length + description.length + reserve);
     omitted = fit.omitted;
     fields = fit.values.map((value, i) => ({ name: i === 0 ? "Who" : "\u200b", value, inline: false }));
   } else {
@@ -341,7 +351,7 @@ export function renderBoardCard(state) {
   if (typeof url === "string" && /^https:\/\//.test(url) && url.length <= 512) {
     body.components = [{ type: 1, components: [{ type: 2, style: 5, label: "Open the board", url }] }];
   }
-  return body;
+  return opts && opts.style === true ? styleBoardCard(body, state, { omitted }) : body;
 }
 
 export const RENDERERS = { signups: renderSignupCard, board: renderBoardCard };
@@ -419,6 +429,10 @@ export async function loadCardState(env) {
     }
   } catch { /* legacy shape */ }
   state.classEmoji = parseClassEmoji(env.CARD_CLASS_EMOJI);
+  // CARD_IMAGES (off): null, card unchanged. This runs in the deferred redraw, never in the 3 s interaction path, so the file check may wait longer and
+  // ignores a remembered miss: a miss here would take the picture off the pinned card until the next redraw.
+  const picture = await signupCardUrl(env, RSVP_BUTTON_LABELS, meetOptions(state.options).slice(0, 2), whenOptions(state.options).slice(0, 5), { timeoutMs: 3000, retryMiss: true });
+  if (picture) state.cardImage = picture;
   return state;
 }
 
@@ -467,6 +481,7 @@ export function retryAfterMs(res, json) {
 // editing it (never retry it), so a missing card cannot loop. POST /api/admin/cards/post recreates it.
 export async function redrawCards(env, cards, { fetchImpl = fetch, now = Date.now() } = {}) {
   const state = await loadCardState(env);
+  const look = { style: replyStyleOn(env) };
   const results = [];
   let marked = false;
   let retryAfter = 0;
@@ -479,7 +494,7 @@ export async function redrawCards(env, cards, { fetchImpl = fetch, now = Date.no
       results.push({ card: name, status: "shadow" });
       continue;
     }
-    const r = await discordRest(env, "PATCH", `/channels/${c.channel}/messages/${c.message}`, RENDERERS[name](state), fetchImpl);
+    const r = await discordRest(env, "PATCH", `/channels/${c.channel}/messages/${c.message}`, RENDERERS[name](state, look), fetchImpl);
     if (r.status === 404) {
       next[name].deleted = true;
       marked = true;
@@ -543,7 +558,7 @@ export async function postCard(env, { card, channelId, fetchImpl = fetch, now = 
   const cards = (await loadCards(env.DB)) || {};
   if (cards[card] && !cards[card].deleted && !cards[card].errored && !replace) return { ok: false, error: "card_exists", status: 409 };
   const state = await loadCardState(env);
-  const body = RENDERERS[card](state);
+  const body = RENDERERS[card](state, { style: replyStyleOn(env) });
   if (cardsShadow(env)) {
     await recordShadow(env.DB, "post", channelId, noiseDay(now, null)).catch(() => {});
     return { ok: true, shadow: true, card };
