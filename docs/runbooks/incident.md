@@ -58,7 +58,7 @@ Production deploys are triggered by a push to `master` (`deploy-cloudflare.yml:3
    ```
    Merges still land on `master` but nothing deploys. Resume deliberately: the next push deploys everything merged in the meantime. After enabling, redeploy with a new push, a re-run of the last run in the Actions UI, or "Run workflow" (`workflow_dispatch`, leave `allow_create_database` off).
 2. Tell the partner and any contributor to stop merging and to hold their open PR. Under `CONTRIBUTING.md:6-7` anything rated 6 or higher is merged only by the owner anyway.
-3. Branch protection or rulesets would give a hard stop, but none exist: the API returns "Branch not protected" for `master` (checked 2026-11-02). Adding protection is a recommended follow-up (`secrets.md`, weakness table).
+3. Branch protection or a ruleset gives a hard stop. On 2026-11-02 the API returned "Branch not protected" for `master`; `secrets.md` (weakness table, row 4) has since recorded the ruleset `master-required-checks` (required PR and status checks). Check its current state and bypass list in Settings, Rules before relying on it.
 
 Closing PRs is also needed to free preview slots; teardown runs on close or when `ci-full` is removed (`.github/workflows/pr-preview-cloudflare.yml:494-496`), and the account holds 9 previews in total (`CONTRIBUTING.md:6`).
 

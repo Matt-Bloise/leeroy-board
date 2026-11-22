@@ -48,7 +48,7 @@ Returns `enabled`, `shadow`, `dryRun`, the next due moment, the done, skipped an
 Rehearse with `MOMENTS_DRY_RUN` or, better, `MOMENTS_SHADOW` (see Flags).
 
 ## Flags
-All default off in `infrastructure/wrangler.toml`.
+All default off: none is declared in `infrastructure/wrangler.toml`, and an absent flag is off. To turn one on, add it to `[vars]` and deploy (`flags.md` covers the variable budget).
 
 | Flag | Effect |
 | :--- | :--- |

@@ -51,7 +51,7 @@ Routes, D1 config keys, secrets and local development are in [`infrastructure/RE
 | Per-PR preview | `https://pr-<N>.leeroy-board.pages.dev` | `https://leeroy-brain-pr-<N>.<account-subdomain>.workers.dev` |
 
 - Merging to `master` deploys production (`.github/workflows/deploy-cloudflare.yml`).
-- Every pull request from a branch of this repository gets its own preview: a Pages deployment, a Worker named `leeroy-brain-pr-<N>`, and its own D1 database seeded from `data/`. The preview comment on the PR carries the URLs, and the preview is torn down when the PR is closed or merged.
+- A pull request from a branch of this repository gets its own preview once it carries the label `ci-full` (a docs-only PR gets none): a Pages deployment, a Worker named `leeroy-brain-pr-<N>`, and its own D1 database seeded from `data/`. The preview comment on the PR carries the URLs, and the preview is torn down when the PR is closed or merged, or when `ci-full` is removed (`docs/runbooks/ci-minutes.md`).
 - The Cloudflare account has 9 preview environments in total, shared by everyone, so keep to one open PR per contributor.
 - Previews use Workers AI only (no provider keys are injected), have no cron trigger and no custom domain.
 - Previews cannot test Discord: the Discord secrets are not set there and Discord posts only to production. Discord behaviour is checked on production after merge.
