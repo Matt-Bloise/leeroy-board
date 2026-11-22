@@ -4,6 +4,7 @@
 import { slugify } from "./member-model.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { loadConfigKey } from "./config.js";
+import { activeRoster } from "./roster-source.js";
 
 export const PARTY_MEMBERS = [
   { slug: "santa", name: "Santa", race: "tauren", class: "druid", spec_path: "feral-combat", professions: ["leatherworking", "skinning"], plan_zone: "mulgore" },
@@ -42,7 +43,8 @@ export function mergePartyMembers(partyDoc, builtIn = PARTY_MEMBERS) {
 export async function loadPartyMembers(env) {
   try {
     const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
-    return mergePartyMembers(row && row.json ? JSON.parse(row.json) : null);
+    const rost = await activeRoster(env); // null while ROSTER_FROM_D1 is off: the built-ins below, as before
+    return mergePartyMembers(row && row.json ? JSON.parse(row.json) : null, rost ? rost.sheetMembers : PARTY_MEMBERS);
   } catch {
     return PARTY_MEMBERS.slice();
   }
@@ -62,7 +64,8 @@ export function mergeRoster(members, builtIn = ROSTER_DATA) {
 
 export async function loadRoster(env) {
   try {
-    return mergeRoster(await loadConfigKey(env, "discord_members"));
+    const rost = await activeRoster(env); // null while ROSTER_FROM_D1 is off
+    return mergeRoster(await loadConfigKey(env, "discord_members"), rost ? rost.rosterData : ROSTER_DATA);
   } catch {
     return ROSTER_DATA.slice();
   }
