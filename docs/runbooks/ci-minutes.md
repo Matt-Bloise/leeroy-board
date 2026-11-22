@@ -24,6 +24,8 @@ Every push runs only `scope`, `unit`, `stamps` and `report` (Preview Tests), plu
 | ZAP baseline against the preview | PR has BOTH labels `security` and `ci-full` | `security.yml` |
 | ZAP baseline against production | nightly | `nightly-production.yml` |
 | degraded-modes, all 144 checks, against production | nightly | `nightly-production.yml` |
+| Visual drift (the committed baselines against master, two shots per screen) | daily 07:35 UTC and "Run workflow"; report only, opens one issue when a scheduled run fails | `visual-drift.yml`, `docs/runbooks/visual-baselines.md` |
+| Visual Baselines (render and commit new baselines, or calibrate) | "Run workflow" on a branch, never master | `visual-baselines.yml` |
 | degraded-modes, 3 conditions (API aborted, API 500, JavaScript off) | in the browser job, per PR | `tests/browser/run.mjs` |
 
 Behaviour of the labels:
@@ -96,6 +98,7 @@ Estimates from the job list with each job rounded up to a whole minute. Duration
 | Teardown, preview exists | probe, wrangler install, deletes, retry step | about 2 |
 | Production deploy per merge | unchanged | 1 |
 | Nightly | degraded about 9, ZAP about 7, Lighthouse about 4 (the former per-PR figure, assumed), notify 1 | about 21 (about $0.13 per night, about $4 per month) |
+| Visual drift | one job: install about 1, 30 screens twice about 6 (measured 2026-11-22: 160 s for one pass over all 30 screens, 164 s and 144 s on CI) | about 7 (about $0.04 per night, about $1.2 per month) |
 
 Typical PR: five light pushes (about 35), one full run (about 38), one teardown (about 2) is about 75 minutes, about $0.45, against about 127 minutes for six pushes at the measured baseline. The saving comes from fewer heavy runs and from not cancelling or failing them mid-way, not from a cheaper heavy run.
 

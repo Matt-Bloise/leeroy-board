@@ -16,14 +16,16 @@
 | `first` | the first visit (`?preview=1`): the first-visit sheet with "Open the Discord card" and "Just take a look" |
 | `wall` | "Just take a look", then Next steps closed: the wall of tiles |
 | `tonight` | "Just take a look" opens Next steps |
-| `timeline`, `five`, `roads`, `racials`, `legacy`, `buffs`, `ledger`, `signups`, `librarian`, `library`, `decide` | from the wall, `window.__boardKit.goScene(<scene>)` |
+| `timeline`, `five`, `roads`, `racials`, `legacy`, `buffs`, `ledger`, `signups`, `librarian`, `library`, `decide` | from the wall, the **Everything** journey is chosen with the switch in the header (two taps on the phone, where the first only opens the switch), then `window.__boardKit.goScene(<scene>)` |
 | `landing` | `landing/` |
+
+The board's default journey, Guided, shows only the core of each scene (`css/v13d.css` hides the rest), which would leave most of every panel out of the baselines: the maps, grids, tables and cards the visual work is about. So the scenes are shot in Everything. The first screen, the wall and Next steps are shot as a first visitor sees them, in Guided. The suite taps the switch like a visitor does, and a scene is only shot once its panel is open, shown, has text, and does not carry the "could not load" line.
 
 The scene list is read from the page (`window.__boardKit.SCENES`), so a new scene is a screen without a baseline and fails until one is committed. A baseline that no screen produces (a removed scene) fails too. File names: `<screen>-<size>.png`.
 
 ## The pinned backend
 
-Every input that is not the page's own code is fixed, so the same commit renders the same pixels on every run:
+Every input that is not the page's own code is fixed, so a commit is meant to render the same pixels on every run (calibration below measures how true that is):
 
 - The site is the checkout itself, served by `tools/static-server.mjs` (the rules of `_headers`, the private member files answer 404, as on Pages). No preview, no secret.
 - `/api/` is answered from `tests/fixtures/api-snapshot` (`stubbed()`, zero Worker requests). Member names in the fixtures are made up (`tests/helpers/fictional-party.mjs`).
@@ -31,15 +33,17 @@ Every input that is not the page's own code is fixed, so the same commit renders
 - `prefers-reduced-motion: reduce`, light scheme, time zone UTC, locale `en-US`, service workers blocked, `Math.random` seeded.
 - The page clock is pinned (`tests/helpers/clock-arg.mjs`) and **paused before the page exists**. Only the suite moves it, in the same fixed steps in every run (`SCHEDULE` in the file: after the load, after "Just take a look", after closing, after opening a scene, then a 12 s flush that covers the wall's 10 s settle). The network goes quiet between steps. The launch countdown therefore shows the same seconds in every run, and every timer, idle callback and animation frame fires in the same order against the same page.
 - Taps are dispatched events (`pointerdown`, `pointerup`, `click`) on the element. No pointer is moved, so nothing is left hovered and the light, which follows the pointer, stays where the page puts it.
-- Then the final settle. The page's `Date` is frozen where the schedule left it, so the countdown cannot change, while timers, idle callbacks and frames keep running in 250 ms steps of page time. A shot counts once three rounds in a row, each with the network quiet and the on-screen art downloaded and decoded (every `<img>` and CSS background in the viewport), give byte-identical screenshots with no request in between (up to 48 rounds). Work that needs real time as well as timers therefore finishes instead of being frozen half-done: the light's shader compiles in the GPU process and is polled every 16 ms.
+- Then the final settle. The page's `Date` is frozen where the schedule left it, so the countdown cannot change, while timers, idle callbacks and frames keep running in 250 ms steps of page time. A shot counts once three rounds in a row, each with the network quiet and the on-screen `<img>` elements downloaded and decoded, give byte-identical screenshots with no request in between (up to 48 rounds). CSS background art (paper, wood, banners) is covered by the network going quiet: asking for it again from the page (`new Image()`) sends requests of its own, which on CI's Chromium kept every round busy (measured 2026-11-22: 20 requests for 28 background URLs). Work that needs real time as well as timers therefore finishes instead of being frozen half-done: the light's shader compiles in the GPU process and is polled every 16 ms.
 
-**Canvases are not masked.** The full-viewport `#wisps` canvas, the WebGL wall light `#light`, the Buffs canvas and the cloth are in the shots as drawn. The former non-gating version masked `canvas`, `.candle` and anything with `moon` in its class in magenta. `.candle` and `#wisps` cover the whole viewport, so its first-screen shot was a solid magenta rectangle: a baseline that could never fail.
+**Canvases are not masked.** The full-viewport `#wisps` canvas, the WebGL wall light `#light` (on the wall screens) and the cloth ribbons `#tab-cloth` (the banners above each scene) are in the shots as drawn. The former non-gating version masked `canvas`, `.candle` and anything with `moon` in its class in magenta. `.candle` and `#wisps` cover the whole viewport, so its first-screen shot was a solid magenta rectangle: a baseline that could never fail.
 
 ## A broken page never becomes a baseline
 
 A screen fails, in compare mode and when baselines are written, when:
 - the page did not reach the state the step asked for (the first-visit sheet, Next steps, the wall, the scene open with text in it);
-- it threw a page error, or asked the API for a path the fixtures lack (`stubbed()` fails the run);
+- it threw a page error, logged a console error, or asked the API for a path the fixtures lack (`stubbed()` fails the run);
+- a file of this site answered 4xx or 5xx, or a request to the site failed (a missing stylesheet, script, texture or banner). `/favicon.ico` is left out: Chromium asks for it by itself, the landing page declares no icon, and the host answers 404 there too. Failed loads of other origins are left out too: they differ between runners and change no pixel of the page;
+- a scene panel shows "This part of the board could not load";
 - the screenshot is nearly blank (fewer than 16 colours in a sample);
 - it shows a real member name. The names are read from `data/party.json` at run time and never printed: the check looks at the page text, `aria-label`, `title`, `alt`, `placeholder` and input values.
 
@@ -84,11 +88,17 @@ So a change smaller than about 650 pixels on the phone or 2,100 on the desktop p
 3. If the change is not intended, fix the code.
 4. If it is intended, commit the new baselines in the same PR:
    1. Merge master into the branch first. Preview Tests renders the PR merged with master, so baselines rendered from a stale branch can fail there.
-   2. Actions > **Visual Baselines** > Run workflow > "Use workflow from" = the PR branch (`commit` on, `repeat` 1). The `render` job renders all 30 screens on the CI image with a read-only token. A screen with no pixel beyond 8/255 against its committed baseline keeps the committed bytes, so only screens that really changed get new files. The `commit` job takes only `<screen>-<size>.png` files from that artifact, replaces `tests/browser/baselines/`, and pushes one commit to the branch. It refuses the default branch, and refuses when the branch moved after the render.
+   2. Actions > **Visual Baselines** > Run workflow > "Use workflow from" = the PR branch (`commit` on, `repeat` 3). Every screen is shot three times in fresh browser contexts, and a screen whose shots disagree is not written (the run fails and commits nothing), so a baseline is never a coin flip. The `render` job renders all 30 screens on the CI image with a read-only token. A screen with no pixel beyond 8/255 against its committed baseline keeps the committed bytes, so only screens that really changed get new files. The `commit` job takes only `<screen>-<size>.png` files from that artifact, replaces `tests/browser/baselines/`, and pushes one commit to the branch. It refuses the default branch, and refuses when the branch moved after the render.
    3. A push made with the workflow token starts no workflow. Push your next commit, or add `ci-full`, to run Preview Tests on it.
    4. Review the new PNGs in the PR's Files tab (GitHub shows image diffs) before asking for the merge.
 
 Baselines must come from the CI image. Fonts and anti-aliasing differ on other machines, and a local Chromium is a different build. To compare two local renders, use `--write-baselines DIR` and `--baselines DIR`. Never commit a local render.
+
+## Stale baselines on master
+
+Preview Tests judges a pull request merged with master as master stood when its checks ran. Two pull requests that each change the pictures can therefore merge one after the other, and leave master's baselines matching neither render: the next pull request, even one that changes no picture, then fails the gate on a difference it did not make. The runner image can do the same on its own: the landing page uses `system-ui`, so a font change in the `ubuntu-24.04` image moves its pixels under the pinned browser.
+
+Visual Drift (`.github/workflows/visual-drift.yml`) compares master with its baselines every day at 07:35 UTC, two shots per screen, and opens one issue, "Visual baselines drifted on master", when a scheduled run fails. It reports only: nothing is blocked. To fix it, branch from master, run Visual Baselines on the branch (`commit` on), read the new PNGs in the pull request (they should show exactly the drift the issue describes), and merge it. The repository setting "Require branches to be up to date before merging" would close the first gap at its source; that is a Settings decision for the owner, not something a pull request changes.
 
 ## Product races found while pinning
 
@@ -105,10 +115,16 @@ node browser/visual-baseline.mjs --url http://127.0.0.1:8080/                 co
   --write-baselines [dir]   write the shots as baselines (default tests/browser/baselines); a screen with no pixel beyond 8/255 keeps its committed bytes; a broken screen fails and is not written
   --only first,wall         only these screens; --sizes 390x844 only that size (a partial run does not report extra baselines)
   --repeat N                shoot every screen N times in fresh contexts and report the noise between the shots
-  --inject-css FILE         add this stylesheet before shooting (the mutation step)
+  --inject-css FILE         add this stylesheet before shooting (a mutation step of the CI job)
+  --block REGEX             abort the requests whose URL matches, as if the file were missing (a mutation step of the CI job: the shot must fail)
+  --throttle N              slow the page's CPU N times (imitates a slower runner)
+  --slow-art MS             delay every image request by MS
+  --jitter MS               delay every request by a random time up to MS
   --baselines DIR           compare with another folder of baselines
   --out DIR                 actual/, diff/, summary.json, summary.md (default tests/browser/out/visual-baseline)
 ```
+
+Actions > Visual Baselines also takes `only` (screens) and `sizes` for a run with `commit` off: a calibration or a hunt for a flake, e.g. `only` = `timeline`, `sizes` = `390x844`, `repeat` = 20. A partial render is never committed.
 
 Serve the checkout first: `node tools/static-server.mjs 8080`. On a loopback URL the suite adds `?brain=local`, so the page asks its own origin's `/api/`, which the stub answers.
 

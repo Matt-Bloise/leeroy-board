@@ -1,0 +1,110 @@
+name: Visual Drift
+
+# Daily and read-only: do the baselines committed on the default branch still match what the default branch renders on the CI image? (docs/runbooks/visual-baselines.md, "Stale baselines")
+# A pull request is judged merged with master as master stood when its checks ran, so two pull requests that each change the pictures can merge one after the other and leave master's
+# baselines matching neither render. The runner image's own fonts (the landing page uses system-ui) can also move under the pinned browser. Either shows up here first, with its cause.
+# Report only: nothing here blocks a merge or a deploy. A failed SCHEDULED run opens or updates one issue, "Visual baselines drifted on master"; nothing is closed automatically.
+# Scheduled workflows run only on the default branch, and GitHub disables them after 60 days without repository activity: if this stops appearing in the Actions tab, run it once by hand.
+# Manual run: Actions > Visual Drift > Run workflow (any branch; it reports in its own log and never touches the issue list).
+
+on:
+  schedule:
+    - cron: "35 7 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: visual-drift
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: compare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Pinned action SHAs: checkout 11bd71901bbe5b1630ceea73d27597364c9af683 v4.2.2, setup-node 39370e3970a6d050c480ffad4ff0ed4d3fdee5af v4.1.0,
+    # cache 1bd1e32a3bdc45362d1e726936510720a7c30a57 v4.2.0, upload-artifact b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 v4.4.3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Cache the Playwright browsers (keyed on the lockfile, as in preview-tests.yml)
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tests/package-lock.json') }}
+
+      - name: Install test dependencies
+        # Infrastructure only (no test has run yet), so it gets one retry; the comparison itself never does.
+        timeout-minutes: 15
+        working-directory: tests
+        run: |
+          printf '%s\n' 'Acquire::http::Timeout "20";' 'Acquire::https::Timeout "20";' 'Acquire::Retries "3";' 'DPkg::Lock::Timeout "300";' | sudo tee /etc/apt/apt.conf.d/99ci-resilient >/dev/null
+          install() { sudo apt-get update && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium; }
+          for attempt in 1 2; do
+            if install; then exit 0; fi
+            echo "::warning::Install attempt $attempt failed."
+          done
+          echo "::error::Installing the test dependencies failed twice."
+          exit 1
+
+      - name: Serve this checkout
+        run: |
+          nohup node tools/static-server.mjs 8080 > "$RUNNER_TEMP/static.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fs -o /dev/null http://127.0.0.1:8080/index.html && exit 0; sleep 1; done
+          echo "::error::The static server did not answer"; cat "$RUNNER_TEMP/static.log"; exit 1
+
+      - name: Compare every screen with its committed baseline, twice
+        # Two shots per screen in fresh browser contexts: a screen that differs from its baseline is drift; a screen whose two shots differ from each other is instability.
+        working-directory: tests
+        run: |
+          set -o pipefail
+          node browser/visual-baseline.mjs --url "http://127.0.0.1:8080/" --repeat 2 --out "$RUNNER_TEMP/visual-drift" 2>&1 | tee "$RUNNER_TEMP/visual-drift.log"
+
+      - name: Upload the shots, diffs and log
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: visual-drift
+          path: |
+            ${{ runner.temp }}/visual-drift
+            ${{ runner.temp }}/visual-drift.log
+          if-no-files-found: ignore
+          retention-days: 30
+
+  issue:
+    name: issue
+    needs: compare
+    # Scheduled runs only: a manual run reports in its own log and never touches the issue list.
+    if: ${{ always() && github.event_name == 'schedule' && needs.compare.result == 'failure' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TITLE: Visual baselines drifted on master
+    steps:
+      - name: Open the issue or add to the open one
+        run: |
+          set -eu -o pipefail
+          RUN="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          BODY=$(printf 'The daily visual drift check failed: master no longer renders what its committed baselines show, or a screen is not stable.\n\nRun, the diffs and the log (artifact visual-drift, 30 days): %s\n\nWhat to do: docs/runbooks/visual-baselines.md, section "Stale baselines". Run Actions > Visual Baselines on a branch from master to re-render them (commit on), and review the new PNGs in that pull request.\n\nThis issue is never closed automatically. Close it once a later run is green.' "$RUN")
+          # Exact title match among open issues, so there is only ever one.
+          N=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --limit 100 --json number,title --jq "[.[] | select(.title == \"$TITLE\")] | sort_by(.number) | .[0].number // empty")
+          if [ -n "$N" ]; then
+            gh issue comment "$N" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+            echo "Updated issue #$N"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          fi

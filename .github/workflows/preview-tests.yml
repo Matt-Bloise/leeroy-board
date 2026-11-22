@@ -515,7 +515,8 @@ jobs:
     # and 1366x768, compared with the PNGs committed in tests/browser/baselines. It serves THIS checkout with tools/static-server.mjs and answers /api/ from the recorded fixtures,
     # so it needs no preview, no secret and no Worker request, and runs on every push of a PR that changes a site file (light runs too); the report counts it in every mode.
     # A visual change fails here unless its new baseline is committed in the same PR (Actions > Visual Baselines > Run workflow on the PR branch renders and commits them).
-    # The mutation step proves the gate can still fail: a small injected style change must make the suite exit 1, or the job fails.
+    # The mutation step proves the gate can still fail: a small injected style change, and a stylesheet the page cannot load, must each make the suite exit 1 with the failure
+    # expected for that fault (not with a crash), or the job fails.
     name: visual
     needs: scope
     if: needs.scope.outputs.site_changed == 'true'
@@ -524,6 +525,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js 22
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
@@ -562,22 +565,29 @@ jobs:
           set -o pipefail
           node browser/visual-baseline.mjs --url "http://127.0.0.1:8080/" 2>&1 | tee "$RUNNER_TEMP/visual.log"
 
-      - name: Visual gate mutation test (gating)
-        # A 2 px shift of the first-visit button on the phone screen must FAIL the comparison. If it passes, the gate cannot fail and this job fails.
+      - name: Visual gate mutation tests (gating)
+        # Two injected faults must each FAIL the suite with the failure expected for them, or this job fails: (1) a 2 px shift of the first-visit button on the phone screen
+        # must fail the comparison; (2) a stylesheet the page cannot load (css/shell.css) must fail the shot, whatever it looks like. A pass means the gate cannot catch that
+        # kind of fault; a different failure means the suite broke in some other way (it crashed, or the page never settled), which this step says apart.
         if: ${{ !cancelled() }}
         working-directory: tests
         run: |
           printf '%s\n' '#nx-fr2-go { transform: translateY(2px) !important; }' > "$RUNNER_TEMP/mutation.css"
-          set +e
-          node browser/visual-baseline.mjs --url "http://127.0.0.1:8080/" --only first --sizes 390x844 --inject-css "$RUNNER_TEMP/mutation.css" --out "$RUNNER_TEMP/visual-mutation" > "$RUNNER_TEMP/visual-mutation.log" 2>&1
-          rc=$?
-          set -e
-          cat "$RUNNER_TEMP/visual-mutation.log"
-          if [ "$rc" -ne 1 ] || ! grep -qE '^FAIL first-390x844: [0-9.]+% of pixels changed' "$RUNNER_TEMP/visual-mutation.log"; then
-            echo "::error::The visual gate did not fail on an injected 2 px change (exit $rc): it cannot catch a visual change."
-            exit 1
-          fi
-          echo "The visual gate fails on an injected 2 px change, as it must."
+          mutate() { # name, the line the suite must print, then the suite's extra arguments
+            local name="$1" want="$2"; shift 2
+            set +e
+            node browser/visual-baseline.mjs --url "http://127.0.0.1:8080/" --only first --sizes 390x844 "$@" --out "$RUNNER_TEMP/visual-mutation-${name// /-}" > "$RUNNER_TEMP/visual-mutation-${name// /-}.log" 2>&1
+            local rc=$?
+            set -e
+            cat "$RUNNER_TEMP/visual-mutation-${name// /-}.log"
+            if [ "$rc" -eq 0 ]; then echo "::error::The visual gate passed with $name: it cannot catch that kind of fault."; return 1; fi
+            if ! grep -qE "$want" "$RUNNER_TEMP/visual-mutation-${name// /-}.log"; then echo "::error::With $name the suite exited $rc, but not with the failure expected for it ($want): it broke some other way, see the log above."; return 1; fi
+            echo "The visual gate fails with $name, as it must."
+          }
+          bad=0
+          mutate "a 2 px shift" '^FAIL first-390x844: [0-9.]+% of pixels changed' --inject-css "$RUNNER_TEMP/mutation.css" || bad=1
+          mutate "a missing stylesheet" '^FAIL first-390x844: .*css/shell\.css' --block 'css/shell\.css' || bad=1
+          exit $bad
 
       - name: Upload the screenshots and diffs
         if: always()
@@ -587,7 +597,7 @@ jobs:
           path: |
             tests/browser/out/visual-baseline
             ${{ runner.temp }}/visual.log
-            ${{ runner.temp }}/visual-mutation.log
+            ${{ runner.temp }}/visual-mutation-*.log
           if-no-files-found: ignore
           retention-days: 14
 

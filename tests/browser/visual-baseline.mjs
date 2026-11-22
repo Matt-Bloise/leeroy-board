@@ -34,7 +34,7 @@ const SIZES = Object.freeze([
 // Measured 2026-11-22: with the clock left running, the cloth rail (js/cloth-hook.js) measured the ribbons in an idle callback that raced the first-visit sheet, and the desktop
 // Next steps panel landed 10 px higher in some runs; the light (js/board.js) followed wherever the mouse was left. Hence also: taps are dispatched events, the pointer is never used.
 const PAUSE_AT_MS = 60000, SUB_MS = 250, QUIET_MS = 150, QUIET_MAX_MS = 5000;
-const SCHEDULE = Object.freeze({ load: 2000, look: 3000, close: 2000, open: 3000, flush: 12000 }); // fake ms after each action; flush covers the wall's 10 s settle
+const SCHEDULE = Object.freeze({ load: 2000, look: 3000, close: 2000, journey: 1000, open: 3000, flush: 12000 }); // fake ms after each action; flush covers the wall's 10 s settle
 const SETTLE_ROUNDS = 48, STABLE_ROUNDS = 3, ART_MAX_MS = 5000; // the final settle: up to 48 rounds of SUB_MS page time; 3 identical screenshots in a row count
 const BASELINES = path.resolve(arg("--baselines") || path.join(here, "baselines")); // --baselines DIR compares with another set (calibration: two renders against each other)
 const OUT = path.resolve(arg("--out") || path.join(here, "out", "visual-baseline")), ACTUAL = path.join(OUT, "actual"), DIFF = path.join(OUT, "diff");
@@ -46,7 +46,8 @@ const REPEAT = Math.max(1, Number(arg("--repeat", "1")) || 1);
 const INJECT_CSS = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
 // Imitating a slow runner, to test the settling (calibration, 2026-11-22: two screens differed on a slower CI CPU): --throttle N slows the page's CPU N times (CDP),
 // --slow-art MS holds every image response back MS milliseconds. Neither may change a single pixel of the result; only the run gets slower.
-const THROTTLE = Number(arg("--throttle", "0")) || 0, SLOW_ART = Number(arg("--slow-art", "0")) || 0;
+const THROTTLE = Number(arg("--throttle", "0")) || 0, SLOW_ART = Number(arg("--slow-art", "0")) || 0, JITTER = Number(arg("--jitter", "0")) || 0;
+const BLOCK = arg("--block") ? new RegExp(arg("--block")) : null; // --block REGEX: abort the requests whose URL matches (imitates a missing file: the suite must fail, or the shot show it)
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
 const PARTIAL = !!(ONLY || ONLY_SIZES);
 const TZ = "UTC", LOCALE = "en-US", SEED = 20261122;
@@ -63,6 +64,7 @@ if (!REAL_NAMES.length) { console.error("FAIL visual-baseline: could not read th
 const SEED_JS = `(() => { let a = ${SEED} >>> 0; Math.random = function () { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })();`;
 
 // On a loopback host (tools/static-server.mjs) the page has no API unless asked: ?brain=local points it at its own origin's /api/, which the stub answers. A --url with its own brain= wins.
+const ORIGIN = new URL(BASE).origin;
 const LOOPBACK = /^(127\.0\.0\.1|localhost|\[::1\])$/.test(new URL(BASE).hostname);
 const BOARD = pageUrl(BASE, { params: { preview: "1" }, defaults: LOOPBACK ? { brain: "local" } : {} }), ROOT = dirOf(BASE);
 
@@ -109,6 +111,18 @@ async function toWall(page, net) {
   await advance(page, net, SCHEDULE.close);
   await expect(page, () => window.__boardKit.SC.open === null && !document.documentElement.classList.contains("scene-open"), null, "the wall (scene closed)");
 }
+// The journey switch on the wall, used the way a visitor uses it: tap the journey's button. On a phone the first tap only opens the switch (js/v13d.js
+// startJourneySwitch), so a second tap chooses; on a desktop the first tap chooses.
+async function chooseJourney(page, net, j) {
+  for (let i = 0; i < 2; i++) {
+    if (await page.evaluate((jj) => document.documentElement.dataset.journey === jj, j)) break;
+    await tap(page, `#journey [data-journey="${j}"]`);
+    await advance(page, net, SCHEDULE.journey);
+  }
+  await expect(page, (jj) => document.documentElement.dataset.journey === jj && document.querySelector(`#journey [data-journey="${jj}"]`).getAttribute("aria-pressed") === "true", j, `the ${j} journey`);
+}
+// The line a scene panel shows when its data did not load (js/board.js MEMBER_DOWN): such a page never becomes a baseline.
+const DOWN_LINE = "This part of the board could not load";
 // Each screen: how to reach it, and what must be true before it may be shot (a broken page never becomes a baseline).
 const SCREENS = {
   first: { go: firstVisit, ready: () => document.documentElement.classList.contains("nx-first-run") && !!document.querySelector("#nx-fr2-go") && document.querySelector("#nx-fr2-go").getClientRects().length > 0 },
@@ -121,15 +135,22 @@ const SCREENS = {
     ready: () => { const h = document.querySelector("h1"); return !!h && h.innerText.trim().length > 0; },
   },
 };
+// Scenes are shot in the Everything journey, so every panel shows all it has (Guided, the default, hides all but each panel's core: css/v13d.css).
+// Next steps (tonight) is shot where "Just take a look" leaves a first visitor: Guided.
 const sceneScreen = (k) => ({
   go: async (page, net) => {
     if (k === "tonight") return lookAround(page, net);
     await toWall(page, net);
+    await chooseJourney(page, net, "everything");
     await page.evaluate((s) => window.__boardKit.goScene(s), k);
     await advance(page, net, SCHEDULE.open);
   },
-  ready: (s) => { const sh = document.querySelector("#scene .sheet"), body = document.querySelector("#sheet-body"); return window.__boardKit.SC.open === s && document.documentElement.classList.contains("scene-open") && !!sh && sh.getClientRects().length > 0 && Number(getComputedStyle(sh).opacity) > 0.99 && !!body && body.innerText.trim().length > 20; },
-  arg: k,
+  ready: ({ scene, journey, down }) => {
+    const sh = document.querySelector("#scene .sheet"), panel = document.getElementById(`panel-${scene}`);
+    return window.__boardKit.SC.open === scene && document.documentElement.classList.contains("scene-open") && document.documentElement.dataset.journey === journey && !!sh && sh.getClientRects().length > 0 && Number(getComputedStyle(sh).opacity) > 0.99
+      && !!panel && !panel.hidden && panel.getClientRects().length > 0 && panel.innerText.trim().length > 20 && !document.getElementById("sheet-body").innerText.includes(down);
+  },
+  arg: { scene: k, journey: k === "tonight" ? "guided" : "everything", down: DOWN_LINE },
 });
 
 // Waits (bounded) until every <img> in the viewport is loaded and decoded. CSS background art is covered by the network going quiet: asking for it again from here
@@ -179,7 +200,20 @@ const pageState = (page) => page.evaluate(() => {
   let gl = "";
   try { const c = document.createElement("canvas"), g = c.getContext("webgl"), d = g && g.getExtension("WEBGL_debug_renderer_info"); gl = g ? String(d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER)) : "none"; const l = g && g.getExtension("WEBGL_lose_context"); if (l) l.loseContext(); } catch (e) { gl = "error"; }
   const sh = document.querySelector("#scene .sheet"), body = document.getElementById("sheet-body"), st = window.__board && typeof window.__board.status === "function" ? window.__board.status() : null;
-  return { cls: document.documentElement.className, sheet: r(sh), sheetZoom: sh ? getComputedStyle(sh).zoom : null, sheetTransform: sh ? getComputedStyle(sh).transform : null, body: r(body), bodyScroll: body ? body.scrollTop : null, main: r(document.getElementById("main")), scrollY: window.scrollY, fonts: document.fonts.status, imgsPending: [...document.images].filter((i) => i.getClientRects().length && !i.complete).length, light: st && st.light ? { state: st.light.state, why: st.light.why, draws: st.light.draws } : null, railPad: document.getElementById("scene") ? document.getElementById("scene").style.getPropertyValue("--rail-pad") : null, cores: navigator.hardwareConcurrency, gl };
+  const css = (el, props) => { if (!el) return null; const c = getComputedStyle(el), o = {}; for (const p of props) o[p] = String(c[p]).replace(/url\("?[^")]*\/([^/")]+)"?\)/g, "url($1)").slice(0, 160); return o; };
+  const root = document.documentElement, mq = (q) => { try { return matchMedia(q).matches; } catch (e) { return null; } };
+  return {
+    cls: root.className, sheet: r(sh), sheetZoom: sh ? getComputedStyle(sh).zoom : null, sheetTransform: sh ? getComputedStyle(sh).transform : null, body: r(body), bodyScroll: body ? body.scrollTop : null, main: r(document.getElementById("main")), scrollY: window.scrollY,
+    fonts: document.fonts.status, imgsPending: [...document.images].filter((i) => i.getClientRects().length && !i.complete).length, light: st && st.light ? { state: st.light.state, why: st.light.why, draws: st.light.draws } : null,
+    railPad: document.getElementById("scene") ? document.getElementById("scene").style.getPropertyValue("--rail-pad") : null, cores: navigator.hardwareConcurrency, gl,
+    // what decides how the paper and the wood are painted: the sheet and its body, the tile size, the media that switch textures and tints, the attributes on <html>
+    sheetCss: css(sh, ["opacity", "filter", "visibility", "mixBlendMode"]), bodyCss: css(body, ["opacity", "filter", "backgroundColor", "backgroundImage", "backgroundSize", "backgroundPosition", "backgroundBlendMode"]),
+    tile: getComputedStyle(root).getPropertyValue("--tile").trim(), dpr: window.devicePixelRatio, vw: innerWidth, vh: innerHeight,
+    media: { dark: mq("(prefers-color-scheme: dark)"), light: mq("(prefers-color-scheme: light)"), hdr: mq("(dynamic-range: high)"), res15: mq("(min-resolution: 1.5dppx)"), reduce: mq("(prefers-reduced-motion: reduce)"), coarse: mq("(pointer: coarse)") },
+    attrs: [...root.attributes].filter((a) => a.name !== "class" && a.name !== "style").map((a) => `${a.name}=${String(a.value).slice(0, 40)}`),
+    animations: document.getAnimations().slice(0, 12).map((a) => `${a.animationName || a.transitionProperty || a.id || a.constructor.name}:${a.playState}`),
+    textures: performance.getEntriesByType("resource").filter((e) => /(paper-baked|parchment-tile|oak-tile)/.test(e.name)).map((e) => `${e.name.split("/").pop().split("?")[0]} ${Math.round(e.duration)}ms ${e.transferSize}B`),
+  };
 }).catch((e) => ({ error: String(e.message).split("\n")[0] }));
 // Where and how two images differ: a coarse map of the changed pixels, the mean brightness of each side in the changed box, and the small shift of the whole
 // image that matches best (a moved element or a re-laid-out sheet shows as a shift; a lit or unlit light as brightness).
@@ -203,7 +237,13 @@ function explain(base, actual, box, tol) {
     for (let y = Math.max(box.y, 4); y < Math.min(box.y + box.h, H - 4); y += 3) for (let x = Math.max(box.x, 4); x < Math.min(box.x + box.w, W - 4); x += 3) { const i = (y * W + x) * 4, j = ((y + dy) * W + x + dx) * 4; t++; if (Math.max(Math.abs(A[j] - B[i]), Math.abs(A[j + 1] - B[i + 1]), Math.abs(A[j + 2] - B[i + 2])) <= tol) m++; }
     if (t && m / t > best.match) best = { dx, dy, match: m / t };
   }
-  return { grid, meanLumBaseline: Math.round(la / Math.max(1, n)), meanLumActual: Math.round(lb / Math.max(1, n)), bestShift: { dx: best.dx, dy: best.dy, matching: `${(best.match * 100).toFixed(1)}%` } };
+  const bands = [];
+  for (let b = 0; b < 8; b++) {
+    const y0 = Math.floor((b * H) / 8), y1 = Math.floor(((b + 1) * H) / 8); let ma = [0, 0, 0], mb = [0, 0, 0], k = 0;
+    for (let y = y0; y < y1; y += 3) for (let x = 0; x < W; x += 3) { const i = (y * W + x) * 4; for (let c = 0; c < 3; c++) { ma[c] += A[i + c]; mb[c] += B[i + c]; } k++; }
+    bands.push(`y ${y0}-${y1}: ${ma.map((v) => Math.round(v / k)).join(",")} -> ${mb.map((v) => Math.round(v / k)).join(",")}`);
+  }
+  return { grid, bands, meanLumBaseline: Math.round(la / Math.max(1, n)), meanLumActual: Math.round(lb / Math.max(1, n)), bestShift: { dx: best.dx, dy: best.dy, matching: `${(best.match * 100).toFixed(1)}%` } };
 }
 
 async function newContext(browser, size) {
@@ -220,9 +260,16 @@ async function shoot(browser, size, screen) {
     const page = await ctx.newPage(), net = { inflight: 0, last: Date.now(), loud: 0, events: 0 };
     if (THROTTLE > 1) await (await ctx.newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: THROTTLE });
     if (SLOW_ART > 0) await page.route(/\.(png|jpe?g|webp|avif|gif|svg)(\?|$)/i, async (route) => { await new Promise((r) => setTimeout(r, SLOW_ART)); return route.fallback(); });
+    if (BLOCK) await page.route(BLOCK, (route) => route.abort());
+    if (JITTER > 0) await page.route("**/*", async (route) => { await new Promise((r) => setTimeout(r, Math.random() * JITTER)); return route.fallback(); });
     page.on("request", () => { net.inflight++; net.events++; net.last = Date.now(); });
     for (const ev of ["requestfinished", "requestfailed"]) page.on(ev, () => { net.inflight--; net.events++; net.last = Date.now(); });
     page.on("pageerror", (e) => problems.push(`page error: ${String(e.message).split("\n")[0]}`));
+    // A page that lost a file of its own (this origin answered 4xx or 5xx, or the request failed) or logged an error is a broken page: its shot must not become a baseline, and
+    // must not pass against one. Chromium asks every page for /favicon.ico by itself; the landing page declares no icon and the host answers 404 there too, so that one is left out.
+    page.on("response", (r) => { try { const u = new URL(r.url()); if (u.origin === ORIGIN && u.pathname !== "/favicon.ico" && r.status() >= 400) problems.push(`this site answered ${r.status()} for ${u.pathname}`); } catch (e) { /* not a URL */ } });
+    page.on("requestfailed", (q) => { try { const u = new URL(q.url()), why = (q.failure() || {}).errorText || "failed"; if (u.origin === ORIGIN && !/ERR_ABORTED/.test(why)) problems.push(`the request for ${u.pathname} failed (${why})`); } catch (e) { /* not a URL */ } });
+    page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource/.test(m.text())) problems.push(`console error: ${m.text().split("\n")[0].slice(0, 200)}`); }); // a failed load is reported above, with its path
     await screen.go(page, net);
     await advance(page, net, SCHEDULE.flush);
     await expect(page, screen.ready, screen.arg ?? null, "its expected state (element missing or scene not open)");
@@ -241,6 +288,9 @@ async function shoot(browser, size, screen) {
     if (colours.size < 16) throw new Error(`the screenshot is nearly blank (${colours.size} colours in a sample)`);
     if (problems.length) throw new Error(problems[0]);
     return { png, img, shots, loud: net.loud, state };
+  } catch (e) { // a page that lost a file usually stops short of the state asked for: say what it reported as well
+    if (problems.length && !String(e.message).includes(problems[0])) e.message = `${String(e.message).split("\n")[0]} (the page reported: ${problems[0]})`;
+    throw e;
   } finally { await ctx.close().catch(() => {}); }
 }
 
@@ -282,6 +332,9 @@ try {
         row.repeatIdentical = takes.slice(1).every((t) => t.png.equals(takes[0].png));
         takes.slice(1).forEach((t, n) => { if (!noise[n].sizeMismatch && noise[n].changed > 0) { writeFileSync(path.join(ACTUAL, `${id}.take${n + 2}.png`), t.png); writeFileSync(path.join(DIFF, `${id}.take${n + 2}.png`), encodePng(diffImage(takes[0].img, t.img, THRESHOLD))); } });
         console.log(`REPEAT ${id}: ${REPEAT} shots ${row.repeatIdentical ? "byte-identical" : "differ"}, ${(row.repeatRatio * 100).toFixed(4)}% of pixels beyond ${THRESHOLD.tolerance}/255, max channel delta ${row.repeatMaxDelta}`);
+        // A screen whose repeat shots disagree is not stable: writing one of them as the baseline would bake a coin flip into the gate, so a write fails it (a comparison judges every shot).
+        const bad = noise.findIndex((n) => !judge(n, THRESHOLD).pass);
+        if (WRITE && bad >= 0) { fail(row, `the screen is not stable: shot ${bad + 2} of ${REPEAT} differs from shot 1 (${judge(noise[bad], THRESHOLD).why}); not written`); continue; }
       }
       if (WRITE) {
         // An existing baseline with no pixel beyond the tolerance is kept byte for byte, so a refresh rewrites only the screens that really changed
@@ -308,6 +361,7 @@ try {
         const why = worst.box ? explain(base, takes[worstAt].img, worst.box, THRESHOLD.tolerance) : null;
         row.diag = { page: takes[worstAt].state, ...(why || {}) };
         if (why) { console.log(`DIAG ${id}: mean brightness in the box ${why.meanLumBaseline} (baseline) vs ${why.meanLumActual} (now); best whole-image shift dx ${why.bestShift.dx} dy ${why.bestShift.dy} matches ${why.bestShift.matching} of the box`); console.log(`DIAG ${id}: changed pixels by area (. none, : under 10%, + under 50%, # more):\n${why.grid.map((l) => `  ${l}`).join("\n")}`); }
+        if (why) console.log(`DIAG ${id}: mean colour of eight bands, baseline -> now (r,g,b):\n${why.bands.map((l) => `  ${l}`).join("\n")}`);
         console.log(`DIAG ${id}: page ${JSON.stringify(takes[worstAt].state)}`);
         continue;
       }

@@ -9,6 +9,7 @@ name: Visual Baselines
 #           and pushes one commit to the branch with the GITHUB_TOKEN, only if the branch still points at the commit that was rendered.
 # A push made with the GITHUB_TOKEN starts no workflow: push your next commit (or add the ci-full label) to run Preview Tests on it.
 # commit=false renders and COMPARES instead (with --repeat, the calibration run: the noise between repeat shots and against the committed baselines), and commits nothing.
+# only / sizes narrow a commit=false run to some screens or sizes (hunting a flake: --only timeline --sizes 390x844 --repeat 20).
 
 on:
   workflow_dispatch:
@@ -18,9 +19,17 @@ on:
         type: boolean
         default: true
       repeat:
-        description: "Shots per screen, 1 to 5 (more than 1 reports the noise between repeat shots)"
+        description: "Shots per screen: 1 to 5 when committing; 1 to 30 when not. A screen whose repeat shots disagree is not written (default 3)"
         required: false
-        default: "1"
+        default: "3"
+      only:
+        description: "Only these screens, comma separated, e.g. timeline,wall (needs commit off: a partial set is never committed)"
+        required: false
+        default: ""
+      sizes:
+        description: "Only these sizes, comma separated: 390x844, 1366x768 (needs commit off)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -42,8 +51,15 @@ jobs:
       - name: Check the inputs
         env:
           REPEAT: ${{ inputs.repeat }}
+          ONLY: ${{ inputs.only }}
+          SIZES: ${{ inputs.sizes }}
+          COMMIT: ${{ inputs.commit }}
         run: |
-          case "$REPEAT" in 1|2|3|4|5) ;; *) echo "::error::repeat must be 1 to 5"; exit 1 ;; esac
+          case "$REPEAT" in ''|*[!0-9]*) echo "::error::repeat must be a number"; exit 1 ;; esac
+          if [ "$REPEAT" -lt 1 ] || [ "$REPEAT" -gt 30 ]; then echo "::error::repeat must be 1 to 30"; exit 1; fi
+          printf '%s' "$ONLY" | grep -Eq '^[a-z0-9,-]*$' || { echo "::error::only must be screen names, comma separated"; exit 1; }
+          printf '%s' "$SIZES" | grep -Eq '^((390x844|1366x768)(,(390x844|1366x768))*)?$' || { echo "::error::sizes must be 390x844 and/or 1366x768, comma separated"; exit 1; }
+          if [ "$COMMIT" = "true" ] && { [ "$REPEAT" -gt 5 ] || [ -n "$ONLY" ] || [ -n "$SIZES" ]; }; then echo "::error::A committed render is the whole set: repeat 1 to 5, no only, no sizes"; exit 1; fi
 
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -95,9 +111,14 @@ jobs:
         working-directory: tests
         env:
           REPEAT: ${{ inputs.repeat }}
+          ONLY: ${{ inputs.only }}
+          SIZES: ${{ inputs.sizes }}
         run: |
           set -o pipefail
-          node browser/visual-baseline.mjs --url "http://127.0.0.1:8080/" --repeat "$REPEAT" --out "$RUNNER_TEMP/visual-out" 2>&1 | tee "$RUNNER_TEMP/visual.log"
+          ARGS=()
+          if [ -n "$ONLY" ]; then ARGS+=(--only "$ONLY"); fi
+          if [ -n "$SIZES" ]; then ARGS+=(--sizes "$SIZES"); fi
+          node browser/visual-baseline.mjs --url "http://127.0.0.1:8080/" --repeat "$REPEAT" "${ARGS[@]}" --out "$RUNNER_TEMP/visual-out" 2>&1 | tee "$RUNNER_TEMP/visual.log"
 
       - name: Upload the rendered baselines
         if: inputs.commit

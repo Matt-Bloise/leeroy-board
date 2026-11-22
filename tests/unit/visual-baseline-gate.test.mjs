@@ -91,7 +91,9 @@ test("preview-tests.yml: the visual job serves this checkout, runs the gate, the
   assert.match(run, /browser\/visual-baseline\.mjs --url "?http:\/\/127\.0\.0\.1/);
   const mutation = job.steps.find((s) => /mutation/i.test(s.name || ""));
   assert.ok(mutation, "a mutation step exists");
-  assert.match(mutation.run, /--inject-css/); assert.match(mutation.run, /exit 1|must FAIL|did not fail/i);
+  assert.match(mutation.run, /--inject-css/); assert.match(mutation.run, /--block/, "a file the page cannot load is a second injected fault");
+  assert.match(mutation.run, /cannot catch/); assert.match(mutation.run, /broke some other way/, "a pass and a crash are told apart");
+  assert.equal(job.steps[0].with["persist-credentials"], false, "the checkout keeps no token");
   assert.ok([].concat(wf.jobs.report.needs).includes("visual"), "report needs visual");
   assert.match(wf.jobs.report.steps.find((s) => s.id === "build").env.VISUAL_RESULT, /needs\.visual\.result/);
 });
@@ -110,8 +112,24 @@ test("visual-baselines.yml: dispatch only, never on the default branch, and only
   assert.ok(render && !(render.permissions && render.permissions.contents === "write"), "the job that runs the branch's code cannot write");
   assert.match(String(v.jobs.guard ? v.jobs.guard.steps.map((s) => s.run || "").join("\n") : commit.steps.map((s) => s.run || "").join("\n")), /master|default branch/);
   const steps = commit.steps.map((s) => s.run || "").join("\n");
+  assert.ok(v.on.workflow_dispatch.inputs.only && v.on.workflow_dispatch.inputs.sizes, "calibration can be narrowed to screens and sizes");
+  assert.match(render.steps.map((s) => s.run || "").join("\n"), /A committed render is the whole set/, "a partial render is never committed");
   assert.match(steps, /tests\/browser\/baselines/);
   assert.doesNotMatch(steps, /npm|node |npx/, "the job with the write token runs no code from the branch");
+});
+
+test("visual-drift.yml: daily and read-only, report only; its issue job runs for scheduled failures only", () => {
+  const v = parse(read(".github/workflows/visual-drift.yml"));
+  assert.deepEqual(Object.keys(v.on).sort(), ["schedule", "workflow_dispatch"]);
+  assert.equal(v.permissions.contents, "read");
+  const jobs = Object.entries(v.jobs);
+  assert.equal(jobs.filter(([, j]) => j.permissions && (j.permissions.contents === "write" || j.permissions["pull-requests"] === "write")).length, 0, "nothing writes to the repository or a pull request");
+  assert.deepEqual(jobs.filter(([, j]) => j.permissions && j.permissions.issues === "write").map(([k]) => k), ["issue"], "only the issue job can write, and only issues");
+  assert.match(v.jobs.issue.if, /github\.event_name == 'schedule'/, "a manual run never touches the issue list");
+  const run = v.jobs.compare.steps.map((s) => s.run || "").join("\n");
+  assert.match(run, /browser\/visual-baseline\.mjs --url/); assert.match(run, /--repeat 2/);
+  assert.doesNotMatch(run, /--write-baselines|git push|git commit/, "it compares, it never writes");
+  assert.equal(v.jobs.compare.steps[0].with["persist-credentials"], false, "the checkout keeps no token");
 });
 
 test("ci-report: a failed or missing visual result fails light, full and skipped runs whenever a site file changed", () => {
