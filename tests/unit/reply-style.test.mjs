@@ -95,9 +95,17 @@ function assertComponentsValid(rows, at) {
   for (const [ri, row] of rows.entries()) {
     assert.equal(row.type, 1, `${at} row ${ri}: an action row`);
     assert.ok(row.components.length >= 1 && row.components.length <= 5, `${at} row ${ri}: 1 to 5 buttons`);
+    if (row.components.some((c) => c.type !== 2)) {
+      // a select menu (or any other component that is not a button) is alone in its row, with a unique custom_id
+      assert.equal(row.components.length, 1, `${at} row ${ri}: a select menu shares its row`);
+      assert.ok(typeof row.components[0].custom_id === "string" && row.components[0].custom_id.length <= 100, `${at}: select custom_id`);
+      ids.push(row.components[0].custom_id);
+      continue;
+    }
     for (const c of row.components) {
       assert.equal(c.type, 2, `${at}: a button`);
-      assert.ok(typeof c.label === "string" && c.label.length >= 1 && c.label.length <= 80, `${at}: label ${JSON.stringify(c.label)}`);
+      if (c.label === undefined) assert.ok(c.emoji && typeof c.emoji === "object", `${at}: a button with no label has an emoji`);
+      else assert.ok(typeof c.label === "string" && c.label.trim().length >= 1 && c.label.length <= 80, `${at}: label ${JSON.stringify(c.label)}`);
       assert.equal((c.custom_id ? 1 : 0) + (c.url ? 1 : 0), 1, `${at}: one of custom_id or url`);
       assert.equal(c.style === 5, Boolean(c.url), `${at}: style 5 iff url`);
       assert.ok(Number.isInteger(c.style) && c.style >= 1 && c.style <= 5, `${at}: style`);
@@ -309,21 +317,40 @@ test("object-property words are plain data in the styled cards", () => {
   }
 });
 
-test("party board, styled: no person's line is ever cut; whoever does not fit is counted in +N more, whatever the stamp", () => {
+// The party board reserves its author line and footer when it fits people (cards.js, BOARD_STYLE_RESERVE), so it never needs to give way:
+// the author line is always there, no line is cut, and whoever does not fit is counted. Sizes run past 400 so "+N more" reaches three digits.
+test("party board, styled: no person's line is ever cut, the author line never has to give way, and whoever does not fit is counted in +N more", () => {
+  const sizes = [...Array.from({ length: 120 }, (_, i) => i + 1), 150, 200, 250, 300, 350, 408, 450, 500];
   for (const updated of [undefined, "", "not a date", STATE.updated]) {
-    for (let n = 1; n <= 120; n++) {
+    for (const n of sizes) {
       const entries = longRoster(n);
       for (const members of [longMembers(entries), longMembers(entries).slice(0, Math.floor(n / 2))]) {
         const s = { siteBase: BASE, boardUrl: `${BASE}/#signups`, updated, entries, members };
         const e = renderBoardCard(s, { style: true }).embeds[0];
         const at = `n=${n} members=${members.length} updated=${json(updated)}`;
         assert.ok(embedChars(e) <= 6000, at);
+        assert.equal(e.author && e.author.name, BOARD_LOOK.author, `${at}: the author line had to give way, so the reserve is missing`);
         const values = e.fields.map((f) => f.value).join("\n");
         assert.ok(!values.includes("…"), `${at}: a line was cut`);
         const people = members.length + entries.filter((x) => !members.some((m) => m.slug === x.slug)).length;
         const shown = values.split("\n").filter((l) => l.startsWith("**")).length;
         const more = /\+(\d+) more on the board$/.exec(e.footer.text);
         assert.equal(shown + (more ? Number(more[1]) : 0), people, `${at}: everyone is shown or counted`);
+      }
+    }
+  }
+});
+
+// The sign-up card's name lists are today's at every size: at the 6000 limit its decoration (author line, footer text) gives way first.
+test("sign-up card, styled: the name lists are exactly today's at every size, whatever the stamp", () => {
+  for (const updated of [undefined, "", "not a date", STATE.updated]) {
+    for (const n of [0, 1, 25, 50, 75, 100, 125, 150, 200, 300, 400]) {
+      const entries = longRoster(n);
+      for (const s of [{ siteBase: BASE, boardUrl: `${BASE}/#signups`, updated, entries }, { siteBase: BASE, updated, entries, members: longMembers(entries) }]) {
+        const today = renderSignupCard(s);
+        const styled = renderSignupCard(s, { style: true });
+        assert.deepEqual(styled.embeds[0].fields, today.embeds[0].fields, `n=${n} updated=${json(updated)} members=${Boolean(s.members)}`);
+        assert.ok(embedChars(styled.embeds[0]) <= 6000);
       }
     }
   }
@@ -341,20 +368,30 @@ test("admin-set meeting and arrival options print exactly as today on the styled
   }
 });
 
-// The closed set: the styled card is today's card with exactly the documented parts replaced. Unknown keys and friend text in the document
-// (canaries below) can only reach the parts today's card already prints.
-test("the styled cards are today's cards with only the documented parts replaced, for any document", () => {
+// The closed set: the styled message is today's message with exactly the documented parts replaced: the first embed's author line, title, link,
+// colour, footer and time, the button rows (regrouped and recoloured on the sign-up card, the link relabelled on the board) and allowed_mentions.
+// Nothing else, anywhere in the body. CANARY is friend text today's card prints (names, places); HIDDEN sits only in keys today's card never reads.
+const regroupedSignupRows = (rows) => {
+  const all = rows.flatMap((r) => r.components);
+  return ["rsvp", "meet", "when", "pack"]
+    .map((k) => all.filter((c) => c.custom_id.startsWith(`signup:${k}:`)).map((c) => ({ ...c, style: c.custom_id === "signup:rsvp:in" ? 3 : c.custom_id === "signup:rsvp:out" ? 4 : 2 })))
+    .filter((g) => g.length)
+    .map((components) => ({ type: 1, components }));
+};
+const relabelledLinks = (rows) => rows.map((r) => ({ ...r, components: r.components.map((c) => (c.style === 5 ? { ...c, label: "Open on the board" } : c)) }));
+test("the styled cards are today's messages with only the documented parts replaced, for any document", () => {
   const CANARY = "Canary-7f3e";
+  const HIDDEN = "Hidden-9c1d";
   let seed = 11;
   const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
   for (let i = 0; i < 300; i++) {
     const n = [0, 1, 4, 12, 31, 45, 60][rnd(7)];
-    const entries = Array.from({ length: n }, (_, k) => ({ name: rnd(5) ? `Name${k}` : `${CANARY}${k}`, rsvp: RSVPS[rnd(4)], slug: `s${k}`, when: ["6pm", "8pm", "", CANARY][rnd(4)], meet: ["Valley of Strength", "", CANARY][rnd(3)], pack: ["yes", "no", ""][rnd(3)], note: CANARY }));
+    const entries = Array.from({ length: n }, (_, k) => ({ name: rnd(5) ? `Name${k}` : `${CANARY}${k}`, rsvp: RSVPS[rnd(4)], slug: `s${k}`, when: ["6pm", "8pm", "", CANARY][rnd(4)], meet: ["Valley of Strength", "", CANARY][rnd(3)], pack: ["yes", "no", ""][rnd(3)], note: HIDDEN, notes: HIDDEN }));
     const s = {
       entries, updated: [STATE.updated, "", "2026-11-21T20:15", undefined][rnd(4)], options: rnd(2) ? STATE.options : undefined,
       siteBase: [BASE, "", "http://board.test"][rnd(3)], boardUrl: [`${BASE}/#signups`, undefined, "http://x"][rnd(3)],
-      journeys: [{ name: CANARY }], notes: CANARY, owner: { name: CANARY }, withheld: rnd(4) === 0,
-      ...(rnd(2) ? { members: entries.slice(0, Math.ceil(n / 2)).map((x) => ({ slug: x.slug, name: x.name, classKey: "mage", classLabel: "Mage", race: "Orc", role: "tank" })) } : {}),
+      journeys: [{ name: HIDDEN }], notes: HIDDEN, owner: { name: HIDDEN }, title: HIDDEN, content: HIDDEN, withheld: rnd(4) === 0,
+      ...(rnd(2) ? { members: entries.slice(0, Math.ceil(n / 2)).map((x) => ({ slug: x.slug, name: x.name, classKey: "mage", classLabel: "Mage", race: "Orc", role: "tank", notes: HIDDEN })) } : {}),
     };
     for (const [render, style, look, icon] of [[renderSignupCard, styleSignupCard, SIGNUP_LOOK, "img/icons/tab-signups.png"], [renderBoardCard, styleBoardCard, BOARD_LOOK, "img/icons/tab-five.png"]]) {
       const today = render(s);
@@ -370,8 +407,12 @@ test("the styled cards are today's cards with only the documented parts replaced
       if (s.boardUrl === `${BASE}/#signups`) want.url = s.boardUrl;
       if (stamp) want.timestamp = stamp;
       assert.deepEqual(e, want, at);
+      const rows = render === renderSignupCard ? regroupedSignupRows(today.components) : relabelledLinks(today.components);
+      assert.deepEqual(styled, { ...today, embeds: [want], components: rows, allowed_mentions: { parse: [] } }, `${at}: the whole message`);
       assert.deepEqual(style(today, s), styled, `${at}: the renderer's style option is exactly the styler applied to today's body`);
-      if (!json(today).includes(CANARY)) assert.ok(!json(styled).includes(CANARY), `${at}: the style printed text today's card does not`);
+      assert.ok(!json(today).includes(HIDDEN), `${at}: premise, today's card never prints the hidden keys`);
+      assert.ok(!json(styled).includes(HIDDEN), `${at}: the style printed a key today's card never reads`);
+      if (!json(today).includes(CANARY)) assert.ok(!json(styled).includes(CANARY), `${at}: the style printed friend text today's card does not`);
       for (const part of [e.title, e.author.name, e.footer.text]) assert.ok(!part.includes(CANARY), `${at}: ${json(part)}`);
     }
   }
@@ -435,7 +476,8 @@ test("/tooltip and /map cards: the rules and today's links", () => {
   assert.equal(tip.embeds[0].description, "Verified in **Fixture spells** (Classes).");
   assert.equal(tip.embeds[0].url, `${BASE}/#lib.classes/fixture-spells`);
   assertBodyValid(tip, "tooltip");
-  assert.equal(tooltipCard({ name: "x", row: { id: "a/b", category: "", title: "**Star** page" }, verified: "yes", boardUrl: BASE }).embeds[0].description, "Mentioned on **Star page**.");
+  // library text in bold is escaped, never stripped: it reads exactly as written and cannot end the bold early
+  assert.equal(tooltipCard({ name: "x", row: { id: "a/b", category: "", title: "**Star** page_one" }, verified: "yes", boardUrl: BASE }).embeds[0].description, "Mentioned on **\\*\\*Star\\*\\* page\\_one**.");
   const cases = [
     [{ plan: { value: "valley-of-strength", name: "Valley of Strength" } }, "Route plan: Valley of Strength", "#atlas.plan.valley-of-strength"],
     [{ place: "red-cloud-mesa" }, "Red Cloud Mesa", "#atlas.red-cloud-mesa"],
@@ -598,9 +640,27 @@ test("finishComponents: only shapes Discord accepts, link buttons last, at most 
   // a link button never keeps a custom_id (Discord refuses the pair); a label is cut, never otherwise changed; a blank label is left out
   const [linkRow] = finishComponents([{ type: 1, components: [{ type: 2, style: 5, label: "Go", url: `${BASE}/x`, custom_id: "stray" }, { type: 2, style: 2, label: "   ", custom_id: "blank" }, { type: 2, style: 2, label: `Meet ${ZWSP}here`, custom_id: "m" }] }]);
   assert.deepEqual(linkRow.components, [{ type: 2, style: 2, label: `Meet ${ZWSP}here`, custom_id: "m" }, { type: 2, style: 5, label: "Go", url: `${BASE}/x` }]);
-  // a row that holds a select menu is passed through as it is
-  const select = { type: 1, components: [{ type: 3, custom_id: "pick", options: [{ label: "A", value: "a" }] }] };
-  assert.deepEqual(finishComponents([select]), [select]);
+  // a select menu keeps its own row; one mixed in with buttons is moved to a row of its own; ids stay unique across selects and buttons
+  const pick = { type: 3, custom_id: "pick", options: [{ label: "A", value: "a" }] };
+  assert.deepEqual(finishComponents([{ type: 1, components: [pick] }]), [{ type: 1, components: [pick] }]);
+  const mixed = finishComponents([{ type: 1, components: [
+    { type: 2, style: 2, label: "One", custom_id: "one" }, pick, { type: 2, style: 2, label: "Dup", custom_id: "pick" },
+    { type: 2, style: 5, label: "Out", url: `${BASE}/x`, custom_id: "stray" }, { type: 2, style: 2, label: "", custom_id: "empty" },
+    { type: 2, style: 2, emoji: { name: "x" }, custom_id: "emoji-only" }, { type: 3, custom_id: "one", options: [] },
+  ] }]);
+  assertComponentsValid(mixed, "mixed");
+  assert.deepEqual(mixed, [
+    { type: 1, components: [pick] },
+    { type: 1, components: [{ type: 2, style: 2, label: "One", custom_id: "one" }, { type: 2, style: 2, emoji: { name: "x" }, custom_id: "emoji-only" }, { type: 2, style: 5, label: "Out", url: `${BASE}/x` }] },
+  ]);
+  // the sign-up card with select menus added is not regrouped (regrouped it would need 6 rows and lose one): each select keeps a row of its own
+  // and every button and select is kept
+  const today = renderSignupCard(STATE);
+  const select = (id) => ({ type: 1, components: [{ type: 3, custom_id: id, options: [] }] });
+  const withSelects = { ...today, components: [today.components[0], select("signup:meet:pick"), select("signup:when:pick"), ...today.components.slice(1)] };
+  const styled = styleSignupCard(withSelects, STATE);
+  assertComponentsValid(styled.components, "sign-up card with selects");
+  assert.equal(styled.components.flatMap((r) => r.components).length, withSelects.components.flatMap((r) => r.components).length, "nothing dropped");
 });
 
 // ---- where the flag is read, and the docs ----
@@ -627,26 +687,38 @@ test("static proof: the flag is named once (reply-style.js, read through legacyO
   assert.match(src, /^export const replyStyleOn = \(env\) => legacyOn\(env, REPLY_STYLE_FLAG\);$/m);
   assert.equal((src.match(/\bREPLY_STYLE_FLAG\b/g) || []).length, 2, "the constant is defined once and used once, by the gate");
   assert.deepEqual(calls, { "infrastructure/worker/cards.js": 2, "infrastructure/worker/answer-ux.js": 1 });
-  // Who may use the module, by exact name and with no alias, and every styler call sits on a line gated by the flag's value.
-  const importers = {};
-  const uses = {};
-  const UNWIRED = /\b(pageCard|tooltipCard|mapCard|finishEmbed|finishComponents)\b/;
+  // Who may use the module: any mention of it, in any file of the Worker or the Pages worker (subfolders included, any path form, import,
+  // export or dynamic), must be one of the two exact import lines below. In those two files every other mention of an imported name must be one
+  // of the exact gated lines below: so a re-export, an alias, a .call or an ungated call fails here. The behaviour tests above are the real guard;
+  // this pins the shape so a change to it is a decision.
+  const IMPORTS = {
+    "infrastructure/worker/cards.js": 'import { replyStyleOn, styleSignupCard, styleBoardCard, BOARD_STYLE_RESERVE } from "./reply-style.js";',
+    "infrastructure/worker/answer-ux.js": 'import { replyStyleOn, styleAnswerButtons } from "./reply-style.js";',
+  };
+  const ALLOWED = {
+    "infrastructure/worker/cards.js": [
+      "  return opts && opts.style === true ? styleSignupCard(body, state) : body;",
+      "    const reserve = opts && opts.style === true ? BOARD_STYLE_RESERVE : updatedText ? `Updated ${updatedText}`.length : 0;",
+      "  return opts && opts.style === true ? styleBoardCard(body, state, { omitted }) : body;",
+      "  const look = { style: replyStyleOn(env) };",
+      "  const body = RENDERERS[card](state, { style: replyStyleOn(env) });",
+    ],
+    "infrastructure/worker/answer-ux.js": ["  return replyStyleOn(env) ? styleAnswerButtons(rows) : rows;"],
+  };
+  const NAMES = /\b(replyStyleOn|styleSignupCard|styleBoardCard|styleAnswerButtons|BOARD_STYLE_RESERVE|SIGNUP_LOOK|BOARD_LOOK|pageCard|tooltipCard|mapCard|finishEmbed|finishComponents|REPLY_STYLE_FLAG)\b/;
+  const seenImports = {};
+  const seenUses = {};
   for (const f of [...sourceFiles("infrastructure/worker"), ...sourceFiles("pages-worker")]) {
-    if (f.endsWith("/reply-style.js")) continue;
-    const src = read(f);
-    for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']\.\/reply-style\.js["']/g)) importers[f] = m[1].split(",").map((x) => x.trim()).filter(Boolean).sort();
-    assert.ok(!/reply-style(\.js)?["']\s*\)/.test(src) && !/import\s*\*\s*as\s+\w+\s+from\s*["']\.\/reply-style/.test(src), `${f}: no dynamic or namespace import of reply-style.js`);
-    for (const l of code(src)) {
-      if (/\bstyle(SignupCard|BoardCard)\(/.test(l)) (uses[f] ||= []).push(l.includes("opts && opts.style === true ?") ? "gated" : `UNGATED: ${l.trim()}`);
-      if (/\bstyleAnswerButtons\(/.test(l)) (uses[f] ||= []).push(l.includes("replyStyleOn(env) ?") ? "gated" : `UNGATED: ${l.trim()}`);
-      assert.ok(!UNWIRED.test(l), `${f}: ${l.trim()} (the builders and finishers are not wired outside reply-style.js yet; wiring them is its own change)`);
+    if (f === "infrastructure/worker/reply-style.js") continue;
+    for (const l of read(f).split(/\r?\n/)) {
+      if (/^\s*(\/\/|\*|\/\*)/.test(l)) continue;
+      const line = l.replace(/\s\/\/.*$/, "");
+      if (/reply-style/.test(line)) (seenImports[f] ||= []).push(line);
+      else if (NAMES.test(line)) (seenUses[f] ||= []).push(line);
     }
   }
-  assert.deepEqual(importers, {
-    "infrastructure/worker/answer-ux.js": ["replyStyleOn", "styleAnswerButtons"],
-    "infrastructure/worker/cards.js": ["BOARD_STYLE_RESERVE", "replyStyleOn", "styleBoardCard", "styleSignupCard"],
-  });
-  assert.deepEqual(uses, { "infrastructure/worker/cards.js": ["gated", "gated"], "infrastructure/worker/answer-ux.js": ["gated"] });
+  assert.deepEqual(seenImports, Object.fromEntries(Object.entries(IMPORTS).map(([f, l]) => [f, [l]])), "only the two exact import lines mention reply-style.js");
+  assert.deepEqual(seenUses, ALLOWED, "every other use of the module's names is one of the exact gated lines");
   const toml = read("infrastructure/wrangler.toml");
   const m = toml.slice(toml.indexOf("[vars]")).match(/^REPLY_STYLE\s*=\s*"([^"]*)"/m);
   if (m) assert.ok(["on", "off"].includes(m[1]), `REPLY_STYLE declared as ${m[1]}`);

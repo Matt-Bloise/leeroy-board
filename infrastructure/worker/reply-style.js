@@ -151,32 +151,34 @@ export function finishEmbed(input, { now = Date.now(), yields = ["author"] } = {
   return e;
 }
 
-// Buttons: valid shapes only (a link button is style 5 with an https url and no custom_id, every other button has a custom_id of at most 100 and
-// style 1 to 4), unique custom ids, link buttons last in their row, at most 5 per row and 5 rows. A label is only cut to 80, never otherwise
-// changed; a button with an empty label is left out (Discord would refuse the whole message). Unknown keys on a button (an emoji) are kept.
-// A row that holds anything but buttons (a select menu) is passed through as it is.
+// Components, in shapes Discord accepts: a link button is style 5 with an https url and no custom_id; every other button has a custom_id of at
+// most 100 and style 1 to 4; every custom_id is unique in the message; link buttons come last in their row; at most 5 buttons per row and 5 rows.
+// A label is only cut to 80, never otherwise changed. A button needs a label or an emoji (Discord refuses one with neither, and with it the whole
+// message); unknown keys on a button (an emoji) are kept. A select menu, or any other component that is not a button, gets a row of its own,
+// as Discord requires, under the same unique-custom_id rule.
 export function finishComponents(rows) {
   const seen = new Set();
+  const fresh = (id) => typeof id === "string" && id.length >= 1 && id.length <= DISCORD.customId && !seen.has(id) && Boolean(seen.add(id));
   const out = [];
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row || row.type !== 1 || !Array.isArray(row.components)) continue;
-    if (row.components.some((c) => c && typeof c === "object" && c.type !== 2)) {
-      out.push(row);
-      continue;
-    }
     const keep = [];
     for (const c of row.components) {
-      if (!c || typeof c !== "object" || blank(c.label)) continue;
-      const lab = clip(c.label, DISCORD.label);
-      if (c.style === 5 || c.url !== undefined) {
-        const url = httpsUrl(c.url);
-        const { custom_id: _linkHasNoId, ...rest } = c;
-        if (url) keep.push({ ...rest, style: 5, label: lab, url });
+      if (!c || typeof c !== "object" || Array.isArray(c)) continue;
+      if (c.type !== 2) {
+        if (fresh(c.custom_id)) out.push({ type: 1, components: [c] });
         continue;
       }
-      if (typeof c.custom_id !== "string" || !c.custom_id || c.custom_id.length > DISCORD.customId || seen.has(c.custom_id)) continue;
-      seen.add(c.custom_id);
-      keep.push({ ...c, style: [1, 2, 3, 4].includes(c.style) ? c.style : 2, label: lab });
+      const emoji = Boolean(c.emoji && typeof c.emoji === "object" && !Array.isArray(c.emoji));
+      if (blank(c.label) && !emoji) continue;
+      const { label: _label, custom_id: _id, url: _url, ...base } = c;
+      const lab = blank(c.label) ? {} : { label: clip(c.label, DISCORD.label) };
+      if (c.style === 5 || c.url !== undefined) {
+        const url = httpsUrl(c.url);
+        if (url) keep.push({ ...base, ...lab, style: 5, url });
+        continue;
+      }
+      if (fresh(c.custom_id)) keep.push({ ...base, ...lab, style: [1, 2, 3, 4].includes(c.style) ? c.style : 2, custom_id: c.custom_id });
     }
     const ordered = [...keep.filter((c) => c.style !== 5), ...keep.filter((c) => c.style === 5)];
     for (let i = 0; i < ordered.length; i += DISCORD.perRow) out.push({ type: 1, components: ordered.slice(i, i + DISCORD.perRow) });
@@ -205,6 +207,8 @@ const SIGNUP_ROWS = ["rsvp", "meet", "when", "pack"];
 const SIGNUP_COLOURS = new Map([["signup:rsvp:in", 3], ["signup:rsvp:out", 4]]);
 function signupRows(rows) {
   const buttons = (Array.isArray(rows) ? rows : []).flatMap((r) => (r && Array.isArray(r.components) ? r.components : []));
+  // Only buttons are regrouped: a card that also carries a select menu (or anything else) keeps its own rows.
+  if (buttons.some((b) => !b || typeof b !== "object" || b.type !== 2)) return finishComponents(rows);
   const groups = new Map(SIGNUP_ROWS.map((k) => [k, []]));
   const other = [];
   for (const b of buttons) {
@@ -319,13 +323,15 @@ export function pageCard({ row, facts = [], boardUrl, now = Date.now() } = {}) {
 export function tooltipCard({ name, row, verified = false, boardUrl, now = Date.now() } = {}) {
   const base = boardBase(boardUrl);
   const url = pageLink(base, row && row.id);
-  const page = oneLine(row && row.title, HOUSE.title).replace(/\*/g, "") || "a library page";
+  const page = oneLine(row && row.title, HOUSE.title);
   const shelf = label(row && row.category, HOUSE.category);
+  // The page's name is library text set in bold: its markdown characters are escaped, so it reads exactly as written and cannot end the bold early.
+  const md = (s) => s.replace(/[\\*_~|`>]/g, "\\$&");
   return card({
     author: author("Library · Tooltip", base, ICONS.library),
-    title: oneLine(name, HOUSE.title) || page,
+    title: oneLine(name, HOUSE.title) || page || "Tooltip",
     url,
-    description: `${verified === true ? "Verified in" : "Mentioned on"} **${page}**${shelf ? ` (${shelf})` : ""}.`,
+    description: `${verified === true ? "Verified in" : "Mentioned on"} ${page ? `**${md(page)}**` : "a library page"}${shelf ? ` (${md(shelf)})` : ""}.`,
     color: REPLY_COLORS.leeroy,
     footer: { text: "Verified library" },
   }, linkRow(url), now);
