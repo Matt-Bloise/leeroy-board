@@ -37,6 +37,77 @@ const tipState = (page) => page.evaluate(() => {
   return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, hits, text: t.textContent, side: t.dataset.side };
 }).catch(() => null);
 
+// Helpers for the tip checks. On desktop a #sheet-body scroll hides a tip opened by hover or tap (scenes/place.js); a tip opened by keyboard focus moves with its zone instead (checked below).
+// Escape on a hidden tip closes the SCENE, so Escape is pressed only while the tip is visible (except in the scroll check, which is about exactly that), and every pin first checks
+// the scene is still open (one failure stays one failure, no cascade).
+const tipVisible = (page) => page.evaluate(() => { const t = document.getElementById("road-card"); return !!t && !t.hidden; }).catch(() => false);
+const roadsUp = (page) => page.evaluate(() => { const p = document.getElementById("panel-roads"); return !!p && !p.hidden && location.hash === "#roads"; }).catch(() => false);
+// Resolves when #sheet-body scrollTop has been equal across two consecutive animation frames (bounded at 60 frames).
+const settle = (page) => page.evaluate(() => new Promise((res) => { const b = document.getElementById("sheet-body"); let last = -1, same = 0, n = 0; const tick = () => { const s = b ? b.scrollTop : 0; same = s === last ? same + 1 : 0; last = s; if (same >= 1 || ++n > 60) res(); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); })).catch(() => {});
+// Focus a zone, let any scroll from the focus settle, and when that scroll hid the tip, focus again once (the scroll position is now stable).
+async function focusZone(page, i) {
+  const f = () => page.evaluate((k) => document.querySelectorAll("#map .road-g[data-zone]")[k].focus(), i);
+  await f(); await until(page, () => { const t = document.getElementById("road-card"); return !!t && !t.hidden; }); await settle(page);
+  if (!(await tipVisible(page))) { await page.evaluate(() => document.activeElement && document.activeElement.blur()); await f(); await until(page, () => { const t = document.getElementById("road-card"); return !!t && !t.hidden; }); await settle(page); }
+}
+const tipGone = (page) => until(page, () => { const t = document.getElementById("road-card"); return !t || t.hidden; });
+// Diagnostics for the scroll check (evidence only, never asserted): focus and geometry when the scroll is dispatched, and the call stack of every write that hides the tip after it.
+const scrollDiagArm = (page) => page.evaluate(() => {
+  const c = document.getElementById("road-card"), d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidden"), t = document.querySelectorAll("#map .road-g[data-zone]")[2], a = document.activeElement, K = window.__boardKit;
+  const now = () => Math.round(performance.now());
+  window.__tipLog = []; window.__tipArmed = now();
+  if (c && d && !Object.getOwnPropertyDescriptor(c, "hidden")) Object.defineProperty(c, "hidden", { configurable: true, get() { return d.get.call(this); }, set(v) { if (v && !d.get.call(this)) window.__tipLog.push(`+${now() - window.__tipArmed}ms hide: ` + String(new Error().stack).split("\n").slice(2, 8).map((s) => s.trim()).join(" < ")); d.set.call(this, v); } });
+  if (!window.__tipKeys) { window.__tipKeys = 1; addEventListener("keydown", (e) => { if (e.key === "Escape") window.__tipLog.push(`+${now() - window.__tipArmed}ms Escape reached a late window listener (place.js did not stop it), tip hidden=${!!c && c.hidden}, defaultPrevented=${e.defaultPrevented}`); }, true); addEventListener("hashchange", () => window.__tipLog.push(`+${now() - window.__tipArmed}ms hash ${location.hash || "(empty)"}`)); }
+  const rr = (e) => { if (!e) return null; const q = e.getBoundingClientRect(); return [q.left, q.top, q.right, q.bottom].map(Math.round); };
+  const vb = K && K.place && K.place.visibleBounds ? K.place.visibleBounds(0) : null;
+  return { tipShown: !!c && !c.hidden, activeIsZone: !!t && a === t, active: a ? `${a.tagName}.${a.getAttribute("class") || ""}` : null, zone: rr(t), vb: vb ? [vb.x, vb.y, vb.r, vb.b].map(Math.round) : null, hasFocus: document.hasFocus(), coarse: innerWidth < 700 || matchMedia("(pointer: coarse)").matches };
+}).catch((e) => ({ error: String(e.message).slice(0, 80) }));
+const scrollDiagRead = (page) => page.evaluate(() => (window.__tipLog ? [...window.__tipLog, `read at +${Math.round(performance.now()) - window.__tipArmed}ms`] : null)).catch(() => null);
+// Re-open the Roads scene after a check closed it, and press Tab so the page is back in keyboard modality (focus opens a tip only then).
+async function reopen(page) { await open(page, "roads"); await until(page, () => document.querySelectorAll("#map .map-pin").length >= 3); await page.waitForTimeout(700); await page.keyboard.press("Tab"); }
+// A desktop size where the sheet really scrolls (css/fit.css fits the sheet to the window only from 501 px of height; at 1366x768 it cannot scroll, so the check above
+// only dispatches the event). On a real scroll the focus tip is re-placed (it ends exactly where a fresh focus at the new scroll position puts it, not where it was),
+// Esc then closes the tip and not the scene, and the tip hides once its zone has left the visible sheet. A road button pressed with Enter (a keyboard tap) holds the same way.
+async function realScroll(page, label) {
+  const L = `${label} (window resized to 1280x480)`;
+  await page.setViewportSize({ width: 1280, height: 480 }); await page.waitForTimeout(400);
+  const setTop = (v) => page.evaluate((y) => { const b = document.getElementById("sheet-body"); if (b) b.scrollTop = y === "end" ? b.scrollHeight : y; }, v);
+  const cardAt = () => page.evaluate(() => { const c = document.getElementById("road-card"); if (!c || c.hidden) return null; const r = c.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]; });
+  const room = await page.evaluate(() => { const b = document.getElementById("sheet-body"); return b ? b.scrollHeight - b.clientHeight : 0; });
+  ok(`${L}: the sheet scrolls, so these checks scroll for real`, room >= 120, String(room));
+  await setTop(0); await focusZone(page, 0);
+  const before = await cardAt();
+  await setTop(40); await page.waitForTimeout(200);
+  const after = await cardAt();
+  await page.evaluate(() => document.activeElement && document.activeElement.blur()); await tipGone(page);
+  await focusZone(page, 0);
+  const fresh = await cardAt();
+  ok(`${L}: a real scroll keeps the focus tip open and re-places it where a fresh focus puts it`, !!before && !!after && !!fresh && String(after) === String(fresh) && String(before) !== String(fresh), JSON.stringify({ before, after, fresh }));
+  await page.keyboard.press("Escape");
+  ok(`${L}: Esc after a real scroll closes the tip`, await tipGone(page));
+  await page.waitForTimeout(250);
+  ok(`${L}: Esc after a real scroll leaves the scene open`, await roadsUp(page));
+  if (!(await roadsUp(page))) await reopen(page);
+  await setTop(0); await focusZone(page, 0);
+  await setTop("end"); await page.waitForTimeout(250);
+  const left = await page.evaluate(() => { const z = document.querySelectorAll("#map .road-g[data-zone]")[0].getBoundingClientRect(), s = document.getElementById("sheet-body").getBoundingClientRect(), c = document.getElementById("road-card"); return { out: z.bottom <= s.top || z.top >= s.bottom, hidden: !c || c.hidden }; });
+  ok(`${L}: the focus tip hides once its zone has scrolled out of the sheet`, left.out && left.hidden, JSON.stringify(left));
+  await page.evaluate(() => document.activeElement && document.activeElement.blur()); await setTop(0); await page.waitForTimeout(300);
+  await page.evaluate(() => { const b = document.querySelector("#roads-legend .road-btn"); if (b) b.focus(); });
+  await page.keyboard.press("Enter");
+  const pressed = await until(page, () => { const t = document.getElementById("road-card"), b = document.querySelector("#roads-legend .road-btn"); return !!t && !t.hidden && !!b && b.getAttribute("aria-pressed") === "true"; });
+  await setTop(40); await page.waitForTimeout(200);
+  ok(`${L}: a road button pressed with Enter keeps its tip through a real scroll`, pressed && (await tipVisible(page)));
+  await page.keyboard.press("Escape");
+  ok(`${L}: Esc then closes that tip`, await tipGone(page));
+  await page.waitForTimeout(250);
+  ok(`${L}: and leaves the scene open`, await roadsUp(page));
+  await page.evaluate(() => { const b = document.querySelector("#roads-legend .road-btn"); if (b && b.getAttribute("aria-pressed") === "true") b.click(); if (document.activeElement) document.activeElement.blur(); });
+  await setTop(0);
+  await page.setViewportSize({ width: 1366, height: 768 }); await page.waitForTimeout(400);
+  if (!(await roadsUp(page))) await reopen(page);
+}
+
 // Diagnostics for a failed pin hover/tap check: says why (tip element count, box, computed style, page visibility, the point used, viewport, scroll, what is under the pointer). Evidence only; never asserted.
 const hoverDiag = (page, box, shown) => page.evaluate(([b, sh]) => {
   const d = (e) => (e ? e.tagName + (e.id ? "#" + e.id : "") + "." + String(e.className && e.className.baseVal !== undefined ? e.className.baseVal : e.className).slice(0, 40) : null);
@@ -62,8 +133,8 @@ async function run(label, viewport, mobile) {
   ok(`${label}: no native title tooltips are left on the pins`, pins.length >= 3 && pins.every((p) => p.title === 0));
   // keyboard: focus opens the tip
   await page.keyboard.press("Tab"); // keyboard modality, as a keyboard user has
-  await page.evaluate(() => document.querySelector("#map .road-g[data-zone]").focus());
-  ok(`${label}: focusing a zone opens its tip`, await until(page, () => { const t = document.getElementById("road-card"); return !!t && !t.hidden; }));
+  await focusZone(page, 0);
+  ok(`${label}: focusing a zone opens its tip`, await tipVisible(page));
   let ts = await tipState(page);
   ok(`${label}: the tip sits inside the viewport`, !!ts && ts.l >= 0 && ts.t >= 0 && ts.r <= ts.w && ts.b <= ts.h, JSON.stringify(ts));
   ok(`${label}: the tip covers no pin or name card`, !!ts && ts.hits.length === 0, JSON.stringify(ts && ts.hits));
@@ -72,17 +143,48 @@ async function run(label, viewport, mobile) {
   const panelShown = await page.evaluate(() => { const p = document.querySelector("#map .road-panel"); return !!p && getComputedStyle(p).display !== "none"; }).catch(() => true);
   ok(`${label}: the old side panel that covered the map is hidden`, panelShown === false);
   // Esc closes the tip but not the scene
-  await page.keyboard.press("Escape");
-  ok(`${label}: Esc closes the tip`, await until(page, () => { const t = document.getElementById("road-card"); return !t || t.hidden; }));
-  const sceneOpen = await page.evaluate(() => !document.getElementById("panel-roads").hidden && location.hash === "#roads").catch(() => false);
-  ok(`${label}: Esc on a tip leaves the scene open`, sceneOpen);
+  // Escape is pressed only while the tip is visible (a hidden tip would let Escape close the scene).
+  if (await tipVisible(page)) await page.keyboard.press("Escape");
+  ok(`${label}: Esc closes the tip`, await tipGone(page));
+  ok(`${label}: Esc on a tip leaves the scene open`, await roadsUp(page));
   // blur closes
-  await page.evaluate(() => document.querySelectorAll("#map .road-g[data-zone]")[1].focus());
-  await until(page, () => { const t = document.getElementById("road-card"); return !!t && !t.hidden; });
+  if (!(await roadsUp(page))) await reopen(page);
+  await focusZone(page, 1);
   await page.evaluate(() => document.activeElement.blur());
-  ok(`${label}: blur closes the tip`, await until(page, () => { const t = document.getElementById("road-card"); return !t || t.hidden; }));
+  ok(`${label}: blur closes the tip`, await tipGone(page));
+  // A scroll of the sheet while a zone holds keyboard focus (what a focus() scroll does at 768 px height), then Esc. The tip opened by focus stays with its zone through the scroll
+  // (scenes/place.js re-places it), so this Esc closes the tip, not the scene. It is pressed whatever the tip's state: a tip lost to the scroll would let it close the scene, which is the bug.
+  // The sheet really scrolls by 40 px when it can; the dispatched event covers a size where it cannot.
+  if (!(await roadsUp(page))) await reopen(page);
+  await focusZone(page, 2);
+  // The page rebuilds the whole map when its art has loaded, on new data and on a resize (renderMap in js/board.js). On a slow preview that lands in the middle of
+  // these checks (CI evidence: focus was on BODY at the scroll). A redraw while a zone holds its keyboard tip must keep focus on that zone and the tip open.
+  const zoneKey = await page.evaluate(() => document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute("data-zone"));
+  await page.evaluate(() => { const K = window.__boardKit; if (K && K.render && K.render.map) K.render.map(); });
+  await page.waitForTimeout(250);
+  const redrawn = await page.evaluate(() => { const a = document.activeElement, c = document.getElementById("road-card"); return { zone: a && a.getAttribute ? a.getAttribute("data-zone") : null, onMap: !!a && a.isConnected && !!a.closest && !!a.closest("#map"), tip: !!c && !c.hidden }; });
+  ok(`${label}: a map redraw while a zone holds its tip keeps focus on that zone and the tip open`, !!zoneKey && redrawn.zone === zoneKey && redrawn.onMap && redrawn.tip, JSON.stringify({ zoneKey, redrawn }));
+  const armed = await scrollDiagArm(page);
+  const moved = await page.evaluate(() => { const b = document.getElementById("sheet-body"); if (!b) return null; const before = b.scrollTop, max = b.scrollHeight - b.clientHeight; b.scrollTop = before + (before + 40 <= max ? 40 : -40); b.dispatchEvent(new Event("scroll")); return { before, after: b.scrollTop, max }; }).catch(() => null);
+  await page.waitForTimeout(150);
+  const keptOpen = await tipVisible(page);
+  ok(`${label}: a scroll while a zone has focus keeps its tip open`, keptOpen, JSON.stringify(moved) + (keptOpen ? "" : " DIAG(evidence for a CI-only failure, nothing asserted) " + JSON.stringify({ atScroll: armed, hiddenBy: await scrollDiagRead(page) })));
+  ts = await tipState(page);
+  const inView = !!ts && ts.l >= 0 && ts.t >= 0 && ts.r <= ts.w && ts.b <= ts.h && ts.hits.length === 0;
+  ok(`${label}: after that scroll the tip is inside the viewport and covers no pin or name card`, inView, JSON.stringify({ moved, ts }) + (inView ? "" : " DIAG " + JSON.stringify(await scrollDiagRead(page))));
+  await page.keyboard.press("Escape");
+  ok(`${label}: Esc after that scroll closes the tip`, await tipGone(page));
+  await page.waitForTimeout(250);
+  const stillUp = await roadsUp(page);
+  ok(`${label}: Esc after that scroll leaves the scene open`, stillUp, stillUp ? "" : "DIAG(evidence for a CI-only failure, nothing asserted) " + JSON.stringify({ atScroll: armed, log: await scrollDiagRead(page) }));
+  if (!(await roadsUp(page))) await reopen(page);
+  if (!mobile) await realScroll(page, label);
   // pointer: mouse hover on desktop, tap on touch, every pin
   for (let i = 0; i < pins.length; i++) {
+    // One missed tip must stay one failure: when the scene is gone, count it against this pin and re-open it for the next.
+    const sceneUp = await roadsUp(page);
+    ok(`${label}: pin ${i + 1}: the Roads scene is still open before the pointer check`, sceneUp, `hash=${await page.evaluate(() => location.hash).catch(() => "?")}`);
+    if (!sceneUp) { await open(page, "roads"); await until(page, () => document.querySelectorAll("#map .map-pin").length >= 3); await page.waitForTimeout(700); }
     // Aim at the pin's computed centre only once the map layout has settled: the same box on two consecutive frames AND the point hits this pin (CI evidence: the centre read before layout settled landed on path.map-land, so no hover reached the pin). Falls back to the last read after 4 s.
     const box = await page.evaluate((k) => new Promise((res) => { const read = () => { const p = document.querySelectorAll("#map .map-pin")[k]; if (!p) return null; const r = p.querySelector(".pin-body").getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, hit = document.elementFromPoint(x, y); return { x, y, on: !!(hit && hit.closest && hit.closest(".map-pin") === p) }; }; let prev = null, same = 0; const t0 = performance.now(); const tick = () => { const b = read(); if (!b) return res(null); same = prev && Math.abs(prev.x - b.x) < 0.5 && Math.abs(prev.y - b.y) < 0.5 ? same + 1 : 0; prev = b; if ((same >= 2 && b.on) || performance.now() - t0 > 4000) return res({ x: b.x, y: b.y }); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }), i).catch(() => null);
     if (!box) continue;
@@ -95,8 +197,8 @@ async function run(label, viewport, mobile) {
     ts = await tipState(page);
     const pass = shown && !!ts && ts.l >= 0 && ts.t >= 0 && ts.r <= ts.w && ts.b <= ts.h && ts.hits.length === 0;
     ok(`${label}: pin ${i + 1} ${mobile ? "tap" : "hover"} opens a tip that is inside the view and covers nothing`, pass, JSON.stringify(ts) + (pass ? "" : " DIAG(evidence for a CI-only flake, nothing asserted) " + JSON.stringify(await hoverDiag(page, box, shown))));
-    await page.keyboard.press("Escape");
-    await until(page, () => { const t = document.getElementById("road-card"); return !t || t.hidden; });
+    if (await tipVisible(page)) await page.keyboard.press("Escape");
+    await tipGone(page);
   }
   const axeRoads = await new AxeBuilder({ page }).include("#panel-roads").analyze().then((r) => r.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}:${v.nodes[0].target}`)).catch((e) => [String(e.message).slice(0, 80)]);
   ok(`${label}: axe finds no serious or critical violation on the Roads scene`, axeRoads.length === 0, axeRoads.join(" | "));
