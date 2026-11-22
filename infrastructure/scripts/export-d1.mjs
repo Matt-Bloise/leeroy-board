@@ -21,10 +21,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INFRA_DIR = path.resolve(__dirname, "..");
 const ROOT_DIR = path.resolve(INFRA_DIR, "..");
 const DATA_DIR = path.join(ROOT_DIR, "data");
-const LIB_DIR = path.join(DATA_DIR, "library");
+const LIB_DIR = process.env.LIBRARY_DIR ? path.resolve(process.env.LIBRARY_DIR) : path.join(DATA_DIR, "library"); // LIBRARY_DIR: a copy to rebuild (tests/unit/export-d1-rebuild.test.mjs)
 
+// The stamps in index.json are the first 10 hex of the sha256 of the file bytes (tests/unit/glossary-party-independent.test.mjs reads them that way).
 function sha8(str) {
-  return crypto.createHash("sha256").update(str).digest("hex").slice(0, 8);
+  return crypto.createHash("sha256").update(str).digest("hex").slice(0, 10);
 }
 
 function rebuildLocalLibraryIndexes() {
@@ -73,7 +74,6 @@ function rebuildLocalLibraryIndexes() {
     }
     cat.pages = pages.length;
     cat.facts = catFacts;
-    cat.open = catOpen;
     totalFacts += catFacts;
     totalOpen += catOpen;
   }
@@ -102,7 +102,7 @@ function rebuildLocalLibraryIndexes() {
   // 3. Recompute SHA-8 stamps for all library files and update `index.json`
   const stamps = {};
   for (const f of fs.readdirSync(LIB_DIR)) {
-    if (!f.endsWith(".json") || f === "index.json") continue;
+    if (!f.endsWith(".json") || f === "index.json" || f === "refresh.json") continue; // refresh.json is written by the sweep, never stamped
     stamps[f] = sha8(fs.readFileSync(path.join(LIB_DIR, f), "utf8"));
   }
   indexDoc.generated = now;
