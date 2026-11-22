@@ -43,7 +43,7 @@ const BLANK_NAME = "\u200b"; // Discord's blank field name (the party board's co
 const text = (v) => (typeof v === "string" ? v : (typeof v === "number" && Number.isFinite(v)) || typeof v === "boolean" ? String(v) : "");
 
 // Cut to `max` UTF-16 units (what String.length counts, never less than what Discord counts), on a whole character, ending with "…" when cut.
-// A lone surrogate (an emoji cut in half upstream) becomes U+FFFD so the JSON stays valid Unicode.
+// A lone surrogate (an emoji cut in half upstream) becomes U+FFFD so the JSON stays valid Unicode. Nothing else is changed.
 export function clip(value, max) {
   const s = text(value).replace(LONE_SURROGATE, "\ufffd");
   if (s.length <= max) return s;
@@ -54,10 +54,10 @@ export function clip(value, max) {
   }
   return `${out.trimEnd()}…`;
 }
-// One line: control, zero-width and direction characters out, whitespace collapsed.
-export const oneLine = (value, max) => clip(text(value).replace(CONTROL, " ").replace(INVISIBLE, "").replace(/\s+/g, " ").trim(), max);
-// Several lines: the same, but line breaks stay (at most one blank line in a row).
-const manyLines = (value, max) => clip(text(value).replace(/\r\n?/g, "\n").replace(CONTROL, " ").replace(INVISIBLE, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(), max);
+// A one-line slot (title, author line, footer, field name): control, zero-width and direction characters become spaces, never nothing, so two
+// pieces are never joined into a new word or number; whitespace collapsed.
+export const oneLine = (value, max) => clip(text(value).replace(CONTROL, " ").replace(INVISIBLE, " ").replace(/\s+/g, " ").trim(), max);
+const blank = (s) => !text(s).trim();
 
 // "class_guides" -> "Class guides"
 const label = (raw, max) => {
@@ -80,12 +80,24 @@ export function boardBase(url) {
 const icon = (base, path) => (base ? `${base}/${path}` : "");
 const author = (name, base, path) => ({ name, ...(icon(base, path) ? { icon_url: icon(base, path) } : {}) });
 
-// An ISO stamp WITH a zone (Z or an offset), not before 2000 and not more than STAMP_AHEAD_MS ahead, as Discord's embed timestamp
-// (shown in each reader's own time zone). Anything else is null: a zone-less stamp, an epoch number or a junk string is never guessed.
-const ISO_ZONED = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})$/i;
+// An ISO stamp WITH a zone (Z or an offset) that names a real calendar time, not before 2000 and not more than STAMP_AHEAD_MS ahead, as Discord's
+// embed timestamp (shown in each reader's own time zone). Anything else is null: a zone-less stamp, an epoch number, a junk string or an impossible
+// date such as February 30 is never guessed (the fields are checked here, not left to Date.parse, which rolls February 30 over to March 2).
+const ISO_ZONED = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(Z|([+-])(\d{2}):(\d{2}))$/i;
 export function embedTimestamp(value, now = Date.now()) {
-  if (typeof value !== "string" || !ISO_ZONED.test(value)) return null;
-  const t = Date.parse(value);
+  const m = typeof value === "string" ? ISO_ZONED.exec(value) : null;
+  if (!m) return null;
+  const [year, month, day, hour, minute] = m.slice(1, 6).map(Number);
+  const second = m[6] === undefined ? 0 : Number(m[6]);
+  const ms = m[7] === undefined ? 0 : Math.floor(Number(`0.${m[7]}`) * 1000);
+  if (month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate() || hour > 23 || minute > 59 || second > 59) return null;
+  let offset = 0;
+  if (m[8].toUpperCase() !== "Z") {
+    const [oh, om] = [Number(m[10]), Number(m[11])];
+    if (oh > 14 || om > 59) return null;
+    offset = (m[9] === "-" ? -1 : 1) * (oh * 60 + om) * 60000;
+  }
+  const t = Date.UTC(year, month - 1, day, hour, minute, second, ms) - offset;
   if (!Number.isFinite(t) || t < Date.UTC(2000, 0, 1) || !Number.isFinite(now) || t > now + STAMP_AHEAD_MS) return null;
   return new Date(t).toISOString();
 }
@@ -98,12 +110,15 @@ export function embedChars(e) {
     text(e && e.footer && e.footer.text).length + fields.reduce((n, f) => n + text(f && f.name).length + text(f && f.value).length, 0);
 }
 
-// Clean and fit one embed. Keeps every key it does not know (an `image` from picture cards, a `provider`), so it composes with other changes.
-export function finishEmbed(input, { now = Date.now() } = {}) {
+// Fit one embed to Discord's rules. Text it did not write (the description, field values) is never changed: it is only cut to its limit (whole
+// characters, "…"), a half character is repaired, and an empty value becomes "—". One-line slots are made one line (oneLine).
+// Keeps every key it does not know (an `image` from picture cards, a `provider`), so it composes with other changes.
+// `yields`: decoration that gives way, in order, before any fact is cut when the embed is over 6000 characters in all.
+export function finishEmbed(input, { now = Date.now(), yields = ["author"] } = {}) {
   const e = { ...(input && typeof input === "object" ? input : {}) };
   const set = (key, value) => { if (value) e[key] = value; else delete e[key]; };
   if ("title" in e) set("title", oneLine(e.title, DISCORD.title));
-  if ("description" in e) set("description", manyLines(e.description, DISCORD.description));
+  if ("description" in e) set("description", blank(e.description) ? null : clip(e.description, DISCORD.description));
   if ("url" in e) set("url", httpsUrl(e.url));
   if ("color" in e && !(Number.isInteger(e.color) && e.color >= 0 && e.color <= 0xffffff)) delete e.color;
   if ("author" in e) {
@@ -120,11 +135,13 @@ export function finishEmbed(input, { now = Date.now() } = {}) {
   if ("fields" in e) {
     e.fields = (Array.isArray(e.fields) ? e.fields : [])
       .filter((f) => f && typeof f === "object" && !Array.isArray(f))
-      .map((f) => ({ name: f.name === BLANK_NAME ? BLANK_NAME : oneLine(f.name, DISCORD.fieldName) || BLANK_NAME, value: manyLines(f.value, DISCORD.fieldValue) || "—", inline: f.inline === true }))
+      .map((f) => ({ name: f.name === BLANK_NAME ? BLANK_NAME : oneLine(f.name, DISCORD.fieldName) || BLANK_NAME, value: blank(f.value) ? "—" : clip(f.value, DISCORD.fieldValue), inline: f.inline === true }))
       .slice(0, DISCORD.fields);
   }
-  // Over 6000 in all: trim field values from the last field back, then the description; drop trailing fields only if that is still not enough.
+  // Over 6000 in all: decoration gives way first; then field values are trimmed from the last field back, then the description; trailing fields
+  // are dropped only if that is still not enough.
   const over = () => embedChars(e) - DISCORD.total;
+  for (const key of Array.isArray(yields) ? yields : []) if (over() > 0 && (key === "author" || key === "footer")) delete e[key];
   for (let i = (e.fields || []).length - 1; over() > 0 && i >= 0; i--) {
     const f = e.fields[i];
     e.fields[i] = { ...f, value: clip(f.value, Math.max(1, f.value.length - over())) };
@@ -134,21 +151,27 @@ export function finishEmbed(input, { now = Date.now() } = {}) {
   return e;
 }
 
-// Buttons: valid shapes only (a link button is style 5 with an https url, every other button has a custom_id of at most 100 and style 1 to 4),
-// unique custom ids, link buttons last in their row, at most 5 per row and 5 rows. Unknown keys on a button (an emoji) are kept.
+// Buttons: valid shapes only (a link button is style 5 with an https url and no custom_id, every other button has a custom_id of at most 100 and
+// style 1 to 4), unique custom ids, link buttons last in their row, at most 5 per row and 5 rows. A label is only cut to 80, never otherwise
+// changed; a button with an empty label is left out (Discord would refuse the whole message). Unknown keys on a button (an emoji) are kept.
+// A row that holds anything but buttons (a select menu) is passed through as it is.
 export function finishComponents(rows) {
   const seen = new Set();
   const out = [];
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row || row.type !== 1 || !Array.isArray(row.components)) continue;
+    if (row.components.some((c) => c && typeof c === "object" && c.type !== 2)) {
+      out.push(row);
+      continue;
+    }
     const keep = [];
     for (const c of row.components) {
-      if (!c || typeof c !== "object" || c.type !== 2) continue;
-      const lab = oneLine(c.label, DISCORD.label);
-      if (!lab) continue;
+      if (!c || typeof c !== "object" || blank(c.label)) continue;
+      const lab = clip(c.label, DISCORD.label);
       if (c.style === 5 || c.url !== undefined) {
         const url = httpsUrl(c.url);
-        if (url) keep.push({ ...c, style: 5, label: lab, url });
+        const { custom_id: _linkHasNoId, ...rest } = c;
+        if (url) keep.push({ ...rest, style: 5, label: lab, url });
         continue;
       }
       if (typeof c.custom_id !== "string" || !c.custom_id || c.custom_id.length > DISCORD.customId || seen.has(c.custom_id)) continue;
@@ -197,22 +220,29 @@ function signupRows(rows) {
 }
 const boardLink = (state) => httpsUrl(state && state.boardUrl) || "";
 const cardBase = (state) => boardBase(state && state.siteBase);
+// The text the style writes on the pinned cards. These, the card's own board link and time, and the board's icons are all it adds.
+export const SIGNUP_LOOK = Object.freeze({ author: "Sign-ups", title: "Who is coming", footer: "The Living Board" });
+export const BOARD_LOOK = Object.freeze({ author: "The party", title: "Party board", footer: "The Living Board" });
+// Characters the styled party board adds to what renderBoardCard budgets for (its author line and footer). cards.js reserves them when it fits
+// people into the 6000, so the style never has to cut a person's line; the "+N more on the board" note keeps its own reserve there (OMIT_NOTE_MAX).
+export const BOARD_STYLE_RESERVE = BOARD_LOOK.author.length + BOARD_LOOK.footer.length;
 
-// The sign-up card (cards.js renderSignupCard). Fields, names, description and custom ids are the renderer's.
+// The sign-up card (cards.js renderSignupCard). Fields, names, description and custom ids are the renderer's. At the 6000 limit the author line
+// and the footer text give way before a name list is cut.
 export function styleSignupCard(body, state, { now = Date.now() } = {}) {
   return safely(body, "signups", () => {
     const e = firstEmbed(body);
     const stamp = embedTimestamp(state && state.updated, now);
     const embed = {
       ...e,
-      author: author("Sign-ups", cardBase(state), ICONS.signups),
-      title: "Who is coming",
+      author: author(SIGNUP_LOOK.author, cardBase(state), ICONS.signups),
+      title: SIGNUP_LOOK.title,
       url: boardLink(state),
       color: REPLY_COLORS.party,
-      footer: { text: "The Living Board" },
+      footer: { text: SIGNUP_LOOK.footer },
       timestamp: stamp || "",
     };
-    return { ...body, embeds: [finishEmbed(embed, { now }), ...body.embeds.slice(1)], components: signupRows(body.components), allowed_mentions: NO_MENTIONS };
+    return { ...body, embeds: [finishEmbed(embed, { now, yields: ["author", "footer"] }), ...body.embeds.slice(1)], components: signupRows(body.components), allowed_mentions: NO_MENTIONS };
   });
 }
 
@@ -224,11 +254,11 @@ export function styleBoardCard(body, state, { omitted = 0, now = Date.now() } = 
     const more = Number.isInteger(omitted) && omitted > 0 ? ` · +${omitted} more on the board` : "";
     const embed = {
       ...e,
-      author: author("The party", cardBase(state), ICONS.party),
-      title: "Party board",
+      author: author(BOARD_LOOK.author, cardBase(state), ICONS.party),
+      title: BOARD_LOOK.title,
       url: boardLink(state),
       color: REPLY_COLORS.party,
-      footer: { text: `The Living Board${more}` },
+      footer: { text: `${BOARD_LOOK.footer}${more}` },
       timestamp: stamp || "",
     };
     const rows = (Array.isArray(body.components) ? body.components : []).map((r) => ({
@@ -265,11 +295,13 @@ export function pageCard({ row, facts = [], boardUrl, now = Date.now() } = {}) {
   const base = boardBase(boardUrl);
   const url = pageLink(base, row && row.id);
   const shown = (Array.isArray(facts) ? facts : []).filter((f) => f && typeof f === "object" && !Array.isArray(f) && text(f.key)).slice(0, HOUSE.facts);
+  // A fact prints as today's /page prints it (the value as stored, only cut to Discord's limit); its key is a field name, so one line.
   const fields = shown.map((f) => {
-    const value = manyLines(f.value, DISCORD.fieldValue) || "—";
-    return { name: oneLine(f.key, DISCORD.fieldName), value, inline: value.length <= HOUSE.inline };
+    const value = blank(f.value) ? "—" : clip(f.value, DISCORD.fieldValue);
+    return { name: oneLine(f.key, DISCORD.fieldName), value, inline: value.length <= HOUSE.inline && !value.includes("\n") };
   });
-  const blurb = manyLines(row && row.blurb, HOUSE.blurb);
+  // The page's own blurb, under the title (today's /page shows it only when there are no facts).
+  const blurb = blank(row && row.blurb) ? "" : clip(row.blurb, HOUSE.blurb);
   const shelf = label(row && row.category, HOUSE.category);
   return card({
     author: author(shelf ? `Library · ${shelf}` : "Library", base, ICONS.library),

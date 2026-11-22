@@ -13,7 +13,7 @@ import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import {
   replyStyleOn, REPLY_STYLE_FLAG, REPLY_COLORS, styleSignupCard, styleBoardCard, styleAnswerButtons, pageCard, tooltipCard, mapCard,
-  finishEmbed, finishComponents, embedTimestamp, embedChars, clip, boardBase, STAMP_AHEAD_MS,
+  finishEmbed, finishComponents, embedTimestamp, embedChars, clip, boardBase, STAMP_AHEAD_MS, SIGNUP_LOOK, BOARD_LOOK,
 } from "../../infrastructure/worker/reply-style.js";
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
 import { fakeD1, fakeFetch } from "./fake-d1.mjs";
@@ -259,8 +259,11 @@ test("every styled card stays inside Discord's limits for 0 to 300 long sign-ups
         assert.equal(out.embeds[0].image, IMAGE, `${name} ${n}: the image object is untouched`);
         assert.equal(out.embeds[0].thumbnail, undefined, `${name} ${n}: one picture per card`);
         assertBodyValid(out, `${name} ${n} with image`);
-        // and one that adds it after: still valid (an image does not count toward 6000)
-        assertBodyValid({ ...styled, embeds: [{ ...styled.embeds[0], image: IMAGE, thumbnail: undefined }].map((e) => { delete e.thumbnail; return e; }) }, `${name} ${n} image after`);
+        // and one that adds it after the style, then passes the embed through finishEmbed (docs/discord-reply-style.md, "Picture cards"): one picture, still valid
+        const after = { ...styled, embeds: [finishEmbed({ ...styled.embeds[0], image: IMAGE })] };
+        assert.equal(after.embeds[0].image, IMAGE, `${name} ${n}: image added after the style is untouched`);
+        assert.equal(after.embeds[0].thumbnail, undefined, `${name} ${n}: image added after the style still leaves one picture`);
+        assertBodyValid(after, `${name} ${n} image after`);
       }
     }
   }
@@ -282,8 +285,12 @@ test("timestamps: a zoned ISO stamp at most 10 minutes ahead is shown; anything 
   const ok = [["2026-11-21T20:15:00.000Z", "2026-11-21T20:15:00.000Z"], ["2026-11-21T20:15:00Z", "2026-11-21T20:15:00.000Z"], ["2026-11-21T15:15:00-05:00", "2026-11-21T20:15:00.000Z"],
     ["2026-11-21T20:15Z", "2026-11-21T20:15:00.000Z"], [new Date(NOW + 5 * 60000).toISOString(), new Date(NOW + 5 * 60000).toISOString()]];
   for (const [v, want] of ok) assert.equal(embedTimestamp(v, NOW), want, v);
+  assert.equal(embedTimestamp("2024-02-29T10:00:00Z", NOW), "2024-02-29T10:00:00.000Z", "a real leap day");
+  assert.equal(embedTimestamp("2026-11-21T20:15:00+05:30", NOW), "2026-11-21T14:45:00.000Z");
   const bad = ["2026-11-21T20:15:00", "2026-11-21T20:15", "2026-11-21", NOW, String(NOW), new Date(NOW + 3600000).toISOString(), new Date(NOW + 365 * 86400000).toISOString(),
-    new Date(NOW + STAMP_AHEAD_MS + 1000).toISOString(), "", " ", "yesterday", "not a date", "2026-13-45T25:61:00Z", "1999-12-31T23:59:59Z", " 2026-11-21T20:15:00Z", {}, [], null, undefined, true];
+    new Date(NOW + STAMP_AHEAD_MS + 1000).toISOString(), "", " ", "yesterday", "not a date", "2026-13-45T25:61:00Z", "1999-12-31T23:59:59Z", " 2026-11-21T20:15:00Z", {}, [], null, undefined, true,
+    // impossible calendar times, which Date.parse would roll over instead of refusing
+    "2026-02-30T10:00:00Z", "2026-02-29T10:00:00Z", "2026-04-31T10:00:00Z", "2026-00-10T10:00:00Z", "2026-11-00T10:00:00Z", "2026-11-21T24:00:00Z", "2026-11-21T20:60:00Z", "2026-11-21T20:15:60Z", "2026-11-21T20:15:00+15:00", "2026-11-21T20:15:00+05:60"];
   for (const v of bad) assert.equal(embedTimestamp(v, NOW), null, json(v));
   for (const updated of bad) {
     const e = styleSignupCard(renderSignupCard({ ...STATE, updated }), { ...STATE, updated }, { now: NOW }).embeds[0];
@@ -299,6 +306,74 @@ test("object-property words are plain data in the styled cards", () => {
     const styled = render(s, { style: true });
     assertBodyValid(styled, render.name);
     assert.deepEqual([...byId(styled).keys()].sort(), [...byId(render(s)).keys()].sort(), render.name);
+  }
+});
+
+test("party board, styled: no person's line is ever cut; whoever does not fit is counted in +N more, whatever the stamp", () => {
+  for (const updated of [undefined, "", "not a date", STATE.updated]) {
+    for (let n = 1; n <= 120; n++) {
+      const entries = longRoster(n);
+      for (const members of [longMembers(entries), longMembers(entries).slice(0, Math.floor(n / 2))]) {
+        const s = { siteBase: BASE, boardUrl: `${BASE}/#signups`, updated, entries, members };
+        const e = renderBoardCard(s, { style: true }).embeds[0];
+        const at = `n=${n} members=${members.length} updated=${json(updated)}`;
+        assert.ok(embedChars(e) <= 6000, at);
+        const values = e.fields.map((f) => f.value).join("\n");
+        assert.ok(!values.includes("…"), `${at}: a line was cut`);
+        const people = members.length + entries.filter((x) => !members.some((m) => m.slug === x.slug)).length;
+        const shown = values.split("\n").filter((l) => l.startsWith("**")).length;
+        const more = /\+(\d+) more on the board$/.exec(e.footer.text);
+        assert.equal(shown + (more ? Number(more[1]) : 0), people, `${at}: everyone is shown or counted`);
+      }
+    }
+  }
+});
+
+test("admin-set meeting and arrival options print exactly as today on the styled cards (no character removed, so nothing inert becomes live)", () => {
+  const options = { meet: [`disc${ZWSP}ord.gg/fict`, `Gate${LSEP}two`], when: ["6pm", `6${ZWSP}8pm`] };
+  const s = { ...STATE, options, entries: [{ name: "Quillfeather", rsvp: "in", meet: options.meet[0], when: options.when[1] }, { name: "Nimbus", rsvp: "in", meet: options.meet[1], when: "6pm" }] };
+  for (const render of [renderSignupCard, renderBoardCard]) {
+    const today = render(s);
+    const styled = render(s, { style: true });
+    assert.deepEqual(styled.embeds[0].fields, today.embeds[0].fields, render.name);
+    const labels = byId(today);
+    for (const [id, c] of byId(styled)) if (c.custom_id) assert.equal(c.label, labels.get(id).label, `${render.name} ${id}`); // a choice keeps its label; the link label is the style's own
+  }
+});
+
+// The closed set: the styled card is today's card with exactly the documented parts replaced. Unknown keys and friend text in the document
+// (canaries below) can only reach the parts today's card already prints.
+test("the styled cards are today's cards with only the documented parts replaced, for any document", () => {
+  const CANARY = "Canary-7f3e";
+  let seed = 11;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  for (let i = 0; i < 300; i++) {
+    const n = [0, 1, 4, 12, 31, 45, 60][rnd(7)];
+    const entries = Array.from({ length: n }, (_, k) => ({ name: rnd(5) ? `Name${k}` : `${CANARY}${k}`, rsvp: RSVPS[rnd(4)], slug: `s${k}`, when: ["6pm", "8pm", "", CANARY][rnd(4)], meet: ["Valley of Strength", "", CANARY][rnd(3)], pack: ["yes", "no", ""][rnd(3)], note: CANARY }));
+    const s = {
+      entries, updated: [STATE.updated, "", "2026-11-21T20:15", undefined][rnd(4)], options: rnd(2) ? STATE.options : undefined,
+      siteBase: [BASE, "", "http://board.test"][rnd(3)], boardUrl: [`${BASE}/#signups`, undefined, "http://x"][rnd(3)],
+      journeys: [{ name: CANARY }], notes: CANARY, owner: { name: CANARY }, withheld: rnd(4) === 0,
+      ...(rnd(2) ? { members: entries.slice(0, Math.ceil(n / 2)).map((x) => ({ slug: x.slug, name: x.name, classKey: "mage", classLabel: "Mage", race: "Orc", role: "tank" })) } : {}),
+    };
+    for (const [render, style, look, icon] of [[renderSignupCard, styleSignupCard, SIGNUP_LOOK, "img/icons/tab-signups.png"], [renderBoardCard, styleBoardCard, BOARD_LOOK, "img/icons/tab-five.png"]]) {
+      const today = render(s);
+      const styled = render(s, { style: true });
+      const t = today.embeds[0];
+      const e = styled.embeds[0];
+      const at = `${render.name} #${i}`;
+      const base = s.siteBase === BASE ? BASE : "";
+      const stamp = embedTimestamp(s.updated);
+      // At these sizes nobody is left over, so the footer is the fixed text; with people left over it may only add " · +N more on the board"
+      const footer = e.footer && new RegExp(`^${look.footer} · \\+\\d+ more on the board$`).test(e.footer.text) ? e.footer.text : look.footer;
+      const want = { ...t, author: { name: look.author, ...(base ? { icon_url: `${base}/${icon}` } : {}) }, title: look.title, color: REPLY_COLORS.party, footer: { text: footer } };
+      if (s.boardUrl === `${BASE}/#signups`) want.url = s.boardUrl;
+      if (stamp) want.timestamp = stamp;
+      assert.deepEqual(e, want, at);
+      assert.deepEqual(style(today, s), styled, `${at}: the renderer's style option is exactly the styler applied to today's body`);
+      if (!json(today).includes(CANARY)) assert.ok(!json(styled).includes(CANARY), `${at}: the style printed text today's card does not`);
+      for (const part of [e.title, e.author.name, e.footer.text]) assert.ok(!part.includes(CANARY), `${at}: ${json(part)}`);
+    }
   }
 });
 
@@ -480,7 +555,8 @@ test("finishEmbed: Discord's limits, whole characters, one picture, https only, 
   assert.equal(e.thumbnail, undefined);
   assert.equal(e.url, undefined);
   assert.equal(e.color, undefined);
-  assert.equal(e.author.icon_url, undefined);
+  assert.equal(e.author, undefined, "over 6000, the author line gives way before any fact is cut");
+  assert.deepEqual(finishEmbed({ author: { name: "Shelf", icon_url: "http://board.test/i.png" } }).author, { name: "Shelf" }, "an http icon is left off");
   assert.equal(e.fields.length, 25);
   assert.equal(e.fields[0].name, BLANK, "an empty name is Discord's blank name");
   assert.equal(e.fields[1].value, "—", "an empty value is a dash");
@@ -488,6 +564,21 @@ test("finishEmbed: Discord's limits, whole characters, one picture, https only, 
   assert.equal(e.timestamp, "2026-11-21T20:15:00.000Z");
   assert.deepEqual(finishEmbed({ fields: [{ name: BLANK, value: "x" }] }).fields, [{ name: BLANK, value: "x", inline: false }], "the blank continuation name survives");
   assert.deepEqual(finishEmbed({ title: "  ", description: "\n\n", footer: { text: "" }, author: { name: ZWSP } }), {}, "empty parts are left out, never sent empty");
+  // Text the style did not write is never changed: an inert zero-width break or a line separator stays exactly where it was (no live invite, no new number)
+  const inert = `disc${ZWSP}ord.gg/fict and 6${LSEP}8pm`;
+  const kept = finishEmbed({ description: inert, fields: [{ name: "n", value: inert }] });
+  assert.equal(kept.description, inert);
+  assert.equal(kept.fields[0].value, inert);
+  // In a one-line slot the same characters become spaces, never nothing
+  assert.equal(finishEmbed({ title: `60${ZWSP}30 gold` }).title, "60 30 gold");
+  // Decoration gives way in the order asked, before a fact is cut
+  const tightInput = { author: { name: "a".repeat(40) }, footer: { text: "f".repeat(40) }, title: "t".repeat(256), description: "d".repeat(4096), fields: [{ name: "n", value: "v".repeat(1000) }, { name: "m", value: "w".repeat(600) }] };
+  assert.equal(embedChars(tightInput), 6034);
+  const tight = finishEmbed(tightInput, { yields: ["author", "footer"] });
+  assert.equal(tight.author, undefined, "the author line went first");
+  assert.deepEqual(tight.footer, { text: "f".repeat(40) }, "and that was enough: the footer stays");
+  assert.deepEqual(tight.fields.map((f) => f.value.length), [1000, 600], "no fact was cut");
+  assert.equal(embedChars(tight), 5994);
 });
 
 test("finishComponents: only shapes Discord accepts, link buttons last, at most 5 by 5, unknown keys kept", () => {
@@ -504,6 +595,12 @@ test("finishComponents: only shapes Discord accepts, link buttons last, at most 
   assert.deepEqual(rows[1].components.map((c) => c.label), ["n0", "n1", "n2", "n3", "n4"]);
   assert.deepEqual(rows[2].components.map((c) => c.label), ["n5", "n6"]);
   assert.equal(rows.length, 5);
+  // a link button never keeps a custom_id (Discord refuses the pair); a label is cut, never otherwise changed; a blank label is left out
+  const [linkRow] = finishComponents([{ type: 1, components: [{ type: 2, style: 5, label: "Go", url: `${BASE}/x`, custom_id: "stray" }, { type: 2, style: 2, label: "   ", custom_id: "blank" }, { type: 2, style: 2, label: `Meet ${ZWSP}here`, custom_id: "m" }] }]);
+  assert.deepEqual(linkRow.components, [{ type: 2, style: 2, label: `Meet ${ZWSP}here`, custom_id: "m" }, { type: 2, style: 5, label: "Go", url: `${BASE}/x` }]);
+  // a row that holds a select menu is passed through as it is
+  const select = { type: 1, components: [{ type: 3, custom_id: "pick", options: [{ label: "A", value: "a" }] }] };
+  assert.deepEqual(finishComponents([select]), [select]);
 });
 
 // ---- where the flag is read, and the docs ----
@@ -519,7 +616,8 @@ test("static proof: the flag is named once (reply-style.js, read through legacyO
     const lines = code(read(f));
     const n = lines.filter((l) => /\bREPLY_STYLE\b/.test(l)).length;
     if (n) found[f] = n;
-    const c = lines.filter((l) => /\breplyStyleOn\(\s*env\s*\)/.test(l)).length;
+    const c = lines.filter((l) => /\breplyStyleOn\(/.test(l)).length; // every call, whatever its argument is named
+    for (const l of lines) if (/\breplyStyleOn\(/.test(l)) assert.match(l, /\breplyStyleOn\(env\)/, `${f}: the gate reads the Worker's env: ${l.trim()}`);
     if (c) calls[f] = c;
     for (const l of lines) assert.ok(!/\bREPLY_STYLE\b[^;?]*!==?\s*["']off["']/.test(l), `${f}: ${l.trim()}`);
   }
@@ -529,6 +627,26 @@ test("static proof: the flag is named once (reply-style.js, read through legacyO
   assert.match(src, /^export const replyStyleOn = \(env\) => legacyOn\(env, REPLY_STYLE_FLAG\);$/m);
   assert.equal((src.match(/\bREPLY_STYLE_FLAG\b/g) || []).length, 2, "the constant is defined once and used once, by the gate");
   assert.deepEqual(calls, { "infrastructure/worker/cards.js": 2, "infrastructure/worker/answer-ux.js": 1 });
+  // Who may use the module, by exact name and with no alias, and every styler call sits on a line gated by the flag's value.
+  const importers = {};
+  const uses = {};
+  const UNWIRED = /\b(pageCard|tooltipCard|mapCard|finishEmbed|finishComponents)\b/;
+  for (const f of [...sourceFiles("infrastructure/worker"), ...sourceFiles("pages-worker")]) {
+    if (f.endsWith("/reply-style.js")) continue;
+    const src = read(f);
+    for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']\.\/reply-style\.js["']/g)) importers[f] = m[1].split(",").map((x) => x.trim()).filter(Boolean).sort();
+    assert.ok(!/reply-style(\.js)?["']\s*\)/.test(src) && !/import\s*\*\s*as\s+\w+\s+from\s*["']\.\/reply-style/.test(src), `${f}: no dynamic or namespace import of reply-style.js`);
+    for (const l of code(src)) {
+      if (/\bstyle(SignupCard|BoardCard)\(/.test(l)) (uses[f] ||= []).push(l.includes("opts && opts.style === true ?") ? "gated" : `UNGATED: ${l.trim()}`);
+      if (/\bstyleAnswerButtons\(/.test(l)) (uses[f] ||= []).push(l.includes("replyStyleOn(env) ?") ? "gated" : `UNGATED: ${l.trim()}`);
+      assert.ok(!UNWIRED.test(l), `${f}: ${l.trim()} (the builders and finishers are not wired outside reply-style.js yet; wiring them is its own change)`);
+    }
+  }
+  assert.deepEqual(importers, {
+    "infrastructure/worker/answer-ux.js": ["replyStyleOn", "styleAnswerButtons"],
+    "infrastructure/worker/cards.js": ["BOARD_STYLE_RESERVE", "replyStyleOn", "styleBoardCard", "styleSignupCard"],
+  });
+  assert.deepEqual(uses, { "infrastructure/worker/cards.js": ["gated", "gated"], "infrastructure/worker/answer-ux.js": ["gated"] });
   const toml = read("infrastructure/wrangler.toml");
   const m = toml.slice(toml.indexOf("[vars]")).match(/^REPLY_STYLE\s*=\s*"([^"]*)"/m);
   if (m) assert.ok(["on", "off"].includes(m[1]), `REPLY_STYLE declared as ${m[1]}`);

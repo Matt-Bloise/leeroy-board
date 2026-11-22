@@ -1,10 +1,12 @@
 // Preview Leeroy's Discord replies, today's look beside the REPLY_STYLE look (docs/discord-reply-style.md), from fictional data.
 //   node tests/local/reply-style-preview.mjs                 an outline of every surface, today and styled
 //   node tests/local/reply-style-preview.mjs --json          the message bodies as JSON
-//   node tests/local/reply-style-preview.mjs --html out.html a page that draws them roughly the way Discord's dark theme does
+//   node tests/local/reply-style-preview.mjs --html [file]   a page that draws them roughly the way Discord's dark theme does
+//                                                           (default: reply-style-preview.html in the system temp folder; the path is printed)
 // Not part of `node --test tests/unit/*`. Sends nothing anywhere and makes no AI call: fetch is stubbed, D1 is an in-memory fake, and today's /page,
 // /tooltip and /map replies come from the real discord.js handler driven with a signed fake request (as tests/unit/discord-components.test.mjs does).
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderSignupCard, renderBoardCard } from "../../infrastructure/worker/cards.js";
@@ -164,8 +166,8 @@ const list = await surfaces();
 if (argv.includes("--json")) {
   process.stdout.write(`${JSON.stringify(list, null, 2)}\n`);
 } else if (argv.includes("--html")) {
-  const out = argv[argv.indexOf("--html") + 1];
-  if (!out || out.startsWith("--")) { console.error("usage: --html <file>"); process.exit(2); }
+  const next = argv[argv.indexOf("--html") + 1];
+  const out = next && !next.startsWith("--") ? next : path.join(os.tmpdir(), "reply-style-preview.html");
   fs.writeFileSync(out, page(list));
   console.log(`wrote ${out}`);
 } else {

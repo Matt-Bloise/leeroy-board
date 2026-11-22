@@ -14,7 +14,7 @@
 import { noiseDay, recordShadow } from "./noise.js";
 import { cardMembers, parseClassEmoji, iconFor, claimEntries } from "./card-members.js";
 import { loadPublicInputs, projectForAnonymous, WITHHELD_LINE } from "./public-party.js";
-import { replyStyleOn, styleSignupCard, styleBoardCard } from "./reply-style.js";
+import { replyStyleOn, styleSignupCard, styleBoardCard, BOARD_STYLE_RESERVE } from "./reply-style.js";
 
 export const CARDS_KEY = "cards";
 export const CARD_EDIT_KEY = "cards_edit";
@@ -313,7 +313,9 @@ export function renderBoardCard(state, opts = {}) {
   const description = clampText(`${t.rsvp.in.length} in \u00b7 ${t.rsvp.maybe.length} tentative \u00b7 ${t.rsvp.late.length} running late \u00b7 ${t.rsvp.out.length} out${state && state.withheld ? ` · ${WITHHELD_LINE}` : ""}`, 4096);
   const updatedText = fmtUpdated(state && state.updated);
   if (state && Array.isArray(state.members)) {
-    const fit = fitBlocks(boardBlocks(state, entries), "Party board".length + description.length + (updatedText ? `Updated ${updatedText}`.length : 0));
+    // REPLY_STYLE writes an author line and its own footer in place of "Updated ...", so the styled card reserves those instead (reply-style.js).
+    const reserve = opts && opts.style === true ? BOARD_STYLE_RESERVE : updatedText ? `Updated ${updatedText}`.length : 0;
+    const fit = fitBlocks(boardBlocks(state, entries), "Party board".length + description.length + reserve);
     omitted = fit.omitted;
     fields = fit.values.map((value, i) => ({ name: i === 0 ? "Who" : "\u200b", value, inline: false }));
   } else {
