@@ -6,7 +6,7 @@ test("Worker, unit-test and docs paths do not need the browser jobs", () => {
   assert.equal(siteChanged(["infrastructure/worker/discord.js", "tests/unit/x.test.mjs", "tests/api/a.test.mjs", "docs/runbooks/a.md", "infrastructure/migrations/0004_x.sql", "README.md", "CONTRIBUTING.md"]), false);
 });
 test("site files and assets do", () => {
-  for (const p of ["index.html", "css/shell.css", "js/board.js", "scenes/sheet.js", "landing/index.html", "privacy/index.html", "404.html", "data/client.json", "pages-worker/index.js", "img/a.png", "og-1200x630.jpg", "_headers", "tests/browser/run.mjs"]) assert.equal(isSitePath(p), true, p);
+  for (const p of ["index.html", "css/shell.css", "js/board.js", "scenes/sheet.js", "landing/index.html", "door/index.html", "door/door.js", "privacy/index.html", "404.html", "data/client.json", "pages-worker/index.js", "img/a.png", "og-1200x630.jpg", "_headers", "tests/browser/run.mjs"]) assert.equal(isSitePath(p), true, p);
 });
 test("anything under .github/ forces a full run", () => {
   for (const p of [".github/workflows/preview-tests.yml", ".github/workflows/nightly-production.yml", ".github/CODEOWNERS", ".github/ISSUE_TEMPLATE/bug.md", ".github/actions/x/action.yml", ".github/dependabot.yml"]) assert.equal(isSitePath(p), true, p);
