@@ -51,6 +51,15 @@ async function focusZone(page, i) {
   if (!(await tipVisible(page))) { await page.evaluate(() => document.activeElement && document.activeElement.blur()); await f(); await until(page, () => { const t = document.getElementById("road-card"); return !!t && !t.hidden; }); await settle(page); }
 }
 const tipGone = (page) => until(page, () => { const t = document.getElementById("road-card"); return !t || t.hidden; });
+// Diagnostics for the scroll check (evidence only, never asserted): focus and geometry when the scroll is dispatched, and the call stack of every write that hides the tip after it.
+const scrollDiagArm = (page) => page.evaluate(() => {
+  const c = document.getElementById("road-card"), d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidden"), t = document.querySelectorAll("#map .road-g[data-zone]")[2], a = document.activeElement, K = window.__boardKit;
+  if (c && d && !Object.getOwnPropertyDescriptor(c, "hidden")) { window.__tipHid = []; Object.defineProperty(c, "hidden", { configurable: true, get() { return d.get.call(this); }, set(v) { if (v && !d.get.call(this)) window.__tipHid.push(String(new Error().stack).split("\n").slice(2, 8).map((s) => s.trim()).join(" < ")); d.set.call(this, v); } }); }
+  const rr = (e) => { if (!e) return null; const q = e.getBoundingClientRect(); return [q.left, q.top, q.right, q.bottom].map(Math.round); };
+  const vb = K && K.place && K.place.visibleBounds ? K.place.visibleBounds(0) : null;
+  return { tipShown: !!c && !c.hidden, activeIsZone: !!t && a === t, active: a ? `${a.tagName}.${a.getAttribute("class") || ""}` : null, zone: rr(t), vb: vb ? [vb.x, vb.y, vb.r, vb.b].map(Math.round) : null, hasFocus: document.hasFocus(), coarse: innerWidth < 700 || matchMedia("(pointer: coarse)").matches };
+}).catch((e) => ({ error: String(e.message).slice(0, 80) }));
+const scrollDiagRead = (page) => page.evaluate(() => window.__tipHid || null).catch(() => null);
 
 // Diagnostics for a failed pin hover/tap check: says why (tip element count, box, computed style, page visibility, the point used, viewport, scroll, what is under the pointer). Evidence only; never asserted.
 const hoverDiag = (page, box, shown) => page.evaluate(([b, sh]) => {
@@ -101,9 +110,11 @@ async function run(label, viewport, mobile) {
   // The sheet really scrolls by 40 px when it can; the dispatched event covers a size where it cannot.
   if (!(await roadsUp(page))) await open(page, "roads");
   await focusZone(page, 2);
+  const armed = await scrollDiagArm(page);
   const moved = await page.evaluate(() => { const b = document.getElementById("sheet-body"); if (!b) return null; const before = b.scrollTop, max = b.scrollHeight - b.clientHeight; b.scrollTop = before + (before + 40 <= max ? 40 : -40); b.dispatchEvent(new Event("scroll")); return { before, after: b.scrollTop, max }; }).catch(() => null);
   await page.waitForTimeout(150);
-  ok(`${label}: a scroll while a zone has focus keeps its tip open`, await tipVisible(page), JSON.stringify(moved));
+  const keptOpen = await tipVisible(page);
+  ok(`${label}: a scroll while a zone has focus keeps its tip open`, keptOpen, JSON.stringify(moved) + (keptOpen ? "" : " DIAG(evidence for a CI-only failure, nothing asserted) " + JSON.stringify({ atScroll: armed, hiddenBy: await scrollDiagRead(page) })));
   ts = await tipState(page);
   ok(`${label}: after that scroll the tip is inside the viewport and covers no pin or name card`, !!ts && ts.l >= 0 && ts.t >= 0 && ts.r <= ts.w && ts.b <= ts.h && ts.hits.length === 0, JSON.stringify({ moved, ts }));
   await page.keyboard.press("Escape");
