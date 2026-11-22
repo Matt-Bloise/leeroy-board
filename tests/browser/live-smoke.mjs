@@ -143,7 +143,6 @@ async function one(browser, engine, size, opts, setup, fault = false) {
     console.log(`INFO ${tag} ${names.length} check(s) failed (${names.slice(0, 3).join("; ")}): ${String((v.rows.find((r) => !r[1]) || [])[2] || "").slice(0, 300)} retrying once in a fresh context in ${Math.round(retryMs() / 1000)} s`);
     await new Promise((r) => setTimeout(r, retryMs()));
     const v2 = await visit(browser, engine, size, opts, setup); retried = true;
-    if (v2 && v2.w5 && v2.w5.length) warn(tag, v2.w5, ", retry"); /* visit() returns only rows: this line threw on every retry */
     v = { ...v2, rows: mergeRuns(v.rows, v2.rows) };
   }
   return { ...v, retried };
