@@ -390,7 +390,7 @@ test("the styled cards are today's messages with only the documented parts repla
     const s = {
       entries, updated: [STATE.updated, "", "2026-11-21T20:15", undefined][rnd(4)], options: rnd(2) ? STATE.options : undefined,
       siteBase: [BASE, "", "http://board.test"][rnd(3)], boardUrl: [`${BASE}/#signups`, undefined, "http://x"][rnd(3)],
-      journeys: [{ name: HIDDEN }], notes: HIDDEN, owner: { name: HIDDEN }, title: HIDDEN, content: HIDDEN, withheld: rnd(4) === 0,
+      journeys: [{ name: HIDDEN }], tallies: { in: [HIDDEN], note: HIDDEN }, notes: HIDDEN, owner: { name: HIDDEN }, title: HIDDEN, content: HIDDEN, withheld: rnd(4) === 0,
       ...(rnd(2) ? { members: entries.slice(0, Math.ceil(n / 2)).map((x) => ({ slug: x.slug, name: x.name, classKey: "mage", classLabel: "Mage", race: "Orc", role: "tank", notes: HIDDEN })) } : {}),
     };
     for (const [render, style, look, icon] of [[renderSignupCard, styleSignupCard, SIGNUP_LOOK, "img/icons/tab-signups.png"], [renderBoardCard, styleBoardCard, BOARD_LOOK, "img/icons/tab-five.png"]]) {
@@ -477,6 +477,7 @@ test("/tooltip and /map cards: the rules and today's links", () => {
   assert.equal(tip.embeds[0].url, `${BASE}/#lib.classes/fixture-spells`);
   assertBodyValid(tip, "tooltip");
   // library text in bold is escaped, never stripped: it reads exactly as written and cannot end the bold early
+  assert.equal(tooltipCard({ name: "x", row: { id: "a/b", category: "", title: "Ends\\" }, boardUrl: BASE }).embeds[0].description, "Mentioned on **Ends\\\\**.");
   assert.equal(tooltipCard({ name: "x", row: { id: "a/b", category: "", title: "**Star** page_one" }, verified: "yes", boardUrl: BASE }).embeds[0].description, "Mentioned on **\\*\\*Star\\*\\* page\\_one**.");
   const cases = [
     [{ plan: { value: "valley-of-strength", name: "Valley of Strength" } }, "Route plan: Valley of Strength", "#atlas.plan.valley-of-strength"],
@@ -718,6 +719,9 @@ test("static proof: the flag is named once (reply-style.js, read through legacyO
     }
   }
   assert.deepEqual(seenImports, Object.fromEntries(Object.entries(IMPORTS).map(([f, l]) => [f, [l]])), "only the two exact import lines mention reply-style.js");
+  for (const f of [...sourceFiles("infrastructure/worker"), ...sourceFiles("pages-worker")]) {
+    if (f !== "infrastructure/worker/reply-style.js") for (const l of code(read(f))) assert.ok(!/\bstyle:\s*true\b/.test(l), `${f}: only the executors pass the flag's value; nothing passes a literal style: true: ${l.trim()}`);
+  }
   assert.deepEqual(seenUses, ALLOWED, "every other use of the module's names is one of the exact gated lines");
   const toml = read("infrastructure/wrangler.toml");
   const m = toml.slice(toml.indexOf("[vars]")).match(/^REPLY_STYLE\s*=\s*"([^"]*)"/m);
