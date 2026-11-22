@@ -3,6 +3,8 @@
 //   node addon-import.mjs --url http://127.0.0.1:8080/   (or env PREVIEW_PAGES)
 // Everything under /api/ is stubbed by interception with a made-up member key; nothing real is sent. Exit 0 when every check passes, 1 otherwise.
 import { pageUrl } from "../helpers/page-url.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
+const ME = standIn(3); // the fourth member of the party the API stub serves (never a literal name)
 import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
@@ -18,22 +20,23 @@ async function run(browser, [label, opts]) {
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" }), page = await ctx.newPage(), errors = [], posts = [];
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]|^Failed to load resource|cloudflareinsights|net::ERR|WebSocket connection/.test(m.text())) errors.push(m.text()); });
-  await ctx.addInitScript(([key]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", "bloise"); localStorage.setItem("board-key", key); } catch (e) {} }, [KEY]);
+  await ctx.addInitScript(([key, me]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", me); localStorage.setItem("board-key", key); } catch (e) {} }, [KEY, ME.slug]);
   await ctx.route("**/api/**", async (route) => {
     const u = new URL(route.request().url()), m = route.request().method();
-    if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: "bloise", name: "Bloise" });
+    if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: ME.slug, name: ME.name });
     if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
     if (m === "POST" && u.pathname.endsWith("/api/sheet")) {
       const b = route.request().postDataJSON(); posts.push(b); await new Promise((r) => setTimeout(r, 400));
       if (b.field === "level" && !globalThis.__lvOk) return json(route, { error: "busy" }, 429);
       return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() });
     }
+    if (m === "GET" && /\/api\/data\/[a-z-]+(?:\.json)?$/.test(u.pathname)) return route.fallback(); // the member documents: the API stub answers them (the board reads <brain>/data/<name>)
     return route.abort();
   });
   await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" } }), { waitUntil: "load" });
   await page.waitForFunction(() => window.__scenes && window.__boardKit && window.__boardKit.D && window.__boardKit.D.party, null, { timeout: 20000 }).catch(() => {});
   await page.evaluate(() => window.__scenes.load("sheet")).catch(() => {});
-  await page.evaluate(() => window.__sheet.openSheet("bloise", true));
+  await page.evaluate((s) => window.__sheet.openSheet(s, true), ME.slug);
   await page.waitForTimeout(1500);
   ok(`${label}: Import from game button is on your own sheet`, await page.locator("#ps-imp-btn").count() === 1);
   await page.locator("#ps-imp-btn").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-imp-btn").click();
@@ -105,7 +108,7 @@ async function run(browser, [label, opts]) {
   /* a re-render of the sheet during a read builds a new text box: the file's text must land in the one on screen */
   await page.locator("#imp-text").fill(Z); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
   await drop(s, 700);
-  await page.evaluate(() => window.__sheet.show("sheet", "bloise"));
+  await page.evaluate((s) => window.__sheet.show("sheet", s), ME.slug);
   await page.waitForTimeout(400);
   const boxBefore = await page.evaluate(() => document.getElementById("imp-text").value);
   await page.waitForFunction(() => /level 33/.test(document.getElementById("imp-out").innerText), null, { timeout: 5000 }).catch(() => {});
@@ -158,20 +161,21 @@ async function contexts(browser, [label, opts]) {
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" }), page = await ctx.newPage(), errors = [], posts = [];
   let hold = null; /* { gate, used, started }: the next POST waits on the gate */
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
-  await ctx.addInitScript(([key]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", "bloise"); localStorage.setItem("board-key", key); localStorage.setItem("board-wl", "1"); } catch (e) {} }, [KEY]);
-  await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": true }; await json(route, j); });
+  await ctx.addInitScript(([key, me]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", me); localStorage.setItem("board-key", key); localStorage.setItem("board-wl", "1"); } catch (e) {} }, [KEY, ME.slug]);
+  await ctx.route("**/data/client*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": true }; await json(route, j); });
   await ctx.route("**/api/**", async (route) => {
     const u = new URL(route.request().url()), m = route.request().method();
-    if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: "bloise", name: "Bloise", user: "abcd1234", expires_at: 4102444800, characters: CHARS });
+    if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: ME.slug, name: ME.name, user: "abcd1234", expires_at: 4102444800, characters: CHARS });
     if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
     if (m === "POST" && u.pathname.endsWith("/api/sheet")) { const b = route.request().postDataJSON(); posts.push(b); if (hold && !hold.used) { hold.used = true; await hold.gate; } else await new Promise((r) => setTimeout(r, 400)); return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() }); }
+    if (route.request().method() === "GET" && /\/api\/data\/[a-z-]+(?:\.json)?$/.test(new URL(route.request().url()).pathname)) return route.fallback(); // the member documents: the API stub answers them
     return route.abort();
   });
   await ctx.route("**/js/addon-import.js*", (route) => route.abort());
   await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" } }), { waitUntil: "load" });
   await page.waitForFunction(() => window.__scenes && window.__boardKit && window.__boardKit.D && window.__boardKit.D.party, null, { timeout: 20000 }).catch(() => {});
   await page.evaluate(() => window.__scenes.load("sheet")).catch(() => {});
-  await page.evaluate(() => window.__sheet.openSheet("bloise", true));
+  await page.evaluate((s) => window.__sheet.openSheet(s, true), ME.slug);
   await page.locator("#ps-chars .ps-char").nth(1).waitFor({ timeout: 10000 }).catch(() => {});
   await page.locator("#ps-imp-btn").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-imp-btn").click();
   await page.locator("#imp-out").waitFor({ timeout: 8000 });

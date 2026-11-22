@@ -72,9 +72,9 @@ async function visit(browser, engine, size, opts, setup) {
     ok(`${tag} first visit: Guided is the default journey`, s.journey === "guided", `data-journey: ${s.journey || "-"}`);
     ok(`${tag} first visit: nothing stored, so no journey reads as pressed in the head`, !s.headPressed.length, `pressed: ${s.headPressed.join(",") || "-"}`);
     ok(`${tag} first visit: a name picker with at least 4 chips`, s.chips.length >= 4, `visible chips: ${s.chips.length}`);
-    ok(`${tag} first visit: every name chip label is readable`, s.chips.length >= 4 && s.chips.every((c) => c.readable), s.chips.filter((c) => !c.readable).map((c) => `${c.name} (lum ${c.lum.toFixed(2)}, shadow ${c.shadow})`).join("; ") || "no chips");
+    ok(`${tag} first visit: every name chip label is readable`, s.chips.length >= 4 && s.chips.every((c) => c.readable), `${s.chips.filter((c) => !c.readable).length} of ${s.chips.length} chip labels not readable (counts only, no member names)`);
     const t0 = await page.evaluate(visibleText), b0 = bad(t0);
-    ok(`${tag} no "null" or "undefined" in visible text (first view)`, !b0, b0 && `found ${b0} near: ${t0.slice(Math.max(0, t0.search(new RegExp(`\b${b0}\b`)) - 40), t0.search(new RegExp(`\b${b0}\b`)) + 40).replace(/\s+/g, " ")}`);
+    ok(`${tag} no "null" or "undefined" in visible text (first view)`, !b0, b0 && `found "${b0}" (${t0.split(b0).length - 1} occurrence(s) in ${t0.length} characters of visible text; the surrounding text is not printed)`);
     /* the three journeys through the head toggle: on a phone the plate opens on the first tap, then the others show */
     const reach = [];
     for (const j of ["curious", "everything", "guided"]) {
@@ -117,7 +117,7 @@ async function visit(browser, engine, size, opts, setup) {
     if (engine === "chromium" && !opts.isMobile) for (const sc of ["tonight", "timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "decide"]) {
       await page.evaluate((h) => { location.hash = "#" + h; }, sc); await page.waitForTimeout(900);
       const ts = await page.evaluate(visibleText), bs = bad(ts);
-      ok(`${tag} no stray value in visible text (${sc})`, !bs, bs && `found ${bs} near: ${ts.slice(Math.max(0, ts.indexOf(bs) - 50), ts.indexOf(bs) + 30).replace(/\s+/g, " ")}`);
+      ok(`${tag} no stray value in visible text (${sc})`, !bs, bs && `found "${bs}" (${ts.split(bs).length - 1} occurrence(s) in ${ts.length} characters of visible text; the surrounding text is not printed)`);
     }
     const noGl = (e) => engine === "webkit" && process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1" && /Error creating WebGL context/.test(e.text); /* headless Linux WebKit in CI has no WebGL; the board still renders its fallback */
     const insights = errs.some((e) => /cloudflareinsights\.com/.test(e.text + " " + e.at)) || xo.some((r) => /cloudflareinsights\.com/.test(r.url)); /* Cloudflare Web Analytics beacon on a preview host is blocked by CORS: third-party, not our code */

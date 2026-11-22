@@ -1,4 +1,5 @@
 // Server-side checks for sheet values, one rule per field that has one. Pure; no I/O.
+import { VOCAB_LIST, vocabProblem } from "./sheet-vocab.js";
 // The level cap is the game's: data/client.json "level" (60, the client build's spell table is scaled to it). js/brain.js sheetVocab caps
 // levelMax at the same 60. tests/unit/sheet-level.test.mjs fails if this constant and data/client.json disagree.
 export const LEVEL_CAP = 60;
@@ -17,7 +18,14 @@ export const visibilityOnly = (field, body) => field === "level" && body && body
 // Returns null when the value may be stored, or a short reason. `value` is the raw body value (undefined when the key is absent).
 // level: an integer from 1 to LEVEL_CAP. A missing value (without a visible flag), 0, a float, a numeric string and anything else are refused.
 // null is "clear the level": only where the caller allows it (the owner's POST /sheet: { allowClear: true }); the admin route and Discord refuse it.
-export function sheetValueProblem(field, value, body, { allowClear = false } = {}) {
+// race, class, spec_path, spec_at_40, professions and plan_zone: the value must be on the board's list (sheet-vocab.js); an unknown value is refused. A write with no
+// value (a visibility change) is not a value; null clears where the caller allows it. level and goals keep their own rules; launch_state has none here.
+export function sheetValueProblem(field, value, body, { allowClear = false, loose = false } = {}) {
+  if (VOCAB_LIST[field]) {
+    if (value === undefined && body && typeof body.visible === "boolean") return null;
+    if (value === null && allowClear) return null;
+    return vocabProblem(field, value, { loose });
+  }
   if (field === "level") {
     if (value === undefined && visibilityOnly(field, body)) return null;
     if (value === null && allowClear) return null;

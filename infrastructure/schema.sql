@@ -479,3 +479,108 @@ CREATE TABLE IF NOT EXISTS vote_ballots (
   cast_at TEXT NOT NULL,
   PRIMARY KEY (vote_id, voter_hash)
 );
+
+-- Group memory (migration 0011; flag GROUP_MEMORY, docs/runbooks/group-memory.md). group_log: what the group said (asks, answers, later channel messages), by member slug.
+-- group_wiki: running notes the refresher writes from new group_log rows. Private storage: no route reads them; only a roster member's own prompt does.
+CREATE TABLE IF NOT EXISTS group_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'web',
+  author_slug TEXT NOT NULL CHECK (length(author_slug) > 0),
+  kind TEXT NOT NULL CHECK (kind IN ('ask', 'answer', 'message')),
+  text TEXT NOT NULL,
+  reply_to TEXT,
+  source TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_group_log_channel_at ON group_log(channel, at DESC);
+CREATE INDEX IF NOT EXISTS idx_group_log_author ON group_log(author_slug, at);
+CREATE TABLE IF NOT EXISTS group_wiki (
+  page_key TEXT PRIMARY KEY CHECK (length(page_key) BETWEEN 1 AND 40),
+  title TEXT NOT NULL,
+  body_md TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  rev INTEGER NOT NULL DEFAULT 1,
+  note TEXT
+);
+
+-- listen_events / listen_quiet: the listener (flag LISTENER; migration 0012). Private storage; no route reads them.
+CREATE TABLE IF NOT EXISTS listen_events (
+  msg_id TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  ask_id TEXT,
+  posted INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_listen_events_at ON listen_events(at);
+CREATE TABLE IF NOT EXISTS listen_quiet (
+  channel TEXT PRIMARY KEY,
+  at TEXT NOT NULL
+);
+
+-- shadow_answers: the SHADOW_ASK recorder (flag SHADOW_ASK; migration 0014). Private storage; no route reads it. Erased by asker_slug.
+CREATE TABLE IF NOT EXISTS shadow_answers (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  asker_slug TEXT,
+  question TEXT NOT NULL,
+  answer TEXT,
+  model TEXT,
+  latency_ms INTEGER,
+  status TEXT NOT NULL,
+  reason TEXT,
+  local_answer TEXT,
+  meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_shadow_answers_created ON shadow_answers(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_shadow_answers_asker ON shadow_answers(asker_slug);
+
+-- incidents: the dead-man check (flag DEADMAN; migration 0015). One row per silence of an expected PC-side source; no person, no text. At most one open incident per source.
+CREATE TABLE IF NOT EXISTS incidents (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  opened_at TEXT NOT NULL,
+  last_seen_at TEXT,
+  closed_at TEXT,
+  detail TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_incidents_open ON incidents(source) WHERE closed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_incidents_opened ON incidents(opened_at DESC);
+
+-- game_facts: grounded game facts (flag GAME_FACTS_LOAD; migration 0016). Game data only, no friend data. Plain tables and two indexes: no virtual table, no trigger (see the migration for the write cost of each index).
+CREATE TABLE IF NOT EXISTS game_fact_loads (
+  id TEXT PRIMARY KEY,
+  build TEXT,
+  manifest_sha256 TEXT,
+  files_json TEXT,
+  kind TEXT NOT NULL CHECK (kind IN ('client', 'curated')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done', 'failed')),
+  counts_json TEXT,
+  started_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS game_facts (
+  id TEXT NOT NULL,
+  load_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  subject TEXT NOT NULL DEFAULT '',
+  subject_norm TEXT NOT NULL DEFAULT '',
+  subject_base TEXT NOT NULL DEFAULT '',
+  claim TEXT NOT NULL,
+  value TEXT NOT NULL DEFAULT '',
+  unit TEXT NOT NULL DEFAULT '',
+  source_table TEXT NOT NULL DEFAULT '',
+  row_id TEXT NOT NULL DEFAULT '',
+  build TEXT,
+  verdict TEXT NOT NULL DEFAULT 'holds' CHECK (verdict IN ('holds', 'wrong', 'unverifiable')),
+  source_class TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  superseded INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT,
+  PRIMARY KEY (id, load_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_game_facts_kind_subject ON game_facts(kind, subject_norm);
+CREATE INDEX IF NOT EXISTS idx_game_facts_kind_base ON game_facts(kind, subject_base) WHERE subject_base <> '';

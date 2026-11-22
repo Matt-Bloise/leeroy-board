@@ -4,7 +4,7 @@
 
 ## 0. Who is who (open question)
 
-Whether the guild admin is the controller and the service is a processor, or the two are joint controllers for some data, is undecided (SYNTHESIS Part 5e, "controller/processor split"). This template assumes the common case: the **guild admin (Customer) is controller** of member data entered for their guild, and the **Provider** (the selling entity, [name; entity not yet formed]) is **processor**. Counsel to confirm, and to say which data (for example login and abuse prevention) the Provider holds as its own controller.
+Whether the guild admin is the controller and the service is a processor, or the two are joint controllers for some data, is undecided (the planning notes (private), Part 5e, "controller/processor split"). This template assumes the common case: the **guild admin (Customer) is controller** of member data entered for their guild, and the **Provider** (the selling entity, [name; entity not yet formed]) is **processor**. Counsel to confirm, and to say which data (for example login and abuse prevention) the Provider holds as its own controller.
 
 | Term | Value |
 | :--- | :--- |
@@ -56,9 +56,9 @@ In writing, including electronic form. Flow-down to sub-processors as 1.5.
 | Item | Draft content |
 | :--- | :--- |
 | Data subjects | The Customer's guild members and admins |
-| Categories | Discord id, display name, avatar, guild roles; sign-up choices and availability; questions typed to the assistant and the answers; hashed guest IP for rate limits (24 h) |
+| Categories | Discord id, display name; sign-up choices and availability; questions typed to the assistant and the answers; hashed guest IP for rate limits (eligible for deletion after 2 hours) |
 | Special categories | None intended. Free-text fields could contain any; the Customer is told not to enter them. |
-| Retention | As `docs/privacy.md` (for example Ask history 90 days, intents 7 days, guest limits 24 h). The synthesis targets are not all built; verify before signing. |
+| Retention | As `docs/privacy.md`: guest address fingerprints become eligible for deletion after 2 hours; web sign-in sessions last 30 days; most other data (characters, sign-ups, questions and answers, votes, counters) is kept until deletion is requested, with no timer. Verify before signing. |
 | Frequency | Continuous |
 
 ## Annex 2: Technical and organisational measures (to verify)

@@ -13,11 +13,11 @@ Parts:
 
 Real questions stay on the owner's computer. Never commit them, never paste them into a PR, an issue or a chat with a tool that stores them. The repo carries only the fictional sample, and a unit test fails if the rating page, the sample or this runbook contains a Discord-id-shaped number, an email address or a mention.
 
-## 1. Switch the route on (Josh's deploy)
+## 1. Switch the route on (the account admin's deploy)
 
 The route is off by default. It answers 404 unless the Worker has `EVAL_ENABLED=true`, and it always needs `BOARD_ADMIN_TOKEN`.
 
-1. Ask Josh to set `EVAL_ENABLED = "true"` in the Worker vars for the bake-off window and deploy.
+1. Ask the account admin to set `EVAL_ENABLED = "true"` in the Worker vars for the bake-off window and deploy.
 2. When the run is done, have him remove it (or set it to `false`) and deploy again. Confirm with the check below that the route is back to 404.
 
 Check (does not print the token):
@@ -161,11 +161,11 @@ Columns: wins, losses, ties, both bad and strength.
 | Everything is close, many ties | The candidates are equivalent for this voice | Choose the cheapest or fastest one, or the one with the best lint pass rate |
 | Most pairs are "both bad" | No candidate reproduces the voice | Work on the prompt and persona pack before comparing models again |
 
-Latency: the lint summary command above prints median milliseconds per candidate. Discord needs an answer within 24 seconds (`ASK_DEADLINE_MS`), and the chosen provider gets 12 seconds (`ASK_CHOSEN_TIMEOUT_MS`).
+Latency: the lint summary command above prints median milliseconds per candidate. Discord needs an answer within 26 seconds (`ASK_DEADLINE_MS`; the Worker has 30 s of waitUntil after the response), and the chosen provider gets 12 seconds (`ASK_CHOSEN_TIMEOUT_MS`).
 
-## 7. Set the chosen model (through Josh's deploy)
+## 7. Set the chosen model (through the account admin's deploy)
 
-The bake-off changes nothing by itself. To adopt a result, send Josh the winning candidate and he deploys it:
+The bake-off changes nothing by itself. To adopt a result, send the account admin the winning candidate and the account admin deploys it:
 
 | Winner | Change |
 |---|---|

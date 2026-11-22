@@ -16,7 +16,10 @@ let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const here = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "testkeytestkeytestkey12";
-const ALLOWED = /^(https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:jmattbloise|joshbblaine)\.workers\.dev|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/;
+/* The page's allowlist: the production API, a local Worker, and (in CI, on a stamped preview) exactly the preview Worker origin, taken from PREVIEW_API (set and masked by the workflow: no host is written in this file). */
+const PREVIEW_ORIGIN = (() => { try { return process.env.PREVIEW_API ? new URL(process.env.PREVIEW_API).origin : ""; } catch (e) { return ""; } })();
+const ALLOWED_RE = /^(https:\/\/api\.leeroy\.party|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/;
+const ALLOWED = { test: (o) => ALLOWED_RE.test(o) || (PREVIEW_ORIGIN !== "" && o === PREVIEW_ORIGIN) };
 const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*", "content-type": "application/json" };
 const PAGE_ORIGIN = new URL(BASE).origin;
 /* The suite must behave the same against a local server and against the deployed PR preview (https://pr-N.leeroy-board.pages.dev), and must never need a live Worker or 127.0.0.1:8787:
@@ -63,9 +66,9 @@ async function open(url, { init, mutateBootstrap } = {}) {
 /* F1. A ?brain= value outside the allowlist is ignored: no request goes to it and no Authorization leaves for any non-allowlisted origin. */
 const EVIL = [
   "https://evil.example", "https://evil.example/api", "http://evil.example:8787", "https://api.leeroy.party.evil.example",
-  "https://api.leeroy.party@evil.example", "http://127.0.0.1.evil.example", "https://leeroy-brain-pr-1.jmattbloise.workers.dev.evil.example",
-  "https://leeroy-brain-pr-x.jmattbloise.workers.dev", "https://jmattbloise.workers.dev", "https://leeroy-brain-pr-1.evil.workers.dev",
-  "https://leeroy-brain-pr-1.joshbblaine.workers.dev.evil.example", "https://leeroy-brain-pr-1.other-account.workers.dev",
+  "https://api.leeroy.party@evil.example", "http://127.0.0.1.evil.example", "https://leeroy-brain-pr-1.example-owner.workers.dev.evil.example",
+  "https://leeroy-brain-pr-x.example-owner.workers.dev", "https://example-owner.workers.dev", "https://leeroy-brain-pr-1.evil.workers.dev",
+  "https://leeroy-brain-pr-1.example-account.workers.dev.evil.example", "https://leeroy-brain-pr-1.other-account.workers.dev",
 ];
 for (const evil of EVIL) {
   const { ctx, page, seen } = await open(pageUrl(BASE, { params: { brain: evil }, hash: `k=${KEY}` }));

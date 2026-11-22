@@ -344,7 +344,8 @@ function scanSkeleton(text, R, kinds, out, seg) {
     if (!hit) for (const n of e.partial) { for (const t of vs.plain) if (t.includes(n)) { hit = "partial"; break; } if (hit) break; }
     if (!hit && e.rev) {
       // the name typed backwards (or shown backwards by a bidi override that was stripped)
-      for (const n of e.rev) if (sk.includes(n)) { hit = "name"; break; }
+      // The leet forms of the text count here too: a name both reversed and written with digits ("kc1w3ldn1rB") must not slip past.
+      for (const n of e.rev) { for (const t of variants().plain) if (t.includes(n)) { hit = "name"; break; } if (hit) break; }
     }
     if (hit) out.push({ kind: hit, seg, ref: e.member });
   }

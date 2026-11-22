@@ -1,11 +1,11 @@
 # Runbook: CI minutes (lean by default)
 
-Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `security.yml`, `nightly-production.yml` (Lighthouse moved there from `lighthouse.yml`, removed). `deploy-cloudflare.yml` is unchanged (about 1 minute per merge).
+Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `security.yml`, `nightly-production.yml` (Lighthouse moved there from `lighthouse.yml`, removed). `deploy-cloudflare.yml` skips pushes that change only docs, tests, markdown or tools it never runs (`on.push.paths-ignore`; rules and queueing: `rollback.md`, "When a push deploys"). Cross-engine QA (`cross-engine.yml`) already runs only on a daily schedule and by hand, never per push or PR.
 
 ## Cost model
 
-- This repo is private, so GitHub Actions is metered: **$0.006 per Linux minute**. The owner set a **$20 hard-stop budget**, which is about 3,300 minutes. Any free minutes included in the plan are used first and are not counted on here.
-- **Every job is rounded up to a whole minute.** A 10-second job bills 1 minute; a job that is skipped bills 0; a workflow run whose jobs are all skipped bills 0. Many small jobs cost more than one job doing the same work, which is why the former tiny jobs were folded.
+- This repository is public (since 2026-11-19), so standard GitHub-hosted Linux runners are free for it and nothing here is billed. The numbers below were measured when the repository was private and metered (about $0.006 per Linux minute); they are kept as a measure of runner time, not as money. The cost that remains is time: a full run is slow, holds a preview environment (the account has 9 D1 slots) and spends Worker requests (see the end of this page), so the light-by-default rules below still apply.
+- **Every job was rounded up to a whole minute when billing applied.** A 10-second job counted 1 minute; a job that is skipped bills 0; a workflow run whose jobs are all skipped bills 0. Many small jobs cost more than one job doing the same work, which is why the former tiny jobs were folded.
 - Every push to a PR starts runs. Measured on 2 November 2026 (validated against GitHub's meter within 4 percent): Preview Tests 8.3 min per run, PR Ephemeral Preview 3.2 min per run over 275 runs, Security Scan 6.2, Lighthouse 3.4 (Lighthouse has since moved to the nightly run against production; the total below is the figure measured at the time), about 21 minutes per push in total. Of 97 Preview Tests runs only 42 ended green, 28 were cancelled mid-run and 21 failed, 18 of them in the browser job (timing-sensitive degraded-modes checks such as "API held 12 s" on a slow preview).
 
 ## Light by default, heavy on request
@@ -37,6 +37,7 @@ Behaviour of the labels:
 - Put `ci-full` on a PR only when it is final: reviewed, rebased, no pushes expected. Then wait for the gate comment.
 - Remove the label after the merge decision if the PR is not merging yet and you need the slot; the passed comment for that head sha stays.
 - Docs-only PRs need no label: they get `### Preview tests: passed (<sha7>)` with a `passed (docs only)` line from the light run.
+- Light path (`tools/docs-only.mjs`, output `docs_only`): besides docs, a PR whose every file is under `tests/unit/` or is a tool no workflow, deploy, bundle or browser test runs (`LIGHT_TOOL_FILES`, `LIGHT_TOOL_DIRS`: replay, shadow-ask, cost-model, restore and export helpers, ...) gets no preview and the gate comment `passed (docs only)` from unit and stamps. The unit job covers those files. Any other path forces the full rules. No workflow-level `paths` filter is used on Preview Tests or PR Preview, so the checks always report; only job-level `if` on the scope output skips jobs, and a skipped job counts as passing for required checks.
 - `ci-scope` forces the browser and layout jobs for any change under `.github/`, `tools/`, `infrastructure/wrangler*`, any `package*.json`, and the site paths. Renames count on both sides. An empty list or an unknown path shape also forces them. A bug there is a silent gate bypass, so `tests/unit/ci-scope.test.mjs` covers each rule.
 
 ## The merge gate (contract for `merge-if-green`)
@@ -78,7 +79,7 @@ Facts the gate relies on:
 - Issue rule: the first failed night opens nothing and writes nothing; the previous finished run of the workflow is the memory. After two consecutive failed runs, `notify` searches for an open issue labelled `nightly`; it comments there if one exists, otherwise opens exactly one. It never closes the issue. Close it by hand when the nightly is green again.
 - GitHub runs scheduled workflows **only on the default branch** and **disables them after 60 days without repository activity**. If the nightly goes quiet, open the Actions tab, select "Nightly Production Checks" and re-enable it, then run it once. A merged PR counts as activity.
 
-## Expected billable minutes
+## Expected runner minutes (measured under the former metering)
 
 Estimates from the job list with each job rounded up to a whole minute. Durations are assumptions where marked; the measured averages above are the only hard numbers. Compare with the measured baseline of about 21 minutes per push.
 
@@ -97,15 +98,9 @@ Estimates from the job list with each job rounded up to a whole minute. Duration
 
 Typical PR: five light pushes (about 35), one full run (about 38), one teardown (about 2) is about 75 minutes, about $0.45, against about 127 minutes for six pushes at the measured baseline. The saving comes from fewer heavy runs and from not cancelling or failing them mid-way, not from a cheaper heavy run.
 
-## Budget policy
+## Budget policy (historical)
 
-The $20 budget is about 3,333 minutes. Alerts at 75, 90 and 100 percent:
-
-| Spend | Minutes (about) | Action |
-| :--- | ---: | :--- |
-| 75 percent ($15) | 2,500 | Freeze heavy CI: no new `ci-full` labels except for a fix to production, disable the nightly in the Actions tab. Light checks and deploys continue. |
-| 90 percent ($18) | 3,000 | Deploys only: merge only what must ship, and the owner checks such a PR by hand against the CONTRIBUTING.md list; disable PR workflows from the Actions tab if needed. `deploy-cloudflare.yml` keeps running (1 minute per merge). |
-| 100 percent ($20) | 3,333 | GitHub stops all runs, deploys included. Deploy by hand from the owner's machine with the same `wrangler` commands as `deploy-cloudflare.yml` (rollback commands: `rollback.md`) until the budget is raised or the month resets. |
+While the repository was private there was a $20 hard-stop budget (about 3,333 minutes) with alerts at 75, 90 and 100 percent. That policy no longer applies: the repository is public and standard runners are free. If the repository is made private again, restore it from git history of this file before relying on GitHub Actions.
 
 ## What to look at when these workflows first run
 
@@ -114,3 +109,7 @@ They were not run before the pull request that introduced them was opened (actio
 ## Worker requests (added with batch C)
 
 CI minutes are not the only meter: the Workers Free plan allows 100,000 Worker requests a day for the whole account, and a `ci-full` run used to spend about 1,500 of them locally measured (the layout sweep alone 1,056). Browser suites now answer `/api/` from recorded fixtures (`tests/fixtures/api-snapshot`), so a full run is about 150 Worker requests (the API suite and `deploy-smoke`). The nightly `degraded-modes` run also answers from the fixtures (0 requests). Numbers, rules and the local workflow: `docs/runbooks/cloudflare-requests.md`.
+
+## Browser job in shards (2026-11-20)
+
+The `browser` job used to run 46 suites and the probe self-test one after another on one runner: about 50 minutes, 17 of them in `prod-probe-selftest.mjs` (44 cases, three at a time, each launching browsers and waiting out real settle timeouts; measured from the job log of run 44579852532). It is now one job name with seven matrix legs: the browser suites in 4 shards (`tests/browser/run.mjs --shard i/4`, live-smoke first in shard 0) and the self-test in 3 shards (`prod-probe-selftest.mjs --shard i/3`; shard 0 also owns the redirect and request-budget sections). The report job still reads `needs.browser.result`, the AND of all legs. `tests/unit/browser-shards.test.mjs` pins that the shards hold every suite and case exactly once. The self-test waits are deliberate (they prove the probe waits for slow chips and copy), so they are not shortened; the pool of three is rolling instead of fixed batches. Nightly, `nightly-production.yml` runs the self-test whole.

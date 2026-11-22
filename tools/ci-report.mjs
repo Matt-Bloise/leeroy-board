@@ -35,7 +35,10 @@ const skipped = (r) => r === "skipped";
 // in: { apiNeeded (false only when no Worker or API file changed), sha7, sha (full head sha), runId, previewSkipped (full run, preview secrets absent), docsOnly, siteChanged, full, results: {unit, stamps, api, browser, layout}, counts: {uPass,uFail,aPass,aFail,bPass,bFail,lFail}, pagesUrl, failing, visual, runUrl }
 // out: { body, pass, gate }  (gate: the body carries the merge-gate phrase)
 export function buildReport(i) {
-  const r = i.results;
+  // The preview crawl is its own job (it hides a member and must run alone) but belongs to the API gate: the API row is green only when api AND crawl are. A crawl result that is not given
+  // is the api result (callers from before the split); the CLI always gives one, and a missing CRAWL_RESULT reaches here as "missing", never as a pass.
+  const both = (a, c) => (c === undefined || c === a ? a : a === "success" && c === "success" ? "success" : "failure");
+  const r = { ...i.results, api: both(i.results.api, i.results.crawl) };
   const unitStamps = ok(r.unit) && ok(r.stamps);
   let pass, mode, ran, notRun;
   // B72: the API suite may be absent only when tools/api-scope.mjs said no Worker or API file changed (apiNeeded === false). Anything else (true, undefined) needs api to succeed.
@@ -65,9 +68,12 @@ export function buildReport(i) {
       ran = i.apiNeeded === false ? "unit, stamps" : "unit, stamps, api";
       notRun = i.apiNeeded === false ? "api, browser, layout (scope rules: no Worker, API, site, tools, .github, wrangler or package*.json file changed)" : "browser, layout (scope rule: no site, tools, .github, wrangler or package*.json file changed)";
     }
+    // The recover job restores the preview before any reader; a failed (or missing) recover never earns the gate phrase, whatever the scope said.
+    if (i.recoverResult !== undefined && !ok(i.recoverResult)) pass = false;
   } else {
     mode = "light";
-    pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout);
+    // A PR that changes the production probe, its self-test or what they read must run the self-test: no light pass for it (tools/ci-scope.mjs probeChanged; the self-test legs are part of the `browser` job).
+    pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout) && i.probeChanged !== true;
     ran = "unit, stamps";
     notRun = "preview, api, browser, layout (full suite not requested)";
   }
@@ -98,7 +104,9 @@ export function buildReport(i) {
       : "Unit or stamps failed, and the preview secrets are not configured, so no preview was created. This comment is not the merge gate.\n"
   );
   if (mode === "docs" && pass) lines.push("**passed (docs only)**: this PR changes only docs, so no preview was created and only the unit and stamps suites ran.", "");
-  if (mode === "light") {
+  if (mode === "light" && i.probeChanged === true) {
+    lines.push("**This PR changes the production probe, its self-test or what they read, so the self-test must run.** Add the `ci-full` label: the `browser` job then runs the self-test legs. A light run cannot pass for it. This comment is not the merge gate.", "");
+  } else if (mode === "light") {
     lines.push(
       pass
         ? "Full suite not requested: only unit and stamps ran. The API, browser and layout suites need the `ci-full` label, added when the PR is final. This comment is not the merge gate."
@@ -157,10 +165,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href && process.arg
     previewSkipped: e.PREVIEW_SECRETS === "false",
     docsOnly: e.DOCS_ONLY === "true",
     siteChanged: e.SITE_CHANGED === "true",
+    probeChanged: e.PROBE_CHANGED === "true",
     apiNeeded: e.API_NEEDED !== "false", // fails closed: only the literal "false" lets the API suite be absent
     full: e.FULL === "true",
     previewResult: e.PREVIEW_RESULT,
-    results: { unit: e.UNIT_RESULT, stamps: e.STAMPS_RESULT, api: e.API_RESULT, browser: e.BROWSER_RESULT, layout: e.LAYOUT_RESULT },
+    recoverResult: e.RECOVER_RESULT || "missing", results: { unit: e.UNIT_RESULT, stamps: e.STAMPS_RESULT, api: e.API_RESULT, crawl: e.CRAWL_RESULT || "missing", browser: e.BROWSER_RESULT, layout: e.LAYOUT_RESULT },
     counts, failing, pagesUrl: e.PAGES_URL || "", visual: e.VISUAL === "true", runUrl: e.RUN_URL || "",
   });
   writeFileSync(process.argv[2], out.body, "utf8");

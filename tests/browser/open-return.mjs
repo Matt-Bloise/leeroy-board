@@ -7,6 +7,9 @@
 //    state alone: scene shown or hidden as asked, board inert only while open, scene-open class matching, no closing class left, sheet inside the viewport when open, focus on the tile or in the scene, scroll unchanged.
 // C: the heading takes focus on open from the wall, sibling tiles dim while a scene is open, reduced motion opens and closes at once.
 import { pageUrl } from "../helpers/page-url.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
+import { assertMemberState } from "../helpers/member-state.mjs";
+const MEMBER = standIn(0).name; // the first member of the party the API stub serves (never a literal name)
 import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -54,9 +57,10 @@ const verdict = (s, want, scrollY) => {
 };
 
 let browser = stubbed(await pw.chromium.launch());
+await assertMemberState(browser, url, MEMBER); // fails loudly when MEMBER is not on the board (else the suite runs as nobody chosen)
 async function fresh(view, extra) {
   const ctx = await browser.newContext({ ...VIEW[view], serviceWorkers: "block", ...(extra || {}) });
-  await ctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} });
+  await ctx.addInitScript((n) => { try { localStorage.setItem("board-as", n); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} }, MEMBER);
   await ctx.addInitScript(() => { window.__cls = 0; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: "layout-shift", buffered: true }); } catch (e) {} });
   const page = await ctx.newPage(), errors = []; page.on("pageerror", (e) => errors.push(e.message));
   if (THROTTLE > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE }); }
@@ -68,6 +72,8 @@ async function fresh(view, extra) {
 }
 const tile = (page) => page.locator(`#wall a.tile[data-scene="${KEY}"]`);
 const wait = (page, ms) => page.waitForTimeout(ms);
+// The real readiness signal for "the open has begun": the scene layer is shown (not hidden, not the idle warm-up). Used instead of counting a fixed number of ms, which a loaded runner stretches.
+const opening = (page) => page.waitForFunction(() => { const l = document.querySelector("#scene"); return !!l && !l.hidden && !l.classList.contains("warming"); }, null, { timeout: BOUND });
 // a synthetic click on the focused tile: no scroll-into-view side effect, so the wall scroll at the tap is the scroll the test measured
 const tap = async (page) => { await tile(page).focus(); await tile(page).dispatchEvent("click"); };
 const onTile = (page) => page.waitForFunction(() => { const a = document.activeElement; return !!(a && a.closest && a.closest('#wall [data-scene="roads"]')); }, null, { timeout: BOUND });
@@ -103,9 +109,9 @@ try {
     // B: interruptions, RUNS times each
     const scenarios = {
       "open then close at 40 percent": async () => { await tap(page); await wait(page, 140); await page.keyboard.press("Escape"); return "closed"; },
-      "close then open again": async () => { await tap(page); await settle(page, "open"); await page.keyboard.press("Escape"); await onTile(page); await page.keyboard.press("Enter"); return "open"; },
+      "close then open again": async () => { await tap(page); await settle(page, "open"); await page.keyboard.press("Escape"); await settle(page, "closed"); await onTile(page); await page.keyboard.press("Enter"); return "open"; },
       "resize in flight": async () => { await tap(page); await wait(page, 120); const vp = page.viewportSize(); await page.setViewportSize({ width: vp.width === 390 ? 360 : 1100, height: 700 }); return "open"; },
-      "three rapid toggles": async () => { await tap(page); await wait(page, 60); await page.keyboard.press("Escape"); await onTile(page); await page.keyboard.press("Enter"); await wait(page, 60); await page.keyboard.press("Escape"); return "closed"; },
+      "three rapid toggles": async () => { await tap(page); await opening(page); await page.keyboard.press("Escape"); await onTile(page); await page.keyboard.press("Enter"); await opening(page); await page.keyboard.press("Escape"); return "closed"; },
     };
     for (const [name, run] of Object.entries(scenarios)) {
       let good = 0, slowest = 0; const why = [];
@@ -114,7 +120,7 @@ try {
         // Evidence for a CI-only flake (Nov 8: "open then close at 40 percent ... scroll 192 -> 0, run 1" failed five full runs in a row on CI hardware and never locally): record, per frame, only the CHANGES of scrollY and of the <html> classes for 4 s.
         // Read on failure only. It asserts nothing and changes no bound.
         await page.evaluate(() => { window.__base = performance.now(); window.__y0 = Math.round(scrollY); cancelAnimationFrame(window.__trRaf); const tok = (window.__trTok = (window.__trTok || 0) + 1); window.__tr = []; const t0 = performance.now(); const f = () => { if (tok !== window.__trTok) return; const r = document.documentElement, last = window.__tr[window.__tr.length - 1], cur = [Math.round(performance.now() - t0), Math.round(scrollY), r.className.replace(/\s+/g, ".").slice(0, 100)]; if (!last || last[1] !== cur[1] || last[2] !== cur[2]) window.__tr.push(cur); if (performance.now() - t0 < 4000) window.__trRaf = requestAnimationFrame(f); }; window.__trRaf = requestAnimationFrame(f); });
-        let want; try { want = await run(); } catch (e) { /* evidence for the CI-only timeout (run 42558521127: "three rapid toggles ... run 2: waitForFunction Timeout 2010ms"): what the page looked like when the wait gave up; asserts nothing */ let d = null; try { d = await page.evaluate(() => { const a = document.activeElement, t = document.querySelector('#wall a.tile[data-scene="roads"]'), r = t && t.getClientRects()[0], sc = document.getElementById("scene"), c = (x) => (x ? x.tagName + (x.id ? "#" + x.id : "") + "." + String(x.className).slice(0, 30) : null); return { active: c(a), tileRect: r ? [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)] : null, tileTabindex: t && t.getAttribute("tabindex"), html: document.documentElement.className.slice(0, 140), hash: location.hash, scrollY: Math.round(scrollY), sceneClass: sc && sc.className, sceneHidden: sc && sc.hidden, calls: (window.__calls || []).filter((x) => x[0] >= window.__base - 1500).slice(-30).map((x) => [Math.round(x[0] - window.__base), ...x.slice(1)]) }; }); } catch {} why.push(`run ${i + 1}: ${String(e.message).split("\n")[0]} EXC_DIAG ${JSON.stringify(d)}`); break; }
+        let want; try { want = await run(); } catch (e) { /* evidence for the CI-only timeout (run 42558521127: "three rapid toggles ... run 2: waitForFunction Timeout 2010ms"): what the page looked like when the wait gave up; asserts nothing */ let d = null; try { d = await page.evaluate(() => { const a = document.activeElement, t = document.querySelector('#wall a.tile[data-scene="roads"]'), r = t && t.getClientRects()[0], sc = document.getElementById("scene"), c = (x) => (x ? x.tagName + (x.id ? "#" + x.id : "") + "." + String(x.className).slice(0, 30) : null); return { active: c(a), activeScene: a && a.getAttribute ? a.getAttribute("data-scene") : null, activeConnected: !!(a && a.isConnected), tiles: document.querySelectorAll("#wall a.tile").length, tileRect: r ? [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)] : null, tileTabindex: t && t.getAttribute("tabindex"), html: document.documentElement.className.slice(0, 140), hash: location.hash, scrollY: Math.round(scrollY), sceneClass: sc && sc.className, sceneHidden: sc && sc.hidden, calls: (window.__calls || []).filter((x) => x[0] >= window.__base - 1500).slice(-30).map((x) => [Math.round(x[0] - window.__base), ...x.slice(1)]) }; }); } catch {} why.push(`run ${i + 1}: ${String(e.message).split("\n")[0]} EXC_DIAG ${JSON.stringify(d)}`); break; }
         const took = await settle(page, want === "open" ? "open" : "closed"); slowest = Math.max(slowest, took);
         const st = await page.evaluate(state), b = verdict(st, want, y0); if (b.length === 0) good++; else if (why.length < 3) { await page.waitForTimeout(600); const tr = await page.evaluate(() => ({ y0: window.__y0, frames: (window.__tr || []).slice(0, 30), calls: (window.__calls || []).filter((c) => c[0] >= window.__base - 3000).slice(-40).map((c) => [Math.round(c[0] - window.__base), ...c.slice(1)]) })), cx = await page.evaluate(() => ({ sr: history.scrollRestoration, sh: document.documentElement.scrollHeight, ih: innerHeight, main: document.getElementById("main") ? getComputedStyle(document.getElementById("main")).display : null, y: Math.round(scrollY) })); why.push(`run ${i + 1}: ${b.join(", ")} ${process.env.OPEN_RETURN_DEBUG ? JSON.stringify(st) : ""} TRACE[ms,scrollY,html classes] ${JSON.stringify(tr)} CTX ${JSON.stringify(cx)}`); }
         if (want === "open") { await page.keyboard.press("Escape"); await settle(page, "closed"); }

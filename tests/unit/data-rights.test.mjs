@@ -18,7 +18,7 @@ const TOKEN = "A".repeat(43);
 const CTX = { waitUntil() {}, passThroughOnException() {} };
 
 // Stub D1: all() answers by table name in the SQL; run/batch statements are recorded in order; selects are recorded too.
-async function makeEnv({ flag = "on", webLogin = "on", roster = [{ slug: "red-fox", name: "Red Fox", match: [], id: ID }], missing = null } = {}) {
+async function makeEnv({ flag = "on", webLogin = "on", roster = [{ slug: "red-fox", name: "Red Fox", match: [], id: ID }], missing = null, shadowTable = true } = {}) {
   invalidateConfigCache(); // the roster is cached per isolate for 60 s
   const memberHash = await sha256Hex(`${KEY_SALT}:${MEMBER_KEY}`);
   const tokenHash = await webSessionHash(TOKEN);
@@ -43,6 +43,7 @@ async function makeEnv({ flag = "on", webLogin = "on", roster = [{ slug: "red-fo
       all: async () => {
         hit();
         selects.push(sql);
+        if (/sqlite_master/.test(sql) && /shadow_answers/.test(sql)) return { results: shadowTable ? [{ name: "shadow_answers" }] : [] }; // migration 0014 applied or not
         if (/FROM sessions\b/.test(sql)) return { results: [{ created_at: 1, expires_at: 2, last_seen: 3 }] };
         const t = /FROM (\w+)/i.exec(sql)[1];
         if (t === "members") return { results: /WHERE slug/.test(sql) ? [{ slug: "red-fox", created_at: "x" }] : [{ slug: "red-fox", key_hash: memberHash }] }; // a real D1 returns only the columns asked for
@@ -71,7 +72,7 @@ const ORIGIN = { Origin: "https://leeroy.test" };
 const req = (method, path, headers = {}, body) => new Request(`https://api.test${path}`, { method, headers: { "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.9", ...headers }, body });
 const go = (env, ...a) => worker.fetch(req(...a), env, CTX);
 const erase = (env, headers, body = JSON.stringify({ confirm: CONFIRM_PHRASE })) => go(env, "POST", "/api/me/erase", { ...ORIGIN, ...headers }, body === null ? undefined : body);
-const shape = (executed) => executed.map((e) => /^(DELETE FROM|INSERT INTO) (\w+)/.exec(e.sql).slice(1).join(" "));
+const shape = (executed) => executed.map((e) => /^(DELETE FROM|INSERT INTO|UPDATE) (\w+)/.exec(e.sql).slice(1).join(" "));
 
 test("flag off: both routes are 404 for every kind of caller, with no DB access", async () => {
   for (const flag of ["off", "", null]) {
@@ -169,6 +170,14 @@ test("erase needs an Origin header: 403 without it, nothing deleted", async () =
   assert.deepEqual(env.executed, []);
 });
 
+test("erase before migration 0014: with no shadow_answers table the erase has no statement for it and still goes through", async () => {
+  const env = await makeEnv({ shadowTable: false });
+  const res = await erase(env, KEY);
+  assert.equal(res.status, 200);
+  assert.ok(!env.executed.some((e) => /shadow_answers/.test(e.sql)));
+  assert.ok(env.executed.some((e) => e.sql.startsWith("DELETE FROM members")));
+});
+
 test("erase by member key: one atomic batch in the safe order, then the audit row last", async () => {
   const env = await makeEnv();
   let batches = 0;
@@ -182,8 +191,8 @@ test("erase by member key: one atomic batch in the safe order, then the audit ro
     "DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details",
     "DELETE FROM kv_state", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_legacy",
     "DELETE FROM sheet_events", "DELETE FROM dispatches", "DELETE FROM intents",
-    "DELETE FROM fact_fixes", "DELETE FROM members", "DELETE FROM sessions_v2", "DELETE FROM humans",
-    "DELETE FROM users", "INSERT INTO audit_log",
+    "DELETE FROM fact_fixes", "DELETE FROM members", "DELETE FROM shadow_answers", "DELETE FROM sessions_v2", "DELETE FROM humans",
+    "UPDATE audit_log", "DELETE FROM users", "INSERT INTO audit_log",
   ]);
   const at = (table, n = 0) => env.executed.filter((e) => e.sql.startsWith(`DELETE FROM ${table}`))[n];
   assert.deepEqual(at("user_state").args, [await userKey(env, ID)]);
@@ -195,6 +204,19 @@ test("erase by member key: one atomic batch in the safe order, then the audit ro
   assert.deepEqual(at("ask_turns").args, [await userHash(env, ID), await slugAskerHash(env, "red-fox"), "red-fox", "Red Fox"]);
   assert.match(at("ask_turns").sql, /id IN \(SELECT intent_id FROM ask_turn_legacy\)/); // the name fallback is for legacy rows only
   assert.deepEqual(at("users").args, [ID]);
+});
+
+test("erase scrubs the member.add audit rows that name this person as the added id; export lists them", async () => {
+  const env = await makeEnv();
+  await erase(env, KEY);
+  const scrub = env.executed.find((e) => e.sql.startsWith("UPDATE audit_log"));
+  assert.ok(scrub, "an UPDATE audit_log statement is in the batch");
+  assert.match(scrub.sql, /SET detail_json = '\{\}', target = NULL WHERE action = 'member\.add' AND json_extract\(detail_json, '\$\.added'\) = \?/);
+  assert.deepEqual(scrub.args, [ID]);
+  const env2 = await makeEnv();
+  await go(env2, "GET", "/api/me/export", KEY);
+  const sel = env2.selects.find((q) => /FROM audit_log/.test(q));
+  assert.match(sel, /actor_discord_user_id = \? OR \(action = 'member\.add' AND json_extract\(detail_json, '\$\.added'\) = \?\)/);
 });
 
 test("the audit row holds no personal data: actor and tenant NULL, action erase, a random target, empty detail", async () => {
@@ -215,7 +237,7 @@ test("erase by web session: tenancy and user_state rows only, never a slug or na
   const env = await makeEnv();
   const res = await erase(env, COOKIE);
   assert.equal(res.status, 200);
-  assert.deepEqual(shape(env.executed), ["DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_legacy", "DELETE FROM sessions_v2", "DELETE FROM humans", "DELETE FROM users", "INSERT INTO audit_log"]);
+  assert.deepEqual(shape(env.executed), ["DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_legacy", "DELETE FROM sessions_v2", "DELETE FROM humans", "UPDATE audit_log", "DELETE FROM users", "INSERT INTO audit_log"]);
   const sc = res.headers.get("Set-Cookie");
   assert.match(sc, new RegExp(`^${SESS_COOKIE}=; .*Max-Age=0`));
   assert.match(sc, /HttpOnly/);

@@ -7,7 +7,9 @@
 //
 // What it does, per engine (Chromium, WebKit, Firefox, one after the other) and per viewport (phone 390x844, laptop 1366x768): ONE page load, "Just take a look",
 // then every scene is opened in turn (the location hash, which is what a tab press sets): timeline, five, five.party, one sheet per party member (five.<slug>), roads,
-// racials, legacy, buffs, ledger, signups, librarian, library, decide, tonight. It FAILS on:
+// racials, legacy, buffs, ledger, signups, librarian, library, decide, tonight. Before any browser starts it also checks (no browser, status lines only) that none of the private member data
+// paths (data/party.json, decide, tonight, guided-atlas, client, signups) answers 2xx on the site hostnames. It FAILS on:
+//   - any private data path answering 2xx on https://leeroy.party or https://leeroy-board.pages.dev, bare URL, cache-busted, or as a raw dot-segment / parent-segment / backslash spelling (helpers/private-path-probe.mjs; asked again up to 3 times, and a 2xx on any attempt stays a failure)
 //   - any console error or uncaught page error (only third-party/report-only noise is exempt: the Cloudflare beacon, CSP messages that say they are
 //     report-only, WebKit-without-WebGL when SMOKE_ALLOW_WEBKIT_NO_WEBGL=1; an ENFORCED Content Security Policy violation fails)
 //   - any 4xx/5xx response from the site itself; from the API any 5xx, and any 4xx on /api/bootstrap and /api/state (a 4xx elsewhere, for example an anonymous 401, is a
@@ -39,7 +41,9 @@ import fs from "node:fs";
 import { pageUrl, originOf } from "../helpers/page-url.mjs";
 import { WORDS, slugOf, junkIn, wrongCountCopy, memberCountProblem, uniq, consoleFailures, exemptedAdvisories, classifyHttp, isInsightsHost, stubbedContext } from "../helpers/probe-checks.mjs";
 import { createBudget, guardContext } from "../helpers/probe-budget.mjs";
+import { probePrivatePaths, DEFAULT_HOSTS } from "../helpers/private-path-probe.mjs";
 import { parseClock } from "../helpers/clock-arg.mjs";
+import { buildScrub } from "../helpers/probe-scrub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm ci in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const URL_ = arg("--url", process.env.PROBE_URL || "https://leeroy.party/");
@@ -63,8 +67,24 @@ const budget = createBudget(BUDGET);
 const API_ROUTE = process.env.PROBE_API_ROUTE === "fetch" ? "fetch" : "browser";
 if (API_ROUTE === "fetch") console.log("WARN PROBE_API_ROUTE=fetch: the probe sends /api requests itself and fulfils the page with the answer (the older mode, known to change what Firefox shows); comparison only");
 const problems = [], notes = [], hiddenCopy = new Set(), advisories = new Set();
-const fail = (where, what) => { problems.push(`${where}: ${what}`); console.log(`FAIL ${where}: ${what}`); };
+// The live party is real people: any member name or slug in a printed line (copy snippets, DOM facts) is replaced before it reaches a log or step summary.
+let scrub = (t) => String(t);
+const fail = (where, what) => { const w = scrub(what); problems.push(`${where}: ${w}`); console.log(`FAIL ${where}: ${w}`); };
 const pass = (what) => console.log(`PASS ${what}`);
+
+// 0. Member data is Worker-only: no private data path (tools/pages-bundle.mjs list, pages-worker/private-paths.mjs) may answer 2xx on a SITE hostname, the bare URL and a cache-busted one,
+// on https://leeroy.party and https://leeroy-board.pages.dev (the site hostname alone when the probe is pointed at something else). Status lines only, never a body (helpers/private-path-probe.mjs).
+// A 2xx FAILS the probe (the production-probe job is non-blocking, so the deploy is never held up by it). The API host is NOT checked here: /api/data/party on api.leeroy.party is the Worker
+// route and is supposed to answer 200. These requests are static-path requests on the site (Pages Function invocations once the Function is deployed): 60 per run, 180 at the most with retries.
+{
+  const host = new URL(SITE).hostname;
+  const hosts = local || !/(^|\.)leeroy\.party$/.test(host) ? [SITE] : [...new Set([SITE, ...DEFAULT_HOSTS])];
+  const priv = await probePrivatePaths({ hosts });
+  for (const l of priv.lines) console.log(l);
+  for (const w of priv.warnings) console.log(`${w}
+::warning title=Production probe::${w}`);
+  if (priv.problems.length) priv.problems.forEach((x) => fail("private-data", x)); else if (!priv.warnings.length) pass(`no private data path answers 2xx on ${hosts.join(", ")} (${priv.checked} requests)`);
+}
 
 // 1. The reference: the real party, read once by Node. redirect: "error": Node would otherwise follow a redirect chain, each hop a Worker request the budget never saw.
 if (!budget.spend()) { console.error("budget too small"); process.exit(2); }
@@ -82,6 +102,14 @@ if (!party) {
   process.exit(1);
 }
 const MEMBER_SLUGS = new Set(party.members.map((m) => slugOf(m.name)));
+{
+  // Every roster-derived token of 3+ characters: the full name, the slug, each word of the name and each component of a compound slug, matched case-insensitively.
+  const tokens = [...new Set(party.members.flatMap((m) => { const n = String(m.name || "").trim(), sl = slugOf(n); return [n, sl, ...n.split(/[^A-Za-z0-9]+/), ...sl.split("-")]; }).map((t) => t.trim()).filter((t) => t.length >= 3))].sort((a, b) => b.length - a.length);
+  scrub = buildScrub(tokens); // whole words only (tests/helpers/probe-scrub.mjs): a short name must not turn "members" into "m<member>s"
+  // Nothing the probe prints (console.log or console.error) may carry a roster token, wherever the line comes from.
+  for (const m of ["log", "error", "warn"]) { const orig = console[m].bind(console); console[m] = (...a) => orig(...a.map((x) => (typeof x === "string" ? scrub(x) : x))); }
+  { const append = fs.appendFileSync; fs.appendFileSync = (f, d, ...r) => append(f, typeof d === "string" ? scrub(d) : d, ...r); } // the step summary too
+}
 if (party) console.log(`INFO the real party has ${N} members (${WORDS[N] || N}) per ${API}/api/state`);
 const SCENES = [...TOP.slice(0, 3), ...party.members.map((m) => `five.${slugOf(m.name)}`), ...TOP.slice(3)];
 
@@ -133,7 +161,7 @@ async function openScene(page, hash, state = {}) {
     if (!landed && allCards) { await page.evaluate(() => { location.hash = ""; }); await page.waitForTimeout(500); await page.evaluate((h) => { location.hash = h; }, hash); landed = await landedNow(6000); }
     if (!landed) {
       const have = await page.evaluate(([k, sl]) => { const p = document.querySelector(`#panel-${k}`); return { card: !!document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`), n: document.querySelectorAll(`#panel-${k} .card[data-slug]`).length, cards: document.querySelectorAll(`#panel-${k} .card`).length, named: p ? p.innerText.toLowerCase().includes(sl.split("-")[0]) : false, slugs: Array.from(document.querySelectorAll(`#panel-${k} .card[data-slug]`)).map((c) => c.getAttribute("data-slug")).join(",") }; }, [top, sub]).catch(() => ({ card: false, n: 0, cards: 0, named: false, slugs: "" }));
-      const facts = `selector \`${SEL}\`: ${have.n} of ${MEMBER_SLUGS.size} found (slugs: ${have.slugs || "none"}); \`#panel-${top} .card\`: ${have.cards}; "${sub.split("-")[0]}" appears in the panel text: ${have.named}`;
+      const facts = `selector \`${SEL}\`: ${have.n} of ${MEMBER_SLUGS.size} found (slugs not printed); \`#panel-${top} .card\`: ${have.cards}; "${sub.split("-")[0]}" appears in the panel text: ${have.named}`;
       return { ok: false, why: have.card ? `the route did not land on ${sub}'s card (no "landed" mark) [${facts}]` : `${sub} has no card in #panel-${top} [${facts}]` };
     }
   }
@@ -165,7 +193,7 @@ const explainStrings = (page, wanted) => page.evaluate((wanted) => {
   }
   return out;
 }, wanted);
-const chipFacts = (page, n) => page.evaluate((n) => { const all = Array.from(document.querySelectorAll(".tn-name")); return `selector ".tn-name": ${all.length} elements, ${all.filter((b) => b.getClientRects().length).length} with a box; names: ${all.map((b) => b.textContent.trim()).filter(Boolean).slice(0, 12).join(", ") || "none"} (wanted ${n})`; }, n).catch(() => "no DOM facts");
+const chipFacts = (page, n) => page.evaluate((n) => { const all = Array.from(document.querySelectorAll(".tn-name")); return `selector ".tn-name": ${all.length} elements, ${all.filter((b) => b.getClientRects().length).length} with a box; ${all.filter((b) => b.textContent.trim()).length} with text (counts only, no member names) (wanted ${n})`; }, n).catch(() => "no DOM facts");
 
 // The copy that counts the party ("The five", "Open the five") is re-rendered by the board a moment after the chips, and in some engines later than in others. Before the first
 // party-size judgement of a scene, poll the DOM (visible text only, no API request) until no visible string states the wrong count; bounded. If a wait ever runs out the copy is
@@ -261,7 +289,7 @@ async function probeOne(browser, engine, vp) {
   // for a later copy-fix PR: reported as information, never a failure.
   const wc = wrongCountCopy(vt, N);
   for (const w of wc) fail(tag, `copy states the wrong party size: ${w}`);
-  if (wc.length) for (const line of (await explainStrings(page, wc.map((w) => (w.match(/^"(.*)" \(the party has/) || [])[1] || w)).catch(() => [])).slice(0, 8)) console.log(`DIAG ${tag}: ${line}`);
+  if (wc.length) for (const line of (await explainStrings(page, wc.map((w) => (w.match(/^"(.*)" \(the party has/) || [])[1] || w)).catch(() => [])).slice(0, 8)) console.log(`DIAG ${tag}: ${scrub(line)}`);
   if (!wc.length) pass(`${tag} no visible copy states a wrong party size (${vt.length} visible strings, party ${N})`);
   const seenVisible = new Set(wc);
   for (const h of wrongCountCopy(uniq(everything.map((p) => p[1])), N)) if (!seenVisible.has(h)) hiddenCopy.add(h);
@@ -292,11 +320,11 @@ for (const engine of ENGINES) {
   finally { await browser.close().catch(() => {}); }
   notes.push(ranAny ? `${engine} ran` : `${engine} not run (budget spent)`);
 }
-if (hiddenCopy.size) console.log(`INFO hidden copy that still says the wrong party size (not visible to a visitor, NOT a failure; for a later copy-fix PR), ${hiddenCopy.size}:\n${[...hiddenCopy].slice(0, 40).map((h) => `  - ${h}`).join("\n")}`);
-if (advisories.size) console.log(`INFO exempted report-only CSP advisories (they flag real eval use in site code, ticket B61), ${advisories.size}:\n${[...advisories].slice(0, 20).map((h) => `  - ${h}`).join("\n")}`);
+if (hiddenCopy.size) console.log(`INFO hidden copy that still says the wrong party size (not visible to a visitor, NOT a failure; for a later copy-fix PR), ${hiddenCopy.size}:\n${[...hiddenCopy].slice(0, 40).map((h) => `  - ${scrub(h)}`).join("\n")}`);
+if (advisories.size) console.log(`INFO exempted report-only CSP advisories (they flag real eval use in site code, ticket B61), ${advisories.size}:\n${[...advisories].slice(0, 20).map((h) => `  - ${scrub(h)}`).join("\n")}`);
 if (budget.exceeded) fail("budget", `more than ${BUDGET} Worker requests were needed; the rest were refused`);
 console.log(`\nWorker requests this run: ${budget.used} of ${BUDGET}. Engines: ${notes.join(", ")}. Party: ${N}. ${problems.length ? `${problems.length} problem(s)` : "all checks passed"}.`);
 if (process.env.GITHUB_STEP_SUMMARY) {
-  try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Production probe (${SITE})\n\nWorker requests this run: **${budget.used} of ${BUDGET}**. Engines: ${notes.join(", ")}. Party: ${N}.\n\n${problems.length ? problems.map((p) => `- ${p}`).join("\n") : "All checks passed."}\n${hiddenCopy.size ? `\nHidden copy that still says the wrong party size (information, not a failure; for a later copy-fix PR):\n${[...hiddenCopy].slice(0, 40).map((h) => `- ${h}`).join("\n")}\n` : ""}${advisories.size ? `\nExempted report-only CSP advisories (real eval use in site code, ticket B61):\n${[...advisories].slice(0, 20).map((h) => `- ${h}`).join("\n")}\n` : ""}`); } catch (e) {}
+  try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Production probe (${SITE})\n\nWorker requests this run: **${budget.used} of ${BUDGET}**. Engines: ${notes.join(", ")}. Party: ${N}.\n\n${problems.length ? problems.map((p) => `- ${p}`).join("\n") : "All checks passed."}\n${hiddenCopy.size ? `\nHidden copy that still says the wrong party size (information, not a failure; for a later copy-fix PR):\n${[...hiddenCopy].slice(0, 40).map((h) => `- ${scrub(h)}`).join("\n")}\n` : ""}${advisories.size ? `\nExempted report-only CSP advisories (real eval use in site code, ticket B61):\n${[...advisories].slice(0, 20).map((h) => `- ${scrub(h)}`).join("\n")}\n` : ""}`); } catch (e) {}
 }
 process.exit(problems.length ? 1 : 0);

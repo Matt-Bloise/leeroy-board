@@ -6,6 +6,7 @@
 // Everything answers Cache-Control: no-store and is never put in the edge cache.
 import { sha256Hex, timingSafeEqualStr } from "./crypto.js";
 import { saltProblems, saltErrorBody } from "./salts.js";
+import { readTextCapped } from "./limits.js";
 
 export const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 export const DISCORD_ME_URL = "https://discord.com/api/users/@me";
@@ -71,10 +72,10 @@ export function validateDoc(doc, text) {
 const etagOf = async (text) => `"${(await sha256Hex(text)).slice(0, 16)}"`;
 
 async function readBody(request, max) {
-  let text;
-  try { text = await request.text(); } catch (e) { return { status: 400, error: "body unreadable" }; }
-  if (new TextEncoder().encode(text).length > max) return { status: 413, error: "body too large" };
-  return { text };
+  let read;
+  try { read = await readTextCapped(request, max); } catch (e) { return { status: 400, error: "body unreadable" }; }
+  if (read.tooLarge) return { status: 413, error: "body too large" };
+  return { text: read.text };
 }
 
 const DISCORD_APP_ID = "1561857940174938114";

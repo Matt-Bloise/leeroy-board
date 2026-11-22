@@ -14,6 +14,8 @@ import { NOT_PUBLISHED_LINE } from "../../infrastructure/worker/ask-build.js";
 import { RESEARCH_RULES, RESEARCH_VOICE_RULES, RESEARCH_STRUCTURE_RULES, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "../../infrastructure/worker/research/rules.js";
 import { defuseLinks, neutraliseMentions, labelClassic, stripRefusals, takeSources, trimToSentences, fitToCap, researchPrepare, usableAnswer } from "../../infrastructure/worker/research/label.js";
 import { runEval } from "../../infrastructure/worker/eval.js";
+import { privacyBudget, resetResearchClaudeForTests } from "../../infrastructure/worker/research/claude.js";
+import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const realFetch = globalThis.fetch;
@@ -23,8 +25,17 @@ let aiCalls = 0;
 let aiThrows = false;
 let reply = () => "Mira tanks tonight.\n-# Sources: classes/tanking";
 // Outside providers answer through fetch (groq shape; gemini is only counted); the Workers AI binding answers through env.AI.run. Both record the request.
+// CHANGED (real-names PR): a member's research ask is answered by Claude, never Workers AI. The fake Anthropic endpoint records the request in the same messages shape the Workers AI
+// fake used (so the prompt assertions keep reading the prompt the model saw) and counts it in claudeCalls; aiCalls now counts Workers AI runs, which must stay 0 for a member.
+let claudeCalls = 0;
 globalThis.fetch = async (url, init) => {
   const body = JSON.parse(init.body);
+  if (String(url).includes("anthropic")) {
+    claudeCalls++;
+    sent.push({ messages: [{ role: "system", content: (body.system || []).map((x) => x.text).join("\n") }, ...(body.messages || [])], max_tokens: body.max_tokens, claude: true });
+    if (aiThrows) return new Response("{}", { status: 500 });
+    return new Response(JSON.stringify({ content: [{ type: "text", text: reply(body) }], usage: { input_tokens: 50, output_tokens: 20 } }), { status: 200, headers: { "content-type": "application/json" } });
+  }
   sent.push(body);
   fetchUrls.push(String(url));
   return new Response(JSON.stringify({ choices: [{ message: { content: reply(body) } }], candidates: [{ content: { parts: [{ text: reply(body) }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
@@ -32,6 +43,8 @@ globalThis.fetch = async (url, init) => {
 let aiOpts = [];
 const fakeAi = { run: async (_model, inputs, opts) => { aiCalls++; aiOpts.push(opts); sent.push(inputs); if (aiThrows) throw new Error("workers ai down"); return { response: reply(inputs), usage: { prompt_tokens: 5, completion_tokens: 5 } }; } };
 test.after(() => { globalThis.fetch = realFetch; });
+// CHANGED: a cold JIT can pass the real 8 ms privacy budget; tokenised mode would then skip Claude, and a skipped Claude is now the degraded line (it used to fall to Workers AI unnoticed).
+test.beforeEach(() => { privacyBudget.ms = 1000; resetResearchClaudeForTests(); resetKeyCacheForTests(); });
 
 const f = (value, visible = true) => ({ value, visible, source: "board", at: "2026-11-01T00:00:00.000Z" });
 const SHEETS = [
@@ -41,22 +54,22 @@ const SHEETS = [
 const TANK_PAGE = { id: "classes/tanking", category: "classes", title: "Tanking", blurb: "Who tanks", facts: [{ key: "tanking.tonight", value: "Who tanks tonight is agreed in the party channel." }] };
 
 let n = 0;
-async function ask(question, { research = true, pages = [TANK_PAGE], sheets = SHEETS, share = true, by = "Red Fox", memberSlug = "red-fox", respond, provider = "groq", throws = false, db = null, envPatch = null, deep = false } = {}) {
+async function ask(question, { isMember = true, research = true, pages = [TANK_PAGE], sheets = SHEETS, share = true, by = "Red Fox", memberSlug = "red-fox", respond, provider = "groq", throws = false, db = null, envPatch = null, deep = false } = {}) {
   invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache();
   const DB = db || schemaDb();
   for (const p of pages) DB.raw.prepare("INSERT OR REPLACE INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES (?, ?, ?, ?, '[]', ?, '2026-11-01T00:00:00Z')").run(p.id, p.category, p.title, p.blurb, JSON.stringify(p.facts));
   DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify(sheets));
-  const env = { DB, AI: fakeAi, GROQ_API_KEY: "test-key-not-real", GEMINI_API_KEY: "test-gemini-not-real", AI_GATEWAY_ID: "gw", CLOUDFLARE_ACCOUNT_ID: "acct", ...(research ? { ASK_RESEARCH: "on" } : {}), BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) } };
+  const env = { DB, AI: fakeAi, GROQ_API_KEY: "test-key-not-real", GEMINI_API_KEY: "test-gemini-not-real", AI_GATEWAY_ID: "gw", CLOUDFLARE_ACCOUNT_ID: "acct", ...(research ? { ASK_RESEARCH: "on", ANTHROPIC_API_KEY: "sk-ant-FAKE-TEST-0000" } : {}), BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) } };
   if (envPatch) envPatch(env);
   const id = `rc${++n}`;
   DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, 'groq', 'thinking', ?, 'x')").run(id, by, question, share ? 1 : 0);
   if (db) DB.raw.prepare("INSERT OR IGNORE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").run(id, "a".repeat(64));
-  sent = []; fetchUrls = []; aiCalls = 0; aiThrows = throws; aiOpts = [];
+  sent = []; fetchUrls = []; aiCalls = 0; claudeCalls = 0; aiThrows = throws; aiOpts = [];
   reply = respond || (() => "Mira tanks tonight.\n-# Sources: classes/tanking");
   const silence = console.error; console.error = () => {};
-  try { await answerWithAi({ env, origin: "https://worker.test", intentId: id, by, memberSlug, question, provider, share, deep, journey: "curious", isMember: true }); } finally { console.error = silence; }
+  try { await answerWithAi({ env, origin: "https://worker.test", intentId: id, by, memberSlug, question, provider, share, deep, journey: "curious", isMember }); } finally { console.error = silence; }
   const row = DB.raw.prepare("SELECT answer, cites_json, model, status FROM ask_turns WHERE id = ?").get(id);
-  return { answer: row.answer, row: { ...row }, calls: sent.length, aiCalls, aiOpts: aiOpts.slice(), fetchUrls: fetchUrls.slice(), bodies: sent.slice(), prompt: sent.map((b) => (b.messages || []).map((m) => m.content).join("\n")).join("\n=====\n") };
+  return { answer: row.answer, row: { ...row }, calls: sent.length, aiCalls: aiCalls + claudeCalls, workersCalls: aiCalls, claudeCalls, aiOpts: aiOpts.slice(), fetchUrls: fetchUrls.slice(), bodies: sent.slice(), prompt: sent.map((b) => (b.messages || []).map((m) => m.content).join("\n")).join("\n=====\n") };
 }
 const ABSTAIN_Q = "tell me about the weather";
 const SOURCES = "\n-# Sources: general Classic-era knowledge, unconfirmed";
@@ -178,29 +191,35 @@ test("cache keys differ between modes; the off key is unchanged by the new param
 test("provider forcing (a): flag on, with a Gemini key and the AI binding present, Gemini is never called and Workers AI is", async () => {
   for (const [q, p] of [[ABSTAIN_Q, "gemini"], ["who tanks tonight", "gemini"], [ABSTAIN_Q, "groq"]]) {
     const r = await ask(q, { provider: p });
-    assert.equal(r.aiCalls, 1, `${q}/${p}`);
-    assert.deepEqual(r.fetchUrls, [], "no outside provider request of any kind");
+    assert.equal(r.claudeCalls, 1, `${q}/${p}`); // CHANGED: a member is answered by Claude, never Workers AI, and never by the requested provider
+    assert.equal(r.workersCalls, 0, "friend text never reaches Workers AI under research");
+    assert.deepEqual(r.fetchUrls, [], "no outside provider request of any kind (the Anthropic call is the one allowed host)");
   }
 });
 
-test("provider forcing (b): Workers AI throws -> no Gemini or other outside call; library facts plus an honest line, or an honest line alone; never the old refusal", async () => {
+test("provider forcing (b): Claude throws -> no Workers AI, Gemini or other outside call; library facts plus an honest line, or an honest line alone; never the old refusal", async () => {
+  // CHANGED: this was "Workers AI throws". A member's chain is now Claude, then the degraded line; Workers AI is never run for friend text.
   const withLib = await ask("who tanks tonight", { provider: "gemini", throws: true });
   assert.deepEqual(withLib.fetchUrls, []);
+  assert.equal(withLib.workersCalls, 0);
   assert.match(withLib.answer, /Who tanks tonight is agreed in the party channel/);
-  assert.match(withLib.answer, /out of reach/i);
+  assert.match(withLib.answer, /good brain is out/i);
+  assert.match(withLib.row.model, /\+degraded$/);
   const noLib = await ask(ABSTAIN_Q, { provider: "gemini", throws: true });
   assert.deepEqual(noLib.fetchUrls, []);
-  assert.ok(noLib.answer.trim().length > 0 && /out of reach/i.test(noLib.answer), noLib.answer);
+  assert.equal(noLib.workersCalls, 0);
+  assert.ok(noLib.answer.trim().length > 0 && /good brain is out/i.test(noLib.answer), noLib.answer);
+  assert.match(noLib.row.model, /\+degraded$/);
   for (const a of [withLib.answer, noLib.answer]) assert.ok(!a.includes(ABSTAIN_LINE) && !a.includes(NOT_PUBLISHED_LINE) && !/won't guess/i.test(a), a);
 });
 
 // ---- W4a review round: fail-closed provider, eval, reuse, no dead end, links, length, takeSources, labeller, refusals, hostile input ----
 
 test("fail-closed: a flag read that throws counts as ON for provider forcing; requested provider and deep never reach an outside provider", async () => {
-  const boom = (env) => Object.defineProperty(env, "ASK_RESEARCH", { get() { throw new Error("flag read failed"); }, enumerable: true });
+  const boom = (env) => { env.ANTHROPIC_API_KEY = "sk-ant-FAKE-TEST-0000"; Object.defineProperty(env, "ASK_RESEARCH", { get() { throw new Error("flag read failed"); }, enumerable: true }); }; // CHANGED: the key, so Claude (not Workers AI) is the member's model
   for (const [p, deep] of [["gemini", false], ["gemini", true], ["claude", true]]) {
     const r = await ask(ABSTAIN_Q, { research: false, envPatch: boom, provider: p, deep });
-    assert.equal(r.aiCalls, 1, `${p}/${deep}`);
+    assert.equal(r.aiCalls, 1, `${p}/${deep} ${r.row.model}`);
     assert.deepEqual(r.fetchUrls, []);
   }
   const down = await ask("who tanks tonight", { research: false, envPatch: boom, provider: "gemini", throws: true });
@@ -248,19 +267,31 @@ test("reuse: a flag-off refusal followed by the same ask with the flag on is not
 
 test("no dead end: empty, refusal-only, banter-only and sources-only model output is retried once, then library facts or an honest line; never a fixed refusal", async () => {
   for (const bad of ["", "   ", `**${ABSTAIN_LINE}**`, "No idea, sorry.", "Check Wowhead for that one.", "I am unable to help with this request.", "As an AI I have no information on this.", "The tooltip says the library does not cover that yet.", "I cannot answer that because the available material contains no relevant details about it.", "https://example.org/only-a-link", "Sources: classes/tanking", "-# Sources: general knowledge · unconfirmed"]) {
-    const r = await ask(ABSTAIN_Q, { respond: () => bad });
+    const r = await ask(ABSTAIN_Q, { respond: () => bad, isMember: false }); // CHANGED: guests keep the Workers AI path and its one retry; a member is covered by the degraded test below
     // an empty reply already makes Workers AI throw (no retry, straight to the fallback); the others are retried once
     if (bad.trim()) assert.equal(r.aiCalls, 2, `one retry for ${JSON.stringify(bad)}`); else assert.ok(r.aiCalls >= 1);
     assert.ok(r.answer.trim().length > 0 && !r.answer.includes(ABSTAIN_LINE) && !/I can't confirm that/.test(r.answer), r.answer);
   }
   // the retry can succeed
   let k = 0;
-  const r2 = await ask(ABSTAIN_Q, { respond: () => (k++ === 0 ? "No idea, sorry." : `**Weather is flavour only.**${SOURCES}`) });
+  const r2 = await ask(ABSTAIN_Q, { respond: () => (k++ === 0 ? "No idea, sorry." : `**Weather is flavour only.**${SOURCES}`), isMember: false });
   assert.equal(r2.aiCalls, 2);
   assert.match(r2.answer, /flavour only/);
   // with library facts the fallback is the facts plus the honest line
-  const lib = await ask("who tanks tonight", { respond: () => "" });
+  const lib = await ask("who tanks tonight", { respond: () => "", isMember: false });
   assert.match(lib.answer, /Who tanks tonight is agreed/);
+  // CHANGED: a member whose Claude answer is unusable gets the degraded line at once (no Workers AI, no retry on another provider), marked +degraded
+  for (const bad of ["", "No idea, sorry.", "Check Wowhead for that one."]) {
+    const m = await ask(ABSTAIN_Q, { respond: () => bad });
+    assert.equal(m.workersCalls, 0, JSON.stringify(bad));
+    assert.match(m.answer, /good brain is out/i, m.answer);
+    assert.match(m.row.model, /\+degraded$/);
+    assert.ok(!m.answer.includes(ABSTAIN_LINE) && !/I can't confirm that/.test(m.answer));
+  }
+  const mlib = await ask("who tanks tonight", { respond: () => "" });
+  assert.match(mlib.answer, /Who tanks tonight is agreed/);
+  assert.match(mlib.answer, /good brain is out/i);
+  assert.equal(mlib.workersCalls, 0);
   // a short real answer survives
   assert.ok(usableAnswer("**Use a shield.**"));
   const short = await ask(ABSTAIN_Q, { respond: () => `Use a shield.${SOURCES}` });
@@ -397,7 +428,7 @@ test("round 3 (1): voice-compliant answers that point at what would settle it ar
 
 test("round 3 (2): the retry skips the gateway cache; the first call does not", async () => {
   let k = 0;
-  const r = await ask(ABSTAIN_Q, { respond: () => (k++ === 0 ? "No idea, sorry." : `**Weather is flavour only.**${SOURCES}`) });
+  const r = await ask(ABSTAIN_Q, { respond: () => (k++ === 0 ? "No idea, sorry." : `**Weather is flavour only.**${SOURCES}`), isMember: false }); // CHANGED: the Workers AI retry is the guests' path now
   assert.equal(r.aiCalls, 2);
   assert.equal(Boolean(r.aiOpts[0] && r.aiOpts[0].gateway && r.aiOpts[0].gateway.skipCache), false);
   assert.equal(r.aiOpts[1].gateway.skipCache, true);
@@ -469,12 +500,15 @@ test("round 3 (11): research lint fails the stock dead ends, and not the library
 });
 
 test("round 3 (12): the outage line carries no Sources/confidence tag; the wrangler comment describes research mode", async () => {
-  const r = await ask(ABSTAIN_Q, { throws: true });
+  const r = await ask(ABSTAIN_Q, { throws: true, isMember: false }); // the Workers AI outage line is the guests' path now (a member gets the degraded line, tested above)
   assert.match(r.answer, /out of reach/i);
   assert.ok(!/-# Sources/.test(r.answer), r.answer);
+  const m = await ask(ABSTAIN_Q, { throws: true });
+  assert.match(m.answer, /good brain is out/i);
+  assert.ok(!/-# Sources/.test(m.answer), m.answer);
   const toml = readFileSync(new URL("../../infrastructure/wrangler.toml", import.meta.url), "utf8");
   const line = toml.split("\n").find((l) => l.startsWith("ASK_RESEARCH"));
-  assert.match(line, /Claude first.*then Workers AI, then library facts/); // W-wire: the comment was "Workers AI only" until Claude became the first hop
+  assert.match(line, /Claude only.*honest in-voice line plus library facts/); // CHANGED: was "Claude first ... then Workers AI, then library facts"; superseded by the degraded chain
   assert.ok(!/stub handles nothing/.test(line));
 });
 

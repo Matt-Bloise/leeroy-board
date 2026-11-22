@@ -2014,3 +2014,10 @@ html.wall-cold #main { display: none; }
 .earlier-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .rail-earlier { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .rail-earlier[hidden] { display: none; }
+/* One plain status line when the API cannot be reached (js/board.js setOffline, set from the brain's status in js/v13d.js). Full width, above the phone bottom bar (JS sets --offline-lift) so it never covers navigation. Empty = not shown, but it stays in the accessibility tree: display:none would drop the live region and the first announcement could be lost. */
+.offline-line { position: fixed; z-index: 40; left: 0; right: 0; bottom: var(--offline-lift, 0px); box-sizing: border-box; width: 100%; max-width: none; margin: 0; padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px)); font-family: var(--font-body); font-size: 0.95rem; color: var(--cream); background: linear-gradient(180deg, var(--oak-1), var(--oak-2)); border-top: 2px solid var(--brass-dim); box-shadow: 0 -4px 12px var(--shadow); text-align: center; }
+html.offline-lifted .offline-line { padding-bottom: 8px; }
+.offline-line:empty { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; box-shadow: none; background: none; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+html.offline body { padding-bottom: var(--offline-h, 0px); }
+html.offline .sheet-body { padding-bottom: calc(32px + var(--offline-h, 0px)); }
+html.offline.phone-shell #scene #sheet-body { padding-bottom: calc(64px + var(--offline-h, 0px)); grid-auto-rows: minmax(min-content, 1fr); } /* the grid track must grow with a panel taller than the body, or the end padding is not added to the scroll extent (the Tonight panel at 390 and 360) */

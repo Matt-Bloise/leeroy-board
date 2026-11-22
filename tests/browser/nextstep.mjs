@@ -26,20 +26,22 @@ async function open(browser, c, who) {
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
   await ctx.addInitScript((me) => { try { localStorage.setItem("board-me", me); localStorage.setItem("board-journey", "guided"); } catch (e) {} }, c.me === "viewer" ? slug(who.name) : "just-looking");
-  await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "nextstep.v2": !!c.flag }; await json(route, j); });
+  // the flag lives in the client document: from the static file on a host with no brain, from <brain>/api/data/client (no extension) wherever the board has one (previews, production): stub both the same way
+  const clientStub = async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "nextstep.v2": !!c.flag }; await json(route, j); };
+  await ctx.route("**/data/client.json*", clientStub);
+  await ctx.route("**/api/data/client*", clientStub);
   await ctx.route("**/data/sample/roster.json*", async (route) => {
     const j = await (await route.fetch()).json(), seat = (status, role, name) => ({ role, status, ...(name ? { character: { id: "t-me", name, class_key: "mage", class: "Mage", spec: "Frost", color: "#69ccf0" } } : {}) });
     j.group = { ...j.group, ...(c.group || {}) };
     if (c.inGroup) j.slots = [seat("filled", who.role, who.name), ...(c.openSeat ? [seat("open", who.role)] : [])];
     await json(route, j);
   });
-  // on a preview the board reads signups through the Worker (api/data/signups) as well as the static file: stub both the same way
+  // the board reads signups through the Worker only (api/data/signups, and inside /api/bootstrap below); there is no static data/signups.json
   const signupsStub = async (route) => {
     const j = await (await route.fetch()).json(); j.entries = (j.entries || []).filter((e) => e.name !== who.name);
     if (c.rsvp) j.entries.push({ name: who.name, rsvp: c.rsvp, when: "8pm", meet: null, pack: null });
     await json(route, j);
   };
-  await ctx.route("**/data/signups.json*", signupsStub);
   await ctx.route("**/api/data/signups*", signupsStub);
   // the Worker bundles signups inside /api/bootstrap: apply the same edit to that document
   await ctx.route("**/api/bootstrap*", async (route) => {
