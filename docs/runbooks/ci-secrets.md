@@ -2,11 +2,15 @@
 
 Why: a workflow file in a pull request runs with the secrets the repository gives it. Production secrets (the Cloudflare deploy token, `BOARD_ADMIN_TOKEN`, salts, AI keys) therefore live only in a GitHub **environment** named `production` that only `master` can use. Pull request workflows use a preview-only admin token and derived salts. The Cloudflare token is the one exception: by decision of the account owner, previews use the production `CLOUDFLARE_API_TOKEN` (see "Previews share the production Cloudflare token"). If a preview secret is missing the preview jobs skip with a notice; the admin token never falls back to a production secret.
 
+## Logs are world-readable (public repository)
+
+The repository is public, so every workflow log, step summary and artifact is readable by any GitHub account. A workflow, script or test must NEVER print: an email address; the Cloudflare account name or id (mask any resolved value with `::add-mask::` BEFORE the first echo, and prefer printing nothing); a person's name or handle (use role labels such as 'the account owner'); Discord ids, member keys, ask text, answers or any friend-written text; secrets or the content of API responses (print Cloudflare error CODES only: `tools/cf-error-codes.mjs`). Static text in a workflow file is also printed into the log, so the same rule applies to error messages written in the YAML. `tests/unit/public-hardening.test.mjs` pins part of this; roster edits that print the roster are refused by `roster-upsert.yml` in a public repository. If something private was printed anyway: save the log to the private ops notes, delete it with `gh api -X DELETE repos/<owner>/<repo>/actions/runs/<id>/logs`, then fix the generator.
+
 ## Secret map
 
 | Secret | Where it lives | Used by |
 | :--- | :--- | :--- |
-| `CLOUDFLARE_API_TOKEN` | **repository level, deliberately** (see "Previews share the production Cloudflare token") | `deploy-cloudflare.yml`, and the preview spin-up, preview teardown and preview-secrets steps of `pr-preview-cloudflare.yml` / `preview-tests.yml` |
+| `CLOUDFLARE_API_TOKEN` | **repository level, deliberately** (see "Previews share the production Cloudflare token") | `deploy-cloudflare.yml`, the manual-only `roster-upsert.yml` (docs/runbooks/roster-upsert.md), and the preview spin-up, preview teardown and preview-secrets steps of `pr-preview-cloudflare.yml` / `preview-tests.yml` |
 | `BOARD_ADMIN_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` | **repository level, deliberately** (see below) | `deploy-cloudflare.yml` only (no PR workflow references them) |
 | `CLOUDFLARE_AIG_TOKEN`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
@@ -28,11 +32,33 @@ What this does **not** protect:
 - So S1 stays **open** for the Cloudflare token. The only controls are review: the queue script holds PRs that touch `.github/` or `tools/` for an advisor, and `tests/unit/workflow-secrets.test.mjs` fails if a PR-triggered workflow uses the token anywhere other than the four sanctioned places. Neither is enforced by GitHub itself.
 - It closes only with a separate Cloudflare account (or a token scoped to preview resources) for previews. That needs a design change (a new secret name in the workflows, the test and this runbook); it is not a switch that exists today.
 
+## Limits of this design (owner decisions; read before relying on the current setup)
+
+Names only, no values. Listed from the workflow files and from `gh secret list` (repository and environment `production`) on 2026-11-19. **Previews still use the production `CLOUDFLARE_API_TOKEN` for now.** Moving previews to the preview-scoped `CLOUDFLARE_PREVIEW_API_TOKEN` is pending in a separate draft pull request, which waits for the account owner to re-create that token (the stored value fails verification with Cloudflare error 1000).
+
+1. **Any user with write access can read repository-level secrets.** Anyone who can push a branch to this repository can edit a workflow file on that branch and make it print or send every repository-level secret. Only a job that declares `environment: production` is gated (master only). Today only `deploy-cloudflare.yml` and `roster-upsert.yml` declare it; `pages-prune.yml` does not, so it reads its Cloudflare token at repository level with no gate. Production secrets must therefore live as **environment secrets of `production`**, and the repository-level copies must be deleted by the account owner (owner / account admin action), keeping only what previews need. Repository-level secrets today, with the action:
+
+   | Secret | Also in environment `production` today | Action |
+   | :--- | :--- | :--- |
+   | `BOARD_ADMIN_TOKEN` | yes | move to environment `production`: delete the repository copy |
+   | `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_SECRET`, `DISCORD_PUBLIC_KEY`, `GEMINI_API_KEY` | yes | move to environment `production`: delete the repository copies |
+   | `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` | no | move to environment `production`: add there, then delete the repository copies |
+   | `CLOUDFLARE_API_TOKEN` | no | previews read it today, so it stays at repository level until the preview-token split lands; then move it to environment `production` and give `pages-prune.yml` the same environment (or an owner decision to accept it) |
+   | `CLOUDFLARE_ACCOUNT_ID` | yes | keep at repository level (an identifier; previews need it) |
+   | `BOARD_PREVIEW_ADMIN_TOKEN` | no | keep at repository level (previews need it) |
+   | `CLOUDFLARE_PREVIEW_API_TOKEN` | no | exists (created 2026-11-03) but unused and currently invalid; the owner re-creates it for the split |
+
+   Not the same as protection by review: `tests/unit/workflow-secrets.test.mjs` and the queue review catch a workflow edit in a PR, but GitHub itself does not stop a writer.
+
+2. **When the preview token is used, the account owner must scope it, and scoping is only partly possible.** Give it only Workers Scripts Edit, D1 Edit, Cloudflare Pages Edit and Account Settings Read (no Zone, no DNS). Cloudflare permission groups for Workers, D1 and Pages are account-wide, not per resource, so a preview token that can deploy Workers or edit D1 can still reach the production Worker, D1 database and Pages project in the same account. Mitigations that help: no other permissions, an expiry date, rotation, and a short list of people with write access. The real fix is a separate Cloudflare account (or zone) for previews. That is an owner decision and is not made here.
+
+3. **Deleting the preview token, once previews use it, disables full previews and makes teardown skip.** Teardown then cannot delete anything, so existing preview Workers, D1 databases and Pages deployments stay up and hold D1 slots. Remove `ci-full` labels and let teardown run, or delete the preview resources by hand, before removing or rotating it. The same applies today to `CLOUDFLARE_API_TOKEN`, which previews use now: do not rotate it without checking open `ci-full` PRs.
+
 **Accepted residual risk.** As configured by the owner, the environment `production` holds `BOARD_ADMIN_TOKEN`, `GEMINI_API_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_SECRET` and `DISCORD_PUBLIC_KEY` (it also held an invalid `CLOUDFLARE_API_TOKEN`, to be deleted so the valid repository-level one applies). `USER_SALT` and `KEY_SALT` (ours, not third-party credentials) and `AI_GATEWAY_TOKEN` (Uncle Jimmy's) stay at repository level on purpose: a job with `environment: production` still reads repository secrets the environment lacks, and the deploy keeps the existing Worker value when a secret is empty. Consequence: a workflow run from any branch could read those three by editing its own workflow file. No PR workflow in this repository references them (the preview derives its salts from `BOARD_PREVIEW_ADMIN_TOKEN`), and the guard test enforces that, but this is a protection by review, not by GitHub. S1 stays partly open for these three until they move into the environment.
 
 `tests/unit/workflow-secrets.test.mjs` fails if a PR-triggered workflow names any secret outside `CLOUDFLARE_API_TOKEN` (only in the four places above), `BOARD_PREVIEW_ADMIN_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `GITHUB_TOKEN`, or mentions `CLOUDFLARE_PREVIEW_API_TOKEN`.
 
-## 1. Create the `production` environment (Matt)
+## 1. Create the `production` environment (the owner)
 
 1. Open the repository on GitHub, **Settings**.
 2. In the left menu click **Environments**, then **New environment**.
@@ -40,7 +66,7 @@ What this does **not** protect:
 4. Under **Deployment branches and tags** choose **Selected branches and tags**, click **Add deployment branch or tag rule**, set **Ref type** to *Branch*, name pattern `master`, and **Add rule**. Leave no other rule.
 5. Optional: under **Deployment protection rules** tick **Required reviewers** and add yourself, so every deploy waits for one click. Leave **Prevent self-review** off if you are the only reviewer.
 
-## 2. Move the secrets (Matt)
+## 2. Move the secrets (the owner)
 
 Do this for `BOARD_ADMIN_TOKEN` first, then the rest of the table's `production` rows. Four secrets are deliberately **not** moved and their repository-level copies are **kept**: `CLOUDFLARE_API_TOKEN` (previews read it, see "Previews share the production Cloudflare token"), and `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` (accepted residual risk, see the secret map).
 
@@ -62,7 +88,7 @@ It exits 0 only when no production credential other than the four accepted ones 
 
 Check: the **Actions** tab, **Deploy Site & Serverless Backend to Cloudflare (Production)**, **Run workflow** on `master`. The first step "Require the production environment secrets" must pass and the run must show "production" as its environment. A run from any other branch must be refused at the environment.
 
-## 3. Preview admin token (Matt)
+## 3. Preview admin token (the owner)
 
 There is no separate Cloudflare token for previews (see the decision above). Only `BOARD_PREVIEW_ADMIN_TOKEN` is new:
 
@@ -71,6 +97,12 @@ There is no separate Cloudflare token for previews (see the decision above). Onl
 3. Keep the repository-level `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; if the token is invalid, previews fail at the pre-flight check with Cloudflare error 1000. Replace it with a working one.
 
 Until `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `BOARD_PREVIEW_ADMIN_TOKEN` all exist, labelled (`ci-full`) PRs get **Preview tests: SKIPPED** and a notice in the run; the comment is not the merge gate, so a full pass is impossible without them.
+
+## The preview Worker host is a secret of the run (account workers.dev subdomain)
+
+The account's workers.dev subdomain carries a personal name, so it is kept out of the PR comment, the logs, job outputs and artifacts (it is still in served files and git history: see `docs/parity/worker-parity-gap-table.md`, account admin list). How: the `preview-secrets` job of Preview Tests (the only job that holds the Cloudflare token; the token needs Workers Scripts: Read) reads it from `GET accounts/<id>/workers/subdomain`, masks it and hands it to the other jobs ONLY as AES-256 ciphertext (`openssl enc -pbkdf2 -iter 200000`, random salt). Each job that needs the host decrypts it in `tools/preview-worker-url.sh` (the key is set on that one step only), masks the subdomain and the host before anything else, and writes `PREVIEW_API` to `$GITHUB_ENV` (that job only). Before every artifact upload `tools/scrub-subdomain.sh` rewrites any `*.workers.dev` host in the files. Why not simpler: base64 of a masked value is masked too and the output is dropped; hex and plain are printed in clear in the `env:` block of every step that receives them (proved by the first proof runs: the log of a run with a hex hand-off was deleted).
+
+**Strength depends on the preview admin token.** The passphrase is HMAC-SHA256(BOARD_PREVIEW_ADMIN_TOKEN, a fixed label), not the raw token, and the job fails closed when the token is shorter than 32 characters; but the subdomain is public elsewhere, so the ciphertext is a known-plaintext check on that secret. It is only as strong as the token's entropy: the token must be machine-generated and random. Account admin list: confirm that, rotate it if it was ever typed by a person. A fork PR has no secrets: the step fails with a message that names no host.
 
 ## 4. The Preview tests comment and the gate
 

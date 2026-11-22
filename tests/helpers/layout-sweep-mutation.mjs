@@ -31,8 +31,16 @@ const ok = (name, cond, extra = "") => { if (!cond) bad++; console.log(`${cond ?
 const control = sweep([], "control");
 ok("control (no injected CSS): the sweep passes", control.code === 0 && control.rep && control.rep.summary.failures === 0, `exit ${control.code}`);
 for (const m of MUTATIONS) {
-  const f = m.css || m.js, r = sweep([m.css ? "--inject-css" : "--inject-js", path.join(tests, "fixtures", "layout-mutations", f)], f);
-  const seen = r.rep ? [...new Set(r.rep.failures.map((f) => f.invariant))] : [];
+  const f = m.css || m.js, args = [m.css ? "--inject-css" : "--inject-js", path.join(tests, "fixtures", "layout-mutations", f)];
+  let r = sweep(args, f), seen = r.rep ? [...new Set(r.rep.failures.map((x) => x.invariant))] : [];
+  // A failure made only of infrastructure noise (the preview answered 4xx/5xx for a same-origin request, or the sweep's own harness gave up) says nothing about the injected bug: say what it was
+  // (status and path, never a body), wait a moment and run that mutation once more. A real miss (an invariant other than these) is never retried.
+  const INFRA = new Set(["harness", "http-error"]);
+  if (!m.expect.some((e) => seen.includes(e)) && seen.length > 0 && seen.every((x) => INFRA.has(x))) {
+    console.log(`INFO mutation ${f}: infrastructure-class failure on the first run (${r.rep.failures.slice(0, 3).map((x) => `${x.invariant}: ${String(x.detail || "").slice(0, 120)}`).join(" | ")}); running it once more`);
+    await new Promise((res) => setTimeout(res, 5000));
+    r = sweep(args, f + "-retry"); seen = r.rep ? [...new Set(r.rep.failures.map((x) => x.invariant))] : [];
+  }
   ok(`mutation ${f}: the sweep FAILS`, r.code === 1, `exit ${r.code}`);
   ok(`mutation ${f}: names ${m.expect.join(" or ")}`, m.expect.some((e) => seen.includes(e)), `saw ${seen.join(",") || "nothing"}`);
   // a fixture that fires only after a scene opens is found by ITS OWN violation (the injected script itself uses eval, which the report-only policy also reports, so the invariant name alone would pass on that noise)

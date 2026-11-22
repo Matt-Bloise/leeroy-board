@@ -373,7 +373,7 @@ test("the production and preview seed steps read the row count with tools/d1-row
 test("the preview workflow does not use `wrangler subdomain get` (gone in wrangler 4) and does not guess a workers.dev account subdomain", () => {
   const w = workflows.find((x) => x.f === "pr-preview-cloudflare.yml");
   assert.equal(/subdomain get/.test(scanText(w)), false);
-  assert.equal(/jmattbloise\.workers\.dev/.test(scanText(w)), false);
+  assert.equal(/[a-z0-9]\.workers\.dev/.test(scanText(w)), false, "no hard-coded account subdomain");
   assert.match(runs(w), /Could not read the preview Worker URL/);
 });
 

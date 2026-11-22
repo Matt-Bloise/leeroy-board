@@ -11,6 +11,7 @@
 // (region + ruleset + name, case-insensitive). Rows written by the /build modal (realm "unset") are never listed.
 // No Blizzard data, no AI, no secrets. Discord ids are never returned.
 import { webSessionFrom } from "./web-auth.js";
+import { readTextCapped } from "./limits.js";
 
 export const charsOn = (env) => /^(1|on|true|yes)$/i.test(String((env && env.CHARS_V1) || "").trim());
 // Mirrors js/characters.js (FACTIONS, REGIONS, LIMITS, MAX, NAME_OK); tests/unit/characters-api.test.mjs fails if they drift.
@@ -84,10 +85,10 @@ export async function listFor(env, discordId) {
 }
 
 async function readJson(request) {
-  let text;
-  try { text = await request.text(); } catch (e) { return { status: 400, error: "body unreadable" }; }
-  if (new TextEncoder().encode(text).length > BODY_MAX) return { status: 413, error: "body too large" };
-  try { const body = JSON.parse(text); return body && typeof body === "object" && !Array.isArray(body) ? { body } : { status: 400, error: "expected a JSON object" }; }
+  let read;
+  try { read = await readTextCapped(request, BODY_MAX); } catch (e) { return { status: 400, error: "body unreadable" }; }
+  if (read.tooLarge) return { status: 413, error: "body too large" };
+  try { const body = JSON.parse(read.text); return body && typeof body === "object" && !Array.isArray(body) ? { body } : { status: 400, error: "expected a JSON object" }; }
   catch (e) { return { status: 400, error: "body is not JSON" }; }
 }
 

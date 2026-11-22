@@ -73,7 +73,7 @@ function seedTurn(db, id) {
 test("timeouts are defined once and fit the Discord deadline", () => {
   assert.equal(ASK_CHOSEN_TIMEOUT_MS, 12000);
   assert.equal(ASK_FALLBACK_TIMEOUT_MS, 9000);
-  assert.equal(ASK_DEADLINE_MS, 24000);
+  assert.equal(ASK_DEADLINE_MS, 26000); // CHANGED: was 24000 (the Claude hop now needs up to 22 s; see ai-models.js)
   assert.ok(ASK_CHOSEN_TIMEOUT_MS + ASK_FALLBACK_TIMEOUT_MS <= ASK_DEADLINE_MS);
 });
 

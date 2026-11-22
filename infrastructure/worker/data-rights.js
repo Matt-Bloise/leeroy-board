@@ -16,6 +16,9 @@
 // Name-keyed tables (ask_turns, fact_fixes) are matched only for a member-key caller: a web display name is chosen by its owner
 // and could collide with someone else's name, so it is never used to select rows.
 import { sha256Hex } from "./crypto.js";
+import { readTextCapped } from "./limits.js";
+// The erase body is {"confirm":"<phrase>"}: far below this.
+const ERASE_BODY_MAX = 2048;
 import { saltProblems, saltErrorBody } from "./salts.js";
 import { authenticate, invalidateMembersCache } from "./auth.js";
 import { userKey } from "./account.js";
@@ -24,6 +27,7 @@ import { loadConfigKey } from "./config.js";
 import { userHash, slugAskerHash } from "./answer-ux.js";
 import { hashId } from "./budget.js";
 import { voterHash, VOTE_ID_RE } from "./votes.js";
+import { isGroupSlug } from "./research/group-memory.js";
 
 export const CONFIRM_PHRASE = "erase my data";
 export const dataRightsOn = (env) => /^(1|on|true|yes)$/i.test(String((env && env.DATA_RIGHTS) || "").trim());
@@ -77,6 +81,14 @@ export const DATA_MAP = Object.freeze({
   noise_ledger: { links: null, erase: null, member: null },
   vote_ballots: { links: "voter_hash = voterHash(discord id, vote id, USER_SALT), one row per ballot (migration 0010, PR 173)", erase: "DELETE by voter_hash, in the erase batch; skipped while the table does not exist", member: "legacy.vote_ballots" },
   request_gauge: { links: null, erase: null, member: null }, // Worker requests per UTC day, counts only (migration 0008)
+  listen_events: { links: null, erase: null, member: null }, // the listener (migration 0012): message id, channel, kind, decision, ask_turns id; no text and no author (the question and answer sit in ask_turns, which the asker's erase reaches)
+  listen_quiet: { links: null, erase: null, member: null }, // the listener (migration 0012): channels where /quiet is on; a channel id and a time, no person
+  incidents: { links: null, erase: null, member: null }, // the dead-man check (migration 0015, flag DEADMAN): one row per silence of a PC-side source (source name, times, a fixed sentence); no person, no text
+  game_fact_loads: { links: null, erase: null, member: null }, // the game-facts loader (migration 0016, flag GAME_FACTS_LOAD): one row per load run from the PC (build, file hashes, counts); no personal data
+  game_facts: { links: null, erase: null, member: null }, // game facts derived from the Forever client tables and a curated truth file (migration 0016): no personal data, no friend data, no message text
+  group_log: { links: "author_slug = the member's roster slug (the slug of the member key, or the roster entry whose Discord id is the web session's); migration 0011, flag GROUP_MEMORY", erase: "DELETE by author_slug, in the erase batch; skipped while the table does not exist", member: "legacy.group_log" },
+  shadow_answers: { links: "asker_slug = the member's roster slug (nullable); migration 0014, flag SHADOW_ASK. Owner-only diagnostic rows: a mirrored question, the compose answer and the local answer for the comparison", erase: "DELETE by asker_slug, in the erase batch; skipped while the table does not exist", member: null }, // not in the member export: the rows are the owner's test data, readable only through the signed call and the admin export, and gone on an erase
+  group_wiki: { links: "page_key person-<slug> or <slug>, and any page whose title or text mentions the member's slug or name; migration 0011, flag GROUP_MEMORY", erase: "pages keyed to the person deleted; pages that mention the slug or name have those spellings replaced by 'a former member' and are flagged note = 'rebuild:erase' for the next refresh", member: "legacy.group_wiki" },
 });
 // Durable Object state: BoardRoom (room.js) is a pure relay. It never touches ctx.storage and keeps no state between messages, so there is nothing to erase.
 export const DURABLE_OBJECT_STATE = Object.freeze({ BoardRoom: "none: relays live pushes to open sockets, no storage" });
@@ -111,6 +123,68 @@ const rows = async (env, sql, ...args) => (await env.DB.prepare(sql).bind(...arg
 
 const kvLike = (hash) => `ai_budget:%:user:${hash}`;
 
+// ---- group memory (migration 0011, flag GROUP_MEMORY): group_log rows by author_slug, group_wiki pages keyed to or mentioning the person. Always covered, whether or not the flag is on today.
+// The person's roster slug: the member key's own, or (a web session has none) the roster entry whose Discord id is the session's. null when there is none.
+async function groupWho(env, who) {
+  let slug = who.slug, name = who.name;
+  if (!slug && who.discordId) {
+    const roster = await loadConfigKey(env, "discord_members");
+    const entry = Array.isArray(roster) ? roster.find((m) => m && m.id === who.discordId) : null;
+    if (entry) { slug = entry.slug; name = entry.name || null; }
+  }
+  return isGroupSlug(slug) ? { slug, name: name && name !== slug ? name : null } : null;
+}
+// One existence read, and nothing else when there is no group data: a database where the tables are missing (the statement fails) or empty (no row) is treated as having none, so a member
+// with no group data gets exactly the export and erase answer they got before the feature existed, and no catalogue lookup or roster read is added for them. Once ANY group row or page exists the
+// full path runs, whether or not GROUP_MEMORY is still on: export and erase protect the friends, so they do not depend on the flag.
+async function groupPresent(env) {
+  try {
+    const r = await env.DB.prepare("SELECT (SELECT 1 FROM group_log LIMIT 1) AS l, (SELECT 1 FROM group_wiki LIMIT 1) AS w").first();
+    return Boolean(r && (r.l || r.w));
+  } catch { return false; } // migration 0011 not applied yet
+}
+const FORMER = "a former member";
+const keyedPages = (g) => [`person-${g.slug}`, g.slug];
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// How the person's name is found in a wiki page. Never inside a longer word, and never so loosely that other text is damaged:
+//   multi-part name or slug ("Red Fox", "red-fox", "RedFox", "red_fox"): case-insensitive, whole words, spaces, hyphens or underscores between the parts (nothing at all between them only when every part
+//     has 3 or more letters, so "Al Pha" never matches "alpha");
+//   single word that is not a common English word and has 3 or more letters ("Moonwhisper"): case-insensitive, whole word;
+//   RESTRICTED: a 1 or 2 letter name ("Al", "Jo") or a common English word or game word ("Max", "Will", "Hunter"): ONLY the exact form as stored (display name "Max", not "max rank"), whole word.
+// loose = a case-insensitive whole-word look at the restricted forms, used only to REPORT pages that may still say the name in another spelling ("partial"). Returns fresh global regexes.
+const COMMON_NAME_WORDS = new Set(["max", "will", "hunter", "mark", "bill", "rose", "hope", "faith", "grace", "joy", "dawn", "summer", "april", "may", "june", "august", "ray", "art", "sue", "jack", "king", "bishop", "knight", "ward", "miles", "grant", "drew", "chase", "hank", "rich", "sandy", "bob", "lee", "wade", "page", "case", "rusty", "buck", "dean", "earl", "frank", "guy", "nick", "pete", "sage", "star", "rock", "wolf", "fox", "bear", "bird", "owl", "newt", "tank", "mage", "rogue", "priest", "paladin", "warrior", "druid", "shaman", "warlock", "healer", "frost", "fire", "storm", "shadow", "light", "dark", "blade", "stone"]);
+function nameRegexes(g) {
+  const seen = new Set(), strict = [], exact = [], loose = [];
+  const bound = (src, flags) => new RegExp(`(?<![\\p{L}\\p{N}])${src}(?![\\p{L}\\p{N}])`, flags);
+  for (const form of [g.name, g.slug]) { // the stored display name first, so its exact case is the one kept
+    const parts = String(form || "").split(/[\s_-]+/).filter(Boolean);
+    const key = parts.join("-").toLowerCase();
+    if (!parts.length || seen.has(key)) continue;
+    seen.add(key);
+    if (parts.length >= 2) {
+      const sep = parts.every((x) => x.length >= 3) ? "[\\s_-]*" : "[\\s_-]+";
+      strict.push(bound(parts.map(escRe).join(sep), "giu"));
+    } else if (parts[0].length <= 2 || COMMON_NAME_WORDS.has(parts[0].toLowerCase())) {
+      exact.push(bound(escRe(parts[0]), "gu"));
+      loose.push(bound(escRe(parts[0]), "giu"));
+    } else strict.push(bound(escRe(parts[0]), "giu"));
+  }
+  return { strict, exact, loose };
+}
+const testRe = (re, text) => new RegExp(re.source, re.flags.replace("g", "")).test(text);
+const mentions = (res, text) => [...res.strict, ...res.exact].some((re) => testRe(re, text));
+const swapNames = (res, t) => [...res.strict, ...res.exact].reduce((acc, re) => acc.replace(re, FORMER), String(t));
+const allPages = (env) => rows(env, "SELECT page_key, title, body_md, updated_at, rev, note FROM group_wiki ORDER BY page_key LIMIT 1000");
+
+async function groupExport(env, g) {
+  const log = await rows(env, "SELECT id, at, channel, author_slug, kind, text, reply_to, source FROM group_log WHERE author_slug = ? ORDER BY id", g.slug);
+  const res = nameRegexes(g), keys = keyedPages(g);
+  const pages = await allPages(env);
+  const keyed = pages.filter((p) => keys.includes(p.page_key));
+  const mention = pages.filter((p) => !keys.includes(p.page_key) && mentions(res, `${p.title}\n${p.body_md}`)).map((p) => ({ page_key: p.page_key, title: p.title, updated_at: p.updated_at })); // key and title only: the text holds other people's words
+  return { log, pages: [...keyed.map((p) => ({ relation: "about you", ...p })), ...mention.map((p) => ({ relation: "mentions you", ...p }))] };
+}
+
 // Every per-person key this Worker derives, for the caller. Nothing here is read from a request body.
 // askerHashes: the two forms an ask_turn_askers row can hold for this caller (Discord id, board-key slug); null when not applicable.
 async function personalKeys(env, who) {
@@ -144,6 +218,7 @@ const IN_CHUNK = 90; // D1 allows 100 bound values per statement
 const VOTE_CHUNK = 40; // two bound values per vote in the erase probe
 class TooManyVotes extends Error { constructor(n) { super("too many votes"); this.count = n; } }
 const tooManyVotes = (e) => respond(413, { error: "too_many_votes", max_votes: MAX_VOTES, message: `This service holds more than ${MAX_VOTES} votes, which is more than one request can search for your ballots. Nothing was changed. Ask the owner to run the export or erase for you.` });
+const hasShadowAnswers = async (env) => (await rows(env, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'shadow_answers'")).length > 0; // feature detect, as for vote_ballots
 const hasVoteBallots = async (env) => (await rows(env, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vote_ballots'")).length > 0; // feature detect: migration 0010 may not be applied yet
 const ballotPath = (hash) => `$.ballots."${hash}"`; // hex only, quoted because a key may start with a digit
 
@@ -217,6 +292,14 @@ async function collect(env, who) {
   const pk = await personalKeys(env, who);
   out.legacy.ask_turns = await rows(env, `SELECT id, by_name, question, answer, cites_json, model, status, share, latency_ms, created_at, answered_at FROM ask_turns WHERE ${MINE_ASK}`, ...askArgs(pk, who));
   out.legacy.answer_details = await rows(env, `SELECT intent_id, more, sources, message_id, created_at FROM answer_details WHERE asker_hash = ? OR intent_id IN (SELECT id FROM ask_turns WHERE ${MINE_ASK})`, pk.answerHash, ...askArgs(pk, who));
+  out.group = false; // true only when the member has group data: the new sections and the note appear then, and never otherwise
+  if (await groupPresent(env)) {
+    const g = await groupWho(env, who);
+    if (g) {
+      const gx = await groupExport(env, g);
+      if (gx.log.length || gx.pages.length) { out.legacy.group_log = gx.log; out.legacy.group_wiki = gx.pages; out.group = true; }
+    }
+  }
   out.legacy.ai_budget = [];
   for (const b of pk.budgetIds) out.legacy.ai_budget.push(...await rows(env, "SELECT key, json, updated_at FROM kv_state WHERE key LIKE ?", kvLike(b)));
   if (id) {
@@ -239,7 +322,7 @@ async function collect(env, who) {
     t.builds = await rows(env, "SELECT b.id, b.character_id, b.source, b.status, b.title, b.data_json, b.created_at, b.confirmed_at FROM builds b JOIN characters c ON c.id = b.character_id WHERE c.discord_user_id = ?", id);
     t.group_slots = await rows(env, "SELECT s.group_id, s.slot_index, s.role, s.character_id, s.status FROM group_slots s JOIN characters c ON c.id = s.character_id WHERE c.discord_user_id = ?", id);
     t.signups_v2 = await rows(env, "SELECT group_id, user_id, character_id, rsvp, updated_at FROM signups_v2 WHERE user_id = ?", id);
-    t.audit_log_as_actor = await rows(env, "SELECT id, tenant_id, action, target, detail_json, at FROM audit_log WHERE actor_discord_user_id = ?", id);
+    t.audit_log_as_actor = await rows(env, "SELECT id, tenant_id, action, target, detail_json, at FROM audit_log WHERE actor_discord_user_id = ? OR (action = 'member.add' AND json_extract(detail_json, '$.added') = ?)", id, id); // member.add rows name the added person in detail_json only
     out.tenancy = t;
   }
   return out;
@@ -257,6 +340,7 @@ async function exportData(env, who, now) {
       "Board documents in kv_state (signups, party, party_sheets, votes, feed_posts and similar) that may mention you by name.",
       "Cloudflare request logs, Cloudflare AI Gateway logs and cache, and Discord-side data.",
       "Account rows (accounts, account_keys: name, slug, label) are not part of this export; ask the owner for them.",
+      ...(data.group ? ["Group memory written by other friends that mentions you; wiki pages that mention you are listed by key and title only because their text holds other people's words."] : []),
       ...(who.via === "web-session" ? ["Rows keyed only by a member slug or display name (sheet_events, dispatches, intents, ask_turns, fact_fixes): a web session cannot be tied to a slug."] : []),
       ...(!who.discordId ? ["Tenancy tables (users, characters, builds, signups_v2 and others): this member key has no linked Discord id."] : []),
     ],
@@ -267,7 +351,9 @@ async function exportData(env, who, now) {
 async function eraseData(request, env, who, now) {
   if (!request.headers.get("Origin")) return respond(403, { error: "origin not allowed" }); // a form post or curl; the allow-list check already ran in the Worker
   let body = null;
-  try { body = JSON.parse(await request.text()); } catch (e) { body = null; }
+  const read = await readTextCapped(request, ERASE_BODY_MAX).catch(() => ({ text: "" }));
+  if (read.tooLarge) return respond(413, { error: "body too large" });
+  try { body = JSON.parse(read.text); } catch (e) { body = null; }
   if (!body || typeof body !== "object" || body.confirm !== CONFIRM_PHRASE) return respond(400, { error: `body must be {"confirm":"${CONFIRM_PHRASE}"}` });
   const id = who.discordId, db = env.DB;
   const st = [];
@@ -303,10 +389,41 @@ async function eraseData(request, env, who, now) {
     st.push(db.prepare("DELETE FROM intents WHERE slug = ?").bind(who.slug));
     st.push(db.prepare("DELETE FROM fact_fixes WHERE by_name IN (?, ?)").bind(who.slug, who.name));
     st.push(db.prepare("DELETE FROM members WHERE slug = ?").bind(who.slug));
+    if (await hasShadowAnswers(env)) st.push(db.prepare("DELETE FROM shadow_answers WHERE asker_slug = ?").bind(who.slug)); // SHADOW_ASK rows (migration 0014); skipped while the table does not exist (a deploy can run before its migration)
+  }
+  // Group memory: the person's log rows and their own pages go; a page that merely mentions them keeps its other content with their slug and name replaced, and waits for a rewrite (note rebuild:erase).
+  // The rewrite is done here with a case-insensitive, whole-word regex (nameRegexes), only for the pages that actually match, each guarded by the revision it was read at.
+  let groupTouched = false;
+  const partialPages = [];
+  if (await groupPresent(env)) {
+    const g = await groupWho(env, who);
+    if (g) {
+      const res = nameRegexes(g), keys = keyedPages(g);
+      const pages = await allPages(env);
+      const own = Number((await db.prepare("SELECT COUNT(*) AS n FROM group_log WHERE author_slug = ?").bind(g.slug).first()).n) > 0;
+      const keyed = pages.some((p) => keys.includes(p.page_key));
+      st.push(db.prepare("DELETE FROM group_log WHERE author_slug = ?").bind(g.slug));
+      st.push(db.prepare("DELETE FROM group_wiki WHERE page_key IN (?, ?)").bind(...keys));
+      let rewritten = 0;
+      for (const p of pages) {
+        if (keys.includes(p.page_key)) continue;
+        const orig = `${p.title}\n${p.body_md}`;
+        const title = swapNames(res, p.title), body = swapNames(res, p.body_md);
+        if (title !== p.title || body !== p.body_md) {
+          st.push(db.prepare("UPDATE group_wiki SET title = ?, body_md = ?, note = 'rebuild:erase', rev = rev + 1, updated_at = ? WHERE page_key = ? AND rev = ?").bind(title, body, new Date(now).toISOString(), p.page_key, p.rev));
+          rewritten++;
+        }
+        if (res.loose.some((re) => testRe(re, orig))) partialPages.push(p.page_key); // a restricted name (very short or a common word) was only replaced in its exact stored form: this page may still say it
+      }
+      groupTouched = own || keyed || rewritten > 0 || partialPages.length > 0;
+      st.push(db.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('group_erase_marker', ?, ?) ON CONFLICT(key) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at").bind(new Date(now).toISOString(), new Date(now).toISOString())); // a refresh that started before this erase sees it and writes nothing
+    }
   }
   if (id) {
     st.push(db.prepare("DELETE FROM sessions_v2 WHERE discord_user_id = ?").bind(id));
     st.push(db.prepare("DELETE FROM humans WHERE id IN (SELECT human_id FROM human_members WHERE discord_user_id = ?) AND (SELECT COUNT(*) FROM human_members h WHERE h.human_id = humans.id) = 1").bind(id));
+    // /member add audit rows hold the added person's id in detail_json (no foreign key, so the users delete does not reach them): scrub them.
+    st.push(db.prepare("UPDATE audit_log SET detail_json = '{}', target = NULL WHERE action = 'member.add' AND json_extract(detail_json, '$.added') = ?").bind(id));
     st.push(db.prepare("DELETE FROM users WHERE discord_user_id = ?").bind(id));
   }
   // A random target: the audit row proves an erase happened and when, and cannot be tied back to the person.
@@ -317,11 +434,13 @@ async function eraseData(request, env, who, now) {
   invalidateMembersCache();
   return respond(200, {
     erased: true,
+    ...(partialPages.length ? { group_pages_not_fully_rewritten: partialPages } : {}), // pages that may still say a short or common-word name in another spelling
     // only when ballots were looked for: a member key with no linked Discord id has no ballot hashes to search by
     ...(id ? { erased_includes: ["Your ballot in each board vote, whether it is kept in the vote document or, once the per-ballot table exists, as a row of it."] } : {}),
     not_erased: [
       "Board documents in kv_state that mention you by name (party, signups, the Discord roster and similar); ask the owner to review them.",
       "Account rows (accounts, account_keys: name, slug, label) are not erased by this route; ask the owner to remove them.",
+      ...(groupTouched ? ["Group memory: your own asks, Leeroy's answers to you and your wiki page are erased. What other friends wrote in the group log that mentions you stays, and a wiki page that mentions you keeps its other content with your slug and name replaced and is rewritten at the next refresh; spellings other than your slug and name (a nickname) are caught only when that page is rewritten."] : []),
       "Copies held by Cloudflare (request logs, AI Gateway logs and its cached answers, up to 6 hours for the cache) and by Discord and the AI vendor; D1 backups (Time Travel) until they expire.",
       "The Discord roster entry (kv_state discord_members) stays, so the bot still treats you as a member until an admin edits the roster.",
       "Your display name, your question and the party's names and builds were sent to the AI vendor; AI Gateway request logs may keep the full request. This service cannot erase those.",

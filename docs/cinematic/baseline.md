@@ -4,7 +4,7 @@ This page records what the board measures today, before any cinematic change, so
 
 ## Device gap
 
-The named test phone is not chosen yet. Nothing here is a phone measurement: INP, p95 frame time and a real-device LCP are open until Matt names the phone. The Chromium context is the stand-in the program asks for.
+The named test phone is not chosen yet. Nothing here is a phone measurement: INP, p95 frame time and a real-device LCP are open until the owner names the phone. The Chromium context is the stand-in the program asks for.
 
 ## Numbers
 

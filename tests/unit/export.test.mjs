@@ -44,7 +44,7 @@ test("every exclusion names a table or column that exists in schema.sql, and sec
     const have = db.raw.prepare(`PRAGMA table_info("${t}")`).all().map((c) => c.name);
     for (const c of Object.keys(cols)) assert.ok(have.includes(c), `${t}.${c}`);
   }
-  assert.deepEqual(Object.keys(EXCLUDED_TABLES).sort(), ["account_keys", "guest_rate_limits", "provider_tokens", "sessions", "sessions_v2"]);
+  assert.deepEqual(Object.keys(EXCLUDED_TABLES).sort(), ["account_keys", "game_fact_loads", "game_facts", "guest_rate_limits", "provider_tokens", "sessions", "sessions_v2"]);
   assert.deepEqual(Object.fromEntries(Object.entries(EXCLUDED_COLUMNS).map(([t, c]) => [t, Object.keys(c)])), { members: ["key_hash"] });
   assert.deepEqual(Object.keys(ROW_FILTERS), ["kv_state"]);
 });

@@ -6,21 +6,52 @@
 // page order, facts before Open bullets). Pass { hays } from factHays(pages) to skip rebuilding the idf corpus per question.
 export const STOP = new Set("the a an and or of to in on at for with from by is are was were be been can could will would should do does did we our us you your they them it its this that these those what when where which who how why any some all one two about into than then there here just also only more most much very like get got have has had not no yes if so as up out off over".split(" "));
 export const SYNONYMS = { zone: ["area", "starting", "start"], group: ["party", "invite", "grouping"], level: ["lvl"], raid: ["onyxia", "hyjal", "barrow"], money: ["gold", "silver", "copper", "price", "cost"], mount: ["riding"], spec: ["talent", "build"], pack: ["skyborne", "epic", "heroic", "collection"], launch: ["release", "nov"], name: ["surname", "reservation"] };
-export const stem = (w) => w.toLowerCase().replace(/'s$/, "").replace(/(ies)$/, "y").replace(/(es|s)$/, "");
+// stem() is pure, and rank() stems every key segment of every fact on every question: a bounded memo of string -> stem (CPU, same result).
+const STEMS = new Map();
+export const stem = (w) => {
+  if (typeof w !== "string") return w.toLowerCase().replace(/'s$/, "").replace(/(ies)$/, "y").replace(/(es|s)$/, ""); // as before, whatever it does for a non-string
+  let s = STEMS.get(w);
+  if (s === undefined) {
+    s = w.toLowerCase().replace(/'s$/, "").replace(/(ies)$/, "y").replace(/(es|s)$/, "");
+    if (STEMS.size >= 20000) STEMS.clear();
+    STEMS.set(w, s);
+  }
+  return s;
+};
 export function questionWords(q, stop = STOP) {
   return [...new Set((String(q).toLowerCase().match(/[a-z0-9][a-z0-9'-]+/g) || []).map(stem).filter((w) => w.length > 2 && !stop.has(w)))];
 }
 export function expandWords(words, synonyms = SYNONYMS) {
   const expanded = new Set(words);
-  for (const w of words) for (const s of synonyms[w] || []) expanded.add(s);
+  // Own keys only: a question word such as "constructor" is a word, not a property of the synonym table.
+  for (const w of words) for (const s of (Object.prototype.hasOwnProperty.call(synonyms, w) && synonyms[w]) || []) expanded.add(s);
   return expanded;
 }
 // The text a fact is matched on: dotted key as words, then the value, lower case. Aliases are appended per page in rank();
 // the idf corpus ignores them.
-export const factHay = (f) => (f.key.replace(/[._]/g, " ") + " " + f.value).toLowerCase();
+// Memoised per fact object (CPU): the entry is trusted only while the fact's key and value are the very strings it was built from, so an edited fact is rebuilt.
+const HAYS = new WeakMap();
+export const factHay = (f) => {
+  const c = f !== null && typeof f === "object" ? HAYS.get(f) : undefined;
+  if (c !== undefined && c.k === f.key && c.v === f.value) return c.h;
+  const h = (f.key.replace(/[._]/g, " ") + " " + f.value).toLowerCase();
+  if (f !== null && typeof f === "object" && typeof f.key === "string" && typeof f.value === "string") HAYS.set(f, { k: f.key, v: f.value, h });
+  return h;
+};
 export const factHays = (pages) => pages.flatMap((p) => p.facts.map(factHay));
 // idf: a word that appears in half the facts ("level") is worth little; "zeppelin" is worth a lot. Substring match, as always.
-export const idfOf = (w, hays) => Math.log((hays.length + 1) / (hays.filter((h) => h.includes(w)).length + 1)) + 0.1;
+// How many of the hays contain w, counted once per (corpus array, word): a hays array is a derived corpus (factHays) that callers build once and never edit; it is
+// re-counted when its length changes or its first or last text does.
+const COUNTS = new WeakMap();
+export function hayCount(w, hays) {
+  let c = COUNTS.get(hays);
+  const n = hays.length;
+  if (!c || c.n !== n || c.first !== hays[0] || c.last !== hays[n - 1]) { c = { n, first: hays[0], last: hays[n - 1], m: new Map() }; COUNTS.set(hays, c); }
+  let k = c.m.get(w);
+  if (k === undefined) { k = 0; for (let i = 0; i < n; i++) if (hays[i].includes(w)) k++; c.m.set(w, k); }
+  return k;
+}
+export const idfOf = (w, hays) => Math.log((hays.length + 1) / (hayCount(w, hays) + 1)) + 0.1;
 export function idfFor(expanded, hays, known) {
   const idf = {};
   for (const w of expanded) idf[w] = known && Object.prototype.hasOwnProperty.call(known, w) ? known[w] : idfOf(w, hays);
@@ -33,7 +64,7 @@ const synIn = (hay, w) => { if (!starts.has(w)) starts.set(w, new RegExp(`(?:^|[
 export function scoreFact(f, alias, words, expanded, idf) {
   const hay = factHay(f) + alias;
   let score = 0;
-  for (const w of expanded) if (words.includes(w) ? hay.includes(w) : synIn(hay, w)) score += idf[w] * (words.includes(w) ? 1 : 0.6);
+  for (const w of expanded) { const inQ = words.includes(w); if (inQ ? hay.includes(w) : synIn(hay, w)) score += idf[w] * (inQ ? 1 : 0.6); }
   if (f.key.split(".").some((k) => expanded.has(stem(k)))) score += 1.5;
   return Math.round(score * 10) / 10;
 }

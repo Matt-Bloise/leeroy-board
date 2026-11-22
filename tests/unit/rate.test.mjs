@@ -180,7 +180,10 @@ test("the fixture is fictional and shaped like an eval request; real data stays 
 });
 
 test("the workflows copy the rate folder into the deploy", () => {
+  // the bundle is staged by tools/pages-bundle.mjs (tests/unit/pages-bundle.test.mjs pins that both workflows run it); its item list must carry landing and rate
+  const src = read("tools/pages-bundle.mjs");
+  assert.match(src, /BUNDLE_ITEMS = Object\.freeze\(\[[^\]]*"landing"[^\]]*"rate"/);
   for (const f of readdirSync(new URL(".github/workflows/", root)).filter((n) => /^(deploy-cloudflare|pr-preview-cloudflare)\.yml$/.test(n))) {
-    assert.match(read(`.github/workflows/${f}`), /for item in [^;]*\blanding\b[^;]*\brate\b/, f);
+    assert.match(read(`.github/workflows/${f}`), /node tools\/pages-bundle\.mjs \.cloudflare-dist/, f);
   }
 });

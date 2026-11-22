@@ -19,6 +19,22 @@ Added after the Nov 3 red-team review. `deploy-cloudflare.yml` now fails closed:
 - **Post-deploy health check.** The last step calls `https://api.leeroy.party/api/health` up to 5 times, 10 s apart, and needs HTTP 200 JSON with `ok: true` and `db: "ok"` (the Worker runs `SELECT 1` on D1; on failure it answers 503 `db: "error"`). If it fails, the Worker or D1 is unhealthy: use section 2 below to roll the Worker back, or revert the PR that deployed it.
 - A manual run only deploys from `master` (job `if`).
 
+## When a push deploys (queueing and skipped pushes)
+
+Added 2026-11-19 with the CI-minutes change. Source of truth: `on.push.paths-ignore` and `concurrency` in `.github/workflows/deploy-cloudflare.yml`, pinned by `tests/unit/deploy-trigger.test.mjs`.
+
+**Queueing.** The workflow sits in the concurrency group `cloudflare-production-master` with `cancel-in-progress: false`. A deploy that is running is never cancelled, so `wrangler d1 migrations apply` is never killed mid-run by a newer merge. GitHub allows at most one running and one pending run per group; a newer run replaces an older pending run (the replaced run is cancelled before it starts). Merging several PRs back to back therefore runs the first deploy, skips the ones in between, and runs ONE final deploy. Each run checks out its own pushed sha, so the final deploy contains every earlier merge.
+
+Limits of the guarantee:
+- The pending replacement is GitHub behaviour, not something this repo implements (https://docs.github.com/en/actions/using-jobs/using-concurrency: "At most one job or workflow run can be `pending`"; an existing pending run in the group is cancelled when a newer one queues). Re-read that page if the behaviour is ever in doubt.
+- The guarantee covers the job running inside the group. A person who cancels a run by hand, a runner failure, or the 6 hour job limit can still stop a migration partway; `schema.sql` uses IF NOT EXISTS broadly (not verified for every statement) and `d1 migrations apply` records applied names, so a re-run resumes. Time Travel bookmark: section 3.
+- The probe job (`production-probe`) is in the same run, so it holds the group until it finishes; a queued deploy waits for it.
+
+**Skipped pushes.** A push to `master` does not start the deploy when every changed file matches `paths-ignore`: `docs/**`, the test folders the deploy does not read (`tests/unit/`, `tests/api/`, `tests/contract/`, `tests/csp/`, `tests/fixtures/`, `tests/load/`, `tests/local/`, `tests/visual/`; NOT `tests/browser/`, `tests/helpers/` or `tests/package*.json`, which the production probe job reads), `**/*.md`, `.github/ISSUE_TEMPLATE/**`, `.claude/**`, and the tools the deploy and the Pages bundle never run (explicit file list). GitHub evaluates the filter per push against that push's own diff (https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions: when all changed paths match, the workflow does not run). Nothing is lost by skipping: the next push that does deploy checks out its own sha, which includes the skipped commits. Anything under `infrastructure/`, `data/`, `pages-worker/`, `js/`, `css/`, `scenes/`, `index.html`, `wrangler.toml`, `schema.sql`, migrations, and the four deploy tools (`pages-bundle`, `d1-row-count`, `flagship-ensure-flags`, `sync-discord-commands`) always deploys. A new file under `tools/` deploys until it is added to the ignore list (fail safe).
+- `workflow_dispatch` is unchanged and ignores path filters: "Run workflow" on `master` deploys the current HEAD whatever it contains. Use it when a docs-only merge must be reflected or a failed deploy must be retried.
+- A deploy that failed is not retried by a later skipped push. Re-run it by hand.
+- Branch protection: unknown for this repo. `docs/roadmap/PRODUCT-REVIEW.md` (2026-11-02) recorded no branch protection and no rulesets, and `docs/runbooks/ci-minutes.md` says required checks "if any are configured" are not changed by CI-lean work. Required status checks apply to the pull request head, not to push runs on `master`, so skipping the push deploy cannot block a merge either way. Confirm with `gh api repos/Matt-Bloise/leeroy-board/branches/master/protection` before relying on this.
+
 ## 1. Pages (static site)
 
 Dashboard (docs: https://developers.cloudflare.com/pages/configuration/rollbacks/): Workers & Pages, project `leeroy-board`, Deployments, open the menu on the target production deployment, "Rollback to this deployment", confirm. Only successfully built production deployments are valid targets; previews are not. It takes effect immediately.
@@ -32,6 +48,8 @@ npx wrangler pages deployment list --project-name leeroy-board --environment pro
 The Cloudflare rollback page documents only the dashboard method; no `wrangler pages` rollback command was found (cli help lists none for `pages deployment`; the sub-commands were not exhaustively checked). A rollback pins an old build; the next push to `master` deploys a new one on top of it, so fix forward or revert before merging anything else (see section 4).
 
 Note: the deployed `js/brain.js` has the Worker URL stamped in at deploy time (`deploy-cloudflare.yml:280-286`). Production resolves to `https://api.leeroy.party` (`:239-245`), which is stable, so an old Pages build still talks to the current Worker. If the Worker API changed incompatibly, roll back both layers.
+
+Pages and Worker are a pair for the member documents: the board reads `client`, `party`, `decide`, `tonight` and `guided-atlas` from the Worker only (`/api/data/<name>`, no static fallback). A newer Pages build with an older Worker gives `/api/data/client` a 404 (the older Worker has no bundled client document), so the board shows the could-not-load line. Roll back the Worker and Pages together (sections 1 and 2), never one of them alone across that change.
 
 ## 2. Worker and Durable Object
 
@@ -64,7 +82,7 @@ Flags confirmed with `--help` (cli). Behavior (docs): in-flight queries are canc
 
 Retention: the docs say Workers Paid plans restore up to 30 days back and Workers Free plans 7 days. Which plan this account is on is unverified (`wrangler.toml:18,25,35` describe free-tier limits but do not prove the plan). Plan on 7 days until the owner confirms the plan in the dashboard.
 
-Before any restore: note the current bookmark, and take an export as a second copy (cli): `npx wrangler d1 export leeroy-board-db --remote --output=../_scratch-backup.sql` (keep it out of the repo; see `backup-restore.md`). A restore also rewinds live edits made through the app since the target time (sign-ups, sheet events, ask history). The Durable Object holds no storage of its own (`infrastructure/README.md:14`).
+The production deploy job now records the current bookmark automatically before migrations apply: open the run's job summary, heading "D1 Time Travel bookmark before migrations" (read-only, never blocks the deploy; PR previews are not covered). Before any restore: note the current bookmark (the summary of the deploy being undone has it), and take an export as a second copy (cli): `npx wrangler d1 export leeroy-board-db --remote --output=../_scratch-backup.sql` (keep it out of the repo; see `backup-restore.md`). A restore also rewinds live edits made through the app since the target time (sign-ups, sheet events, ask history). The Durable Object holds no storage of its own (`infrastructure/README.md:14`).
 
 ## 4. Revert through the normal process
 

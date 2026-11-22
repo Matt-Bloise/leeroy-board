@@ -79,7 +79,8 @@ const minutes = (n) => (!(n > 0) ? "" : n <= 1 ? "About a minute." : `About ${Ma
 function tonightLine(t, short) {
   if (!t || !t.label) return null;
   const when = Number.isFinite(t.epoch) ? K.fmtWhen(t.epoch, { rel: true }) : t.open && t.untilEpoch ? `open until ${K.fmtWhen(t.untilEpoch, { rel: true })}` : "";
-  let s = `${String(t.label).split(":")[0].trim()}${when ? `: ${when}` : ""}.`;
+  const lbl0 = String(t.label).split(":")[0].trim(), lbl = /^launch$/i.test(lbl0) && Number.isFinite(t.epoch) && t.epoch * 1000 <= Date.now() ? "Launched" : lbl0; /* a dated event that has passed is not "Launch: ... 15 hours ago" */
+  let s = `${lbl}${when ? `: ${when}` : ""}.`;
   if (!short) {
     const c = t.coming || {}, n = c.in || 0, rest = [[c.maybe, "tentative"], [c.late, "running late"], [c.out, "out"]].filter(([k]) => k > 0), none = ((D.party && D.party.members.length) || 5) - n - rest.reduce((x, [k]) => x + k, 0);
     const night = K.launchPast && K.launchPast() ? "this week" : "launch night";

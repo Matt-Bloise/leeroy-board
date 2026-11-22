@@ -41,6 +41,8 @@ Stale text found: `infrastructure/README.md:62` says `GET /data/:name` has no al
 | Secret values | No | The repo does not and must not store them. Keep the originals in the owner's password manager. Whether Cloudflare can show a Worker secret back is unverified; assume not. |
 | Anything older than the Time Travel window with no export | No | Not recoverable |
 
+**`game_facts` and `wrangler d1 export`.** The game-facts store (migration 0016, `docs/runbooks/game-facts.md`) is two plain tables and two indexes: no virtual table and no trigger, so a plain `wrangler d1 export` works. A first version used an FTS5 virtual table, and on a real D1 that made the export fail ("cannot export databases with virtual tables"); the PR preview run now exports its own D1 after loading synthetic facts, fails if the export fails, and checks that the dump holds the `game_facts` rows. `GET /api/admin/export` leaves `game_facts` and `game_fact_loads` out (derived from files on the owner's PC, reloadable with `tools/facts-load.mjs`; `game_facts` is `WITHOUT ROWID`, which that route's rowid paging cannot walk); Time Travel and a plain `wrangler d1 export` carry them.
+
 Recommended gap fill (still not scheduled): a weekly export to private storage outside the repository, stored encrypted. `GET /api/admin/export` plus `tools/pull-export.mjs` (below) leaves out member key hashes and session tokens; a raw `wrangler d1 export` contains them.
 
 ## Restore drill (scratch database)

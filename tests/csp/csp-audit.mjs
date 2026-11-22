@@ -13,6 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { installApiStub } from "../helpers/api-stub.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, "../..");
@@ -100,7 +101,7 @@ async function auditPolicy(browser, label, policy) {
       consoleHits.push({ directive: dir ? dir[1] : "unknown", blocked: what ? what[1] : t.slice(0, 80), source: "console", count: 1 });
     });
     page.on("pageerror", (e) => problems.push(`${name}: pageerror ${String(e.message).slice(0, 120)}`));
-    if (member) await page.addInitScript(() => { try { localStorage.setItem("board-key", "audit-key-0123456789abcdef0123"); localStorage.setItem("board-me", "santa"); } catch {} });
+    if (member) await page.addInitScript((me) => { try { localStorage.setItem("board-key", "audit-key-0123456789abcdef0123"); localStorage.setItem("board-me", me); } catch {} }, standIn(0).slug);
     try {
       await page.goto(url, { waitUntil: "load", timeout: 30000 });
       await page.waitForTimeout(1200);

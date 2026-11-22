@@ -7,8 +7,11 @@
 //
 // All collaborators arrive through `deps` so the unit tests run with fake providers: no network, no D1, no AI.
 
+import { researchModeOn, forceResearchProvider } from "./research/provider.js";
+import { prepareResearchPrivacy } from "./research/claude.js";
 import { buildAnswerInputs, finishAnswerText, dispatchToProvider, isProviderConfigured, isPrPreviewEnv, modelAllowed, EVAL_MODEL_ALLOWLIST, PROMPT_VARIANTS, shortProviderError } from "./ai-models.js";
-import { lintAnswer } from "./answer-lint.js";
+import { lintAnswer, lintResearchAnswer } from "./answer-lint.js";
+import { RESEARCH_MAX_TOKENS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { checkAskBudget, loadBudget, dailyCap } from "./budget.js";
 
 // One place for every limit and pacing constant.
@@ -145,10 +148,14 @@ export async function runEval(env, req, depsIn = {}) {
   let i = cursor;
 
   const ctxFor = (q) => ({ asker: { isMember: q.asker !== "visitor" } });
+  // ASK_RESEARCH on (fails closed): the evaluation prompts carry the same group context as a live ask, so every candidate is forced to Workers AI (research/provider.js)
+  // and the research prompt state and finishing steps are used. deps.research overrides the flag read in tests.
+  const research = deps.research !== undefined ? Boolean(deps.research) : await researchModeOn(env, { preview: isPrPreviewEnv(env) });
 
   while (i < total && calls < maxCalls) {
     const q = questions[Math.floor(i / candidates.length)];
-    const c = candidates[i % candidates.length];
+    const c0 = candidates[i % candidates.length];
+    const c = research ? { ...c0, provider: forceResearchProvider(true, c0.provider), model: null } : c0;
     const base = { index: i, questionId: q.id, question: q.text, candidate: c.label, provider: c.provider, model: c.model || null, promptVariant: c.promptVariant };
     const fail = (error, extra = {}) => results.push({ ...base, ok: false, ms: 0, chars: 0, answer: "", rawChars: 0, lint: null, error, ...extra });
 
@@ -179,6 +186,7 @@ export async function runEval(env, req, depsIn = {}) {
           share: true,
           isMember: q.asker !== "visitor",
           promptVariant: c.promptVariant,
+          ...(research ? { research: true } : {}),
         });
       } catch (err) {
         fail(`inputs_failed: ${shortProviderError(err)}`);
@@ -186,6 +194,18 @@ export async function runEval(env, req, depsIn = {}) {
         continue;
       }
       inputsCache.set(key, inputs);
+    }
+
+    // Research mode: the evaluation prompt carries real party context, so it is tokenised (names become per-request tokens, as for a guest) before Workers AI sees it; if that cannot be
+    // done the candidate fails and nothing is sent. Flag off: the prompts are sent untouched.
+    let sendSystem = inputs.systemPrompt;
+    let sendUser = inputs.userPrompt;
+    let evalPriv = null;
+    if (research) {
+      evalPriv = prepareResearchPrivacy({ systemPrompt: inputs.systemPrompt, userPrompt: inputs.userPrompt, question: q.text, previousQuestion: null, priorTurns: [], by: q.asker === "visitor" ? "Visitor" : "Santa", party: inputs.researchParty });
+      if (!evalPriv.ok) { fail("research_prompt_not_tokenised"); i++; continue; }
+      sendSystem = evalPriv.system;
+      sendUser = evalPriv.user;
     }
 
     const callStart = deps.now();
@@ -197,14 +217,16 @@ export async function runEval(env, req, depsIn = {}) {
         provider: c.provider,
         model: c.model || undefined,
         env,
-        systemPrompt: inputs.systemPrompt,
-        userPrompt: inputs.userPrompt,
+        systemPrompt: sendSystem,
+        userPrompt: sendUser,
         deep: false,
         skipCache: true,
         budgetKind: "eval",
         timeoutMs: L.callTimeoutMs,
+        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS } : {}),
       });
-      const raw = String((out && out.answer) || "");
+      let raw = String((out && out.answer) || "");
+      if (evalPriv) raw = evalPriv.clean(raw) ?? ""; // detokenise to display text; a reply naming a name we never sent is dropped
       const { answer } = await deps.finish(env, {
         rawAnswer: raw,
         isCoach: inputs.isCoach,
@@ -212,10 +234,17 @@ export async function runEval(env, req, depsIn = {}) {
         by: q.asker === "visitor" ? "Visitor" : "Santa",
         askerIsMember: inputs.askerIsMember,
         persona: inputs.persona,
+        ...(research ? { research: true, groundingText: inputs.groundingText, retrieval: inputs.retrieval } : {}),
       });
       const chatMax = Number(inputs.persona && inputs.persona.format && inputs.persona.format.chatMaxChars);
       const chatMin = Number(inputs.persona && inputs.persona.format && inputs.persona.format.chatMinChars);
-      const lint = lintAnswer(answer, { ...ctxFor(q), maxChars: chatMax > 0 ? chatMax : undefined, minChars: chatMin > 0 ? chatMin : undefined });
+      let lint = lintAnswer(answer, { ...ctxFor(q), maxChars: research ? RESEARCH_FINAL_CHARS : chatMax > 0 ? chatMax : undefined, minChars: research ? undefined : chatMin > 0 ? chatMin : undefined });
+      if (research) {
+        // Research answers end with the Sources/confidence line (plain text, not masked links) and need not open with a whole bold sentence: those two house checks do not apply; the research lint does.
+        const rl = lintResearchAnswer(answer);
+        const failures = [...new Set([...lint.failures.filter((f) => f !== "sources_unmasked" && f !== "first_sentence_not_bold"), ...rl.failures])];
+        lint = { ...lint, failures, pass: failures.length === 0, research: rl };
+      }
       results.push({ ...base, model: (out && out.model) || base.model, ok: true, ms: deps.now() - callStart, chars: answer.length, answer, rawChars: raw.length, lint });
     } catch (err) {
       const msg = shortProviderError(err);
