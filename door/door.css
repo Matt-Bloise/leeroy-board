@@ -141,7 +141,7 @@ main { display: block; padding: 6px var(--gutter) 44px; outline: none; }
 .foot { display: grid; gap: 8px; padding: 22px var(--gutter) calc(26px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid rgba(209, 168, 90, .18); color: var(--dim); font-size: 1rem; }
 .foot p { margin: 0; }
 .foot nav { display: flex; flex-wrap: wrap; gap: 0 20px; }
-.foot nav a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text); }
+.foot nav a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; color: var(--text); }
 
 /* ---- the tavern room: a full-screen dialog; the WebGL scene loads on entry (door/room.js) ---- */
 .room { box-sizing: border-box; width: 100vw; height: 100vh; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; overflow: hidden; background: #000; color: var(--text); }

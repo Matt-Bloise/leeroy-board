@@ -46,16 +46,21 @@ export function openWords(ev, tonight) {
   return str(t && t.open_when);
 }
 
-// "in 17 days", "tomorrow", "in 5 hours", "in 40 minutes", "starting now". Plain words, no seconds: the door never ticks (zero idle loops).
+// "in 17 days", "in 30 hours", "in an hour", "in 40 minutes", "starting now". Plain words, no seconds: the door never ticks (zero idle loops), so the
+// words are coarse on purpose and are recomputed when the tab comes back into view. Never "tomorrow": that depends on the viewer's calendar day.
 export function relWords(deltaS) {
   if (!Number.isFinite(deltaS)) return "";
   if (deltaS < 60) return "starting now";
-  const m = Math.round(deltaS / 60), h = Math.round(deltaS / 3600), d = Math.round(deltaS / 86400);
+  const m = Math.round(deltaS / 60), h = Math.round(deltaS / 3600);
   if (deltaS < 3600) return `in ${m} minute${m === 1 ? "" : "s"}`;
   if (deltaS < 36 * 3600) return h <= 1 ? "in an hour" : `in ${h} hours`;
-  if (d <= 1) return "tomorrow";
-  return `in ${d} days`;
+  return `in ${Math.round(deltaS / 86400)} days`;
 }
+
+// A link from the data is used only when it is a Discord channel or message address over https; anything else (another host, javascript:, a
+// look-alike host) gives null and the door keeps its own link to the board's Sign-ups scene.
+const DISCORD = /^https:\/\/(?:ptb\.|canary\.)?discord\.com\/channels\/\d{5,25}\/\d{5,25}(?:\/\d{5,25})?$/;
+export const discordUrl = (u) => (typeof u === "string" && DISCORD.test(u) ? u : null);
 
 // The date words for an event in the viewer's own time zone (tz injectable for tests). format "D" is a date with no time of day (timeline.json).
 export function whenWords(ev, nowMs, tz) {

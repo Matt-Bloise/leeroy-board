@@ -1,18 +1,17 @@
 // The door: renders the reimagined first screen (docs/cinematic/door.md) from the board's own bootstrap document.
 // - Data: window.BoardBrain.bootstrap() from js/brain.js, so the door talks to the same API origin as the board (production, a PR preview's own Worker,
-//   or ?brain= locally) and sends no key and no cookie. Sign-ups are counted by js/signups-week.js (window.BoardWeek), the board's own weekly rule.
+//   or ?brain= locally) and sends no key and no cookie. After launch night sign-ups are counted by js/signups-week.js (window.BoardWeek), the board's own
+//   weekly rule, loaded only then (before launch the server's tallies are the count and the script is not needed on the first frame).
 // - It writes nothing: no storage, no API write. It reads the board's board-me / board-as keys to know a returning member.
 // - Zero idle loops: no timer and no animation frame runs after the first render. The date words are recomputed when the tab comes back into view.
 // - The map (door/map.js, Canvas 2D) loads when its card nears the viewport; the tavern room (door/room.js, WebGL) loads only when a person steps in.
-import { meFrom, nextEvent, eventLabel, openWords, whenWords, signupView, partyView, RSVP_SAY, sameName } from "./model.js?v=ddb2b86b7e";
+import { meFrom, nextEvent, eventLabel, openWords, whenWords, signupView, partyView, discordUrl, launchMs, RSVP_SAY, sameName } from "./model.js?v=29831ed9ea";
 
 const $ = (s) => document.querySelector(s);
 const SVGNS = "http://www.w3.org/2000/svg";
 const KNOWN = new Set(["druid", "priest", "paladin", "mage", "warlock", "hunter", "rogue", "shaman", "warrior"]);
 const reduceMQ = matchMedia("(prefers-reduced-motion: reduce)");
 const store = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-// A link from the data is used only when it is a Discord https address; anything else falls back to the board's own Sign-ups scene.
-const DISCORD = /^https:\/\/(?:ptb\.|canary\.)?discord\.com\/channels\/\d{5,25}\/\d{5,25}(?:\/\d{5,25})?$/;
 
 function h(tag, attrs, ...kids) {
   const n = document.createElement(tag);
@@ -64,8 +63,9 @@ function renderSignups(j, me) {
   seats.replaceChildren(...v.seats.slice().sort((a, b) => order(a) - order(b)).map((s) => h("li", { class: `seat ${s.state || "none"}` }, svgUse("", `#${SEAT[s.state] || "p-empty"}`, "0 0 24 24"))));
   const groups = [["in", "In"], ["late", "Running late"], ["maybe", "Tentative"], ["out", "Out"], [null, "Not answered yet"]]
     .map(([k, label]) => [label, v.seats.filter((s) => s.state === k).map((s) => s.name)]).filter(([, ns]) => ns.length);
-  who.replaceChildren(...groups.flatMap(([label, ns], i) => [i ? " " : "", h("b", { text: `${label}:` }), ` ${andList(ns)}.`]));
-  if (v.empty && !c.in && !c.late && !c.maybe && !c.out) who.append(" ", v.empty.nobody);
+  // nobody has answered this week: the board's own two lines (nobody yet, and when the last answers were) instead of a list of everyone
+  if (v.empty && !c.in && !c.late && !c.maybe && !c.out) who.replaceChildren(h("b", { text: v.empty.nobody }), " ", v.empty.last);
+  else who.replaceChildren(...groups.flatMap(([label, ns], i) => [i ? " " : "", h("b", { text: `${label}:` }), ` ${andList(ns)}.`]));
   const mine = me ? v.mine(me) : null;
   if (me) {
     you.textContent = mine && mine.state ? `You said ${RSVP_SAY[mine.state]}${mine.when && mine.state !== "out" ? `, for ${mine.when}` : ""}.` : `You have not answered ${v.phase === "week" ? "for this week" : "for launch night"} yet.`;
@@ -91,7 +91,7 @@ function renderParty(j, me) {
 // The one action: answer the sign-up card in Discord (first visit, or a member who has not answered), else see who is coming.
 function renderGo(j, me, mine) {
   const go = $("#go"), text = $("#go-text"), ico = $("#go-ico");
-  const url = [j.party && j.party.signup_url, j.tonight && j.tonight.links && j.tonight.links.signup].find((u) => typeof u === "string" && DISCORD.test(u));
+  const url = discordUrl(j.party && j.party.signup_url) || discordUrl(j.tonight && j.tonight.links && j.tonight.links.signup);
   if (me && mine && mine.state) {
     go.setAttribute("href", "#c-signups"); go.removeAttribute("target"); go.removeAttribute("rel");
     text.textContent = "See who is coming"; ico.setAttribute("href", "#i-down");
@@ -114,7 +114,7 @@ function lazyRoads(j) {
   let io = null, started = false;
   const start = () => {
     if (started) return; started = true; if (io) io.disconnect();
-    import("./map.js?v=7566f3669f")
+    import("./map.js?v=52821c2f70")
       .then((m) => m.drawRoads({ canvas: $("#map"), list, caption: $("#rd-cap"), heading: $("#rd-h"), party: j.party, reduce: () => reduceMQ.matches }))
       .catch(() => { list.replaceChildren(h("li", { class: "road road-wait", text: "The map did not load. The board has it under Three roads." })); });
   };
@@ -141,6 +141,13 @@ function offline() {
   $("#rd-list").replaceChildren(h("li", { class: "road road-wait", text: "The roads did not load." }));
 }
 
+// the board's weekly sign-up rule, a classic script that sets window.BoardWeek; on failure the count falls back to the server's tallies
+const WEEK = new URL("../js/signups-week.js?v=a788265af1", import.meta.url).href;
+function weekRule() {
+  if (window.BoardWeek) return Promise.resolve();
+  return new Promise((done) => { const s = document.createElement("script"); s.src = WEEK; s.onload = s.onerror = () => done(); document.head.append(s); });
+}
+
 async function main() {
   document.documentElement.classList.add("js");
   wireRoom();
@@ -149,6 +156,7 @@ async function main() {
   try { const B = window.BoardBrain; j = B && typeof B.bootstrap === "function" ? await B.bootstrap() : null; } catch (e) { j = null; }
   if (!j || typeof j !== "object") { offline(); table.setAttribute("aria-busy", "false"); return; }
   const me = meFrom(store, j.party);
+  if (Date.now() >= launchMs(j.timeline)) await weekRule();
   renderNext(j);
   const mine = renderSignups(j, me);
   renderParty(j, me);

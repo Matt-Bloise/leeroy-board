@@ -8,7 +8,7 @@
 // they are drawn at once. A resize redraws once. Nothing runs while the page is idle.
 import { buildGraph, makePlan, slicePath } from "../atlas/routes.js?v=3047650a27";
 import { smoothRing } from "../atlas/shape.js?v=fa8a9c9ac7";
-import { roadGroups, roadLine, zoneAt, word, cap, placeName, andList } from "./model.js?v=ddb2b86b7e";
+import { roadGroups, roadLine, zoneAt, word, cap, placeName, andList } from "./model.js?v=29831ed9ea";
 
 const CLASS = { druid: "#ff7c0a", priest: "#ffffff", paladin: "#f48cba", mage: "#3fc7eb", warlock: "#8788ee", hunter: "#aad372", rogue: "#fff468", shaman: "#0070dd", warrior: "#c69b6d" };
 const INK = "#1d140d", BRASS = "#eecd8c", CREAM = "#fbf4e4", LAND = "#3a2c1c", COAST = "rgba(238, 205, 140, .45)", ZONE = "rgba(238, 205, 140, .14)";
