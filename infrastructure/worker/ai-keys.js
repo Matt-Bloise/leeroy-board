@@ -69,6 +69,30 @@ function base32(buf) {
   return out;
 }
 
+// Byte helpers on plain Uint8Array (TextEncoder and btoa exist in Workers and in Node; Buffer exists only in Node or with nodejs_compat).
+const utf8Bytes = (s) => new TextEncoder().encode(s); // lone surrogates become U+FFFD, as Buffer.from(string) did
+function utf16leBytes(s) {
+  const out = new Uint8Array(s.length * 2);
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); out[2 * i] = c & 255; out[2 * i + 1] = c >> 8; }
+  return out;
+}
+function swap16(u8) {
+  const out = new Uint8Array(u8.length);
+  for (let i = 0; i + 1 < u8.length; i += 2) { out[i] = u8[i + 1]; out[i + 1] = u8[i]; }
+  return out;
+}
+function concatBytes(a, b) {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+function base64(u8) {
+  let bin = "";
+  for (let i = 0; i < u8.length; i += 4096) bin += String.fromCharCode(...u8.subarray(i, i + 4096));
+  return btoa(bin);
+}
+
 const windowCache = new Map(); // key -> { size, set }
 
 // Every 12-character window (the key's own length when shorter, minimum 8) of the key and of the forms an evasion can take:
@@ -86,16 +110,18 @@ function windowsFor(key) {
     add(key);
     add(rot13(key));
     for (const r of ["2d", "u002d", "45", "x2d"]) add(key.replaceAll("-", r));
-    const bytes = Buffer.from(key);
-    const u16 = Buffer.from(key, "utf16le");
+    // No Node globals here: the Worker runs without nodejs_compat, where `Buffer` does not exist (a ReferenceError that used to hide every Claude outcome, see failReason in research/claude.js).
+    const bytes = utf8Bytes(key);
+    const u16 = utf16leBytes(key);
+    const u16swapped = swap16(u16);
     for (let k = 0; k < 5; k++) {
-      const pad = Buffer.from("x".repeat(k));
+      const pad = new Uint8Array(k).fill(120); // "x" repeated k times
       if (k < 3) {
-        add(Buffer.concat([pad, bytes]).toString("base64"));
-        add(Buffer.concat([pad, u16]).toString("base64"));
-        add(Buffer.concat([pad, Buffer.from(u16).swap16()]).toString("base64"));
+        add(base64(concatBytes(pad, bytes)));
+        add(base64(concatBytes(pad, u16)));
+        add(base64(concatBytes(pad, u16swapped)));
       }
-      add(base32(Buffer.concat([pad, bytes])));
+      add(base32(concatBytes(pad, bytes)));
     }
     for (const p of ["", "x", "0x", "25", "u00"]) {
       add([...bytes].map((b) => p + b.toString(16).padStart(2, "0")).join(""));

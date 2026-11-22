@@ -105,20 +105,43 @@ export const RELOAD_ANSWER_LINE = "This page is out of date, so it cannot show y
 // Only a missing ask_turn_askers table (migration not applied yet) falls back to the plain insert; any other failure fails the ask.
 // An identifiable asker (a Discord id or a member handle) with no usable USER_SALT is refused with SaltMissingError BEFORE anything is written:
 // the row would carry no hashes, could never be found by an export or an erase, and the person could not be told. A visitor is unaffected.
+// The Discord channel an /ask came from, kept so a later reply can go back to the same channel. Digits-only snowflake or null (web, DM, malformed).
+const CHANNEL_ID_RE = /^[0-9]{5,25}$/;
+export function askChannel(value) { return typeof value === "string" && CHANNEL_ID_RE.test(value) ? value : null; }
+// ask_turns.channel is added by migration 0013 only (never in schema.sql: ALTER ... ADD COLUMN is not idempotent, see schema-source-of-truth.md rule 2).
+// A row with no channel is written with the pre-0013 statement, so web/DM asks and a database not yet migrated behave exactly as before.
 export async function insertAskTurn(env, row, who) {
   if (who && (who.discordId || who.slug) && !saltReady(env)) throw new SaltMissingError(["USER_SALT"]);
-  const ins = env.DB.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', ?, ?)")
-    .bind(row.id, row.byName, row.question, row.provider, row.share ? 1 : 0, row.createdAt);
+  const channel = askChannel(row.channel);
+  const base = (withChannel) => env.DB.prepare(withChannel
+    ? "INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at, channel) VALUES (?, ?, ?, ?, 'thinking', ?, ?, ?)"
+    : "INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', ?, ?)")
+    .bind(row.id, row.byName, row.question, row.provider, row.share ? 1 : 0, row.createdAt, ...(withChannel ? [channel] : []));
   const hashes = await askerHashes(env, who);
-  if (!hashes.length) { await ins.run(); return; }
+  const askerStmts = () => hashes.map((h) => env.DB.prepare("INSERT OR IGNORE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").bind(String(row.id), h));
+  const missingChannelColumn = (e) => /no column named channel|no such column: channel|has no column/i.test(String((e && e.message) || e));
+  // One write: the row and its asker rows in a single batch (or the row alone when there are no hashes). Retried without the channel only if the column is absent.
+  const write = async (withChannel) => {
+    if (!hashes.length) { await base(withChannel).run(); return; }
+    await env.DB.batch([base(withChannel), ...askerStmts()]);
+  };
+  const attempt = async () => {
+    try { await write(Boolean(channel)); }
+    catch (e) {
+      if (!channel || !missingChannelColumn(e)) throw e;
+      console.error("ask_turns.channel missing: apply migration 0013");
+      await write(false);
+    }
+  };
+  if (!hashes.length) { await attempt(); return; }
   try {
-    await env.DB.batch([ins, ...hashes.map((h) => env.DB.prepare("INSERT OR IGNORE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").bind(String(row.id), h))]);
+    await attempt();
   } catch (e) {
     // A guest's turn must never exist without its secret's hash: privateTurnAccess reads "no hash row" as "asked before guest secrets". So a guest ask fails here.
     if (who && who.guestSecret) throw e;
     if (!/no such table: ask_turn_askers/i.test(String((e && e.message) || e))) throw e;
     console.error("ask_turn_askers missing: apply migration 0009");
-    await ins.run();
+    await base(Boolean(channel)).run().catch(async (e2) => { if (channel && missingChannelColumn(e2)) await base(false).run(); else throw e2; });
   }
 }
 

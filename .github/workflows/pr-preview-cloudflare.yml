@@ -1,6 +1,6 @@
 name: PR Ephemeral Preview Environment (Cloudflare Free Tier)
 
-# The preview exists only while the PR carries the label `ci-full` (GitHub minutes are metered, docs/runbooks/ci-minutes.md):
+# The preview exists only while the PR carries the label `ci-full` (the full suite takes runner time and a preview slot, docs/runbooks/ci-minutes.md):
 #   opened / synchronize / reopened / labeled ci-full, with the label present -> prep, then deploy (spin up or refresh the preview)
 #   closed, or unlabeled ci-full                                           -> teardown (one job; exits early when no preview D1 exists), frees a D1 slot
 # A PR without the label costs nothing here: every job is skipped. Label events other than ci-full skip every job and never cancel a running spin-up.
@@ -40,11 +40,15 @@ jobs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
     steps:
       - name: Enforce the fork PR policy
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
-          IS_FORK="${{ github.event.pull_request.head.repo.full_name != github.repository }}"
-          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
-          echo "Head repository: ${{ github.event.pull_request.head.repo.full_name }}"
-          echo "Base repository: ${{ github.repository }}"
+          IS_FORK="false"
+          [ "$HEAD_REPO" = "$BASE_REPO" ] || IS_FORK="true"
+          echo "Head repository: $HEAD_REPO"
+          echo "Base repository: $BASE_REPO"
           echo "Base branch: $BASE_BRANCH"
           echo "Is fork PR: $IS_FORK"
           if [ "$IS_FORK" = "true" ] && [ "$BASE_BRANCH" = "master" ]; then
@@ -69,10 +73,12 @@ jobs:
         if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -eu -o pipefail
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
-          cat "$RUNNER_TEMP/paths.txt"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
+          # File names are attacker-controlled: prefix every line so none can start a workflow command (::...) in the log.
+          sed 's/^/| /' "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
       - name: Say that tests run without a preview
@@ -174,7 +180,7 @@ jobs:
 
           if [ "$TOKEN_STATUS" != "active" ]; then
             echo "::error::Cloudflare API Token validation failed. Status: $TOKEN_STATUS"
-            echo "Raw response from Cloudflare: $VERIFY_RES"
+            echo "Cloudflare error codes: $(printf '%s' "$VERIFY_RES" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required:"
             echo "1. Verify CLOUDFLARE_API_TOKEN is a valid API Token (not a Global API Key)."
@@ -193,11 +199,11 @@ jobs:
               const target = process.env.TARGET_ID;
               const match = accs.find(a => a.id === target);
               if (match) {
-                console.log("MATCH:" + match.id + ":" + match.name);
+                console.log("MATCH:" + match.id);
               } else if (accs.length === 1) {
-                console.log("RESOLVED_SINGLE:" + accs[0].id + ":" + accs[0].name);
+                console.log("RESOLVED_SINGLE:" + accs[0].id);
               } else if (accs.length > 1) {
-                console.log("MULTIPLE:" + accs.map(a => `${a.name} (${a.id})`).join(", "));
+                console.log("MULTIPLE:" + accs.length);
               } else {
                 console.log("NONE");
               }
@@ -209,16 +215,16 @@ jobs:
           TARGET_ACCOUNT_ID="$CLEAN_ACC"
           if [[ "$ACC_INFO" == MATCH:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "✓ Account ID matches token: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "✓ Account ID matches the token (account name and id are not printed)."
           elif [[ "$ACC_INFO" == RESOLVED_SINGLE:* ]]; then
             ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
-            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
-            echo "::notice::Auto-resolved Cloudflare Account ID: '$ACC_NAME' ($ACC_ID)"
+            echo "::add-mask::$ACC_ID"
+            echo "::notice::Auto-resolved the Cloudflare account from the token (account name and id are not printed)."
             TARGET_ACCOUNT_ID="$ACC_ID"
           elif [[ "$ACC_INFO" == MULTIPLE:* ]]; then
             echo "::error::Provided Account ID '$CLEAN_ACC' does not match any accounts this token can access."
-            echo "Available accounts for this token: ${ACC_INFO#MULTIPLE:}"
+            echo "The token can access more than one account; names and ids are not printed. Set CLOUDFLARE_ACCOUNT_ID to the intended one."
             exit 1
           else
             echo "::warning::Could not query /accounts via token. Proceeding with provided Account ID: $CLEAN_ACC"
@@ -234,7 +240,7 @@ jobs:
 
           if [ "$D1_SUCCESS" != "true" ]; then
             echo "::error::Token lacks D1 permissions for account '$TARGET_ACCOUNT_ID'."
-            echo "Cloudflare response: $D1_CHECK"
+            echo "Cloudflare error codes: $(printf '%s' "$D1_CHECK" | node ../tools/cf-error-codes.mjs)"
             echo ""
             echo "Action Required to Fix (Authentication error 10000 on D1):"
             echo "In Cloudflare Dashboard -> My Profile (top-right avatar) -> API Tokens:"
@@ -347,6 +353,12 @@ jobs:
             D1_DATABASE_NAME="$D1_DATABASE_NAME" node ./scripts/seed-d1.mjs --remote
           fi
 
+      - name: Prove the game_facts store on the real preview D1 (lookups, rows written, plain export)
+        # PREVIEW DATABASE ONLY: tools/d1-facts-smoke.mjs refuses any name that is not leeroy-board-db-pr-<number> (the production name leeroy-board-db included) before it calls wrangler.
+        # It inserts fictional rows, runs the Worker's own lookup against the real D1, loads a few hundred fictional facts with the loader's own statements and reads meta.rows_written, then runs a plain
+        # `wrangler d1 export --remote` and the restore drill. A failed assertion, including a failed export, FAILS this step. Results go to the job summary.
+        working-directory: infrastructure
+        run: node ../tools/d1-facts-smoke.mjs smoke
       - name: Deploy Ephemeral PR Worker & Durable Object (Single Deploy)
         id: worker
         working-directory: infrastructure
@@ -354,9 +366,18 @@ jobs:
           set +e
           # The production BOARD_ADMIN_TOKEN is never passed to the preview (a --var is plain text in the Worker settings).
           # The preview gets a derived admin secret in the next step.
-          DEPLOY_OUT=$(npx wrangler deploy 2>&1)
-          DEPLOY_EXIT=$?
-          echo "$DEPLOY_OUT"
+          # Bounded retry (at most 3 attempts, 20 s apart) for ONE known transient: Cloudflare error 10007 on the first deploy of a brand-new PR Worker. Any other failure stops at once.
+          for ATTEMPT in 1 2 3; do
+            DEPLOY_OUT=$(npx wrangler deploy 2>&1)
+            DEPLOY_EXIT=$?
+            if [ $DEPLOY_EXIT -eq 0 ] || ! printf '%s' "$DEPLOY_OUT" | grep -qE '(^|[^0-9])10007([^0-9]|$)' || [ $ATTEMPT -eq 3 ]; then break; fi
+            echo "::warning::wrangler deploy hit Cloudflare error 10007 (attempt $ATTEMPT of 3); retrying in 20 s"
+            sleep 20
+          done
+          # The account workers.dev subdomain carries a personal name: it is never printed. The raw output stays in the variable, only the redacted text reaches the log.
+          SUB=$(printf '%s' "$DEPLOY_OUT" | grep -oE '\.[a-z0-9-]+\.workers\.dev' | head -n 1 | sed -E 's#^\.([a-z0-9-]+)\.workers\.dev$#\1#' || true)
+          if printf '%s' "$SUB" | grep -qE '^[a-z0-9-]+$'; then echo "::add-mask::$SUB"; fi
+          echo "$DEPLOY_OUT" | sed -E 's#\.[a-z0-9-]+\.workers\.dev#.<account-subdomain>.workers.dev#g'
           if [ $DEPLOY_EXIT -ne 0 ]; then
             echo "::error::wrangler deploy failed with exit code $DEPLOY_EXIT"
             exit $DEPLOY_EXIT
@@ -368,6 +389,9 @@ jobs:
             echo "::error::Could not read the preview Worker URL (https://${WORKER_NAME}.<subdomain>.workers.dev) from the wrangler deploy output above. Not guessing one."
             exit 1
           fi
+          # Mask the account subdomain (it carries a personal name) for the rest of THIS job. The step output below is read only by later steps of this job; no other job or workflow receives the host (each job that needs it resolves it itself: tools/preview-worker-url.sh).
+          SUB=$(printf '%s' "$WORKER_URL" | sed -E 's#^https://[^.]+\.([a-z0-9-]+)\.workers\.dev$#\1#')
+          if printf '%s' "$SUB" | grep -qE '^[a-z0-9-]+$'; then echo "::add-mask::$SUB"; echo "::add-mask::$WORKER_URL"; fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 
       - name: Set Preview Salt Secrets (derived per preview)
@@ -393,23 +417,22 @@ jobs:
 
       - name: Stage Static Site (Wired to PR Worker) & Deploy to Cloudflare Pages Preview
         id: pages
+        env:
+          WORKER_URL: ${{ steps.worker.outputs.worker_url }}
         run: |
           set -e
-          mkdir -p .cloudflare-dist
-          for item in index.html 404.html privacy terms _headers og-1200x630.jpg robots.txt atlas cloth css data fonts img js landing rate next room scenes vendor; do
-            if [ -e "$item" ]; then
-              cp -R "$item" .cloudflare-dist/
-            fi
-          done
+          # The bundle is staged by tools/pages-bundle.mjs (shared by the production deploy and the PR preview). It leaves out the member data files
+          # (the Worker serves those through its privacy projection) and fails this step when one is present. docs/runbooks/member-data-worker-only.md
+          node tools/pages-bundle.mjs .cloudflare-dist
 
-          # Stamp the exact PR Worker URL into .cloudflare-dist/js/brain.js so both the branch alias URL
-          # and the per-commit hash URL talk directly to this PR's isolated Worker + D1.
-          node -e '
-            const fs = require("fs");
-            const p = ".cloudflare-dist/js/brain.js";
-            const s = fs.readFileSync(p, "utf8");
-            fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, `const WORKER = "${process.argv[1]}";`), "utf8");
-          ' "${{ steps.worker.outputs.worker_url }}"
+          # The Worker URL is stamped into JavaScript: accept only https://<name>[.<subdomain>].workers.dev, refuse anything else.
+          if ! printf '%s' "$WORKER_URL" | grep -qE '^https://[a-z0-9-]+(\.[a-z0-9-]+)?\.workers\.dev$'; then
+            echo "::error::The Worker URL does not have the shape https://<name>[.<subdomain>].workers.dev; refusing to stamp it into the site bundle."
+            exit 1
+          fi
+          # Stamp the exact PR Worker URL into the STAGED copy only (.cloudflare-dist): js/brain.js (WORKER), js/board.js (PREVIEW_WORKER) and the connect-src of the CSP lines in _headers (tools/preview-stamp.mjs).
+          # The production sources carry no workers.dev host at all; both the branch alias URL and the per-commit hash URL talk directly to this PR's isolated Worker + D1.
+          node tools/preview-stamp.mjs .cloudflare-dist "$WORKER_URL"
 
           cd infrastructure
           npx wrangler pages project create "$PAGES_PROJECT_NAME" --production-branch=master >/dev/null 2>&1 || true
@@ -426,7 +449,7 @@ jobs:
             const prNumber = context.payload.pull_request.number;
             const sha = context.payload.pull_request.head.sha.slice(0, 7);
             const previewUrl = "${{ steps.pages.outputs.preview_url }}";
-            const workerUrl = "${{ steps.worker.outputs.worker_url }}";
+            const workerName = "${{ env.WORKER_NAME }}"; // the host (the account's workers.dev subdomain) is NOT printed: it carries a personal name
             const dbName = "${{ env.D1_DATABASE_NAME }}";
 
             const body = [
@@ -436,7 +459,7 @@ jobs:
               "| Layer | Isolated Resource | Status |",
               "| :--- | :--- | :--- |",
               `| **Frontend (Cloudflare Pages)** | [${previewUrl}](${previewUrl}) | 🟢 Live (\`${sha}\`) |`,
-              `| **API & WebSockets (Worker + DO)** | [\`${workerUrl}/api/health\`](${workerUrl}/api/health) | 🟢 Isolated \`BoardRoom\` |`,
+              `| **API & WebSockets (Worker + DO)** | \`${workerName}\` on the account's workers.dev host (host not printed here) | 🟢 Isolated \`BoardRoom\` |`,
               `| **Database (Cloudflare D1)** | \`${dbName}\` | 🟢 Seeded & Isolated |`,
               `| **AI Model (Zero Keys)** | Cloudflare Workers AI (\`@cf/meta/llama-3.3-70b-instruct-fp8-fast\`) | 🟢 Free Tier (No External Keys) |`,
               "",

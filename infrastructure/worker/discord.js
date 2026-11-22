@@ -10,7 +10,7 @@
 //   7.  `/countdown`  — Launch countdown with hype and stress test status
 //   8.  `/dates`      — Every WoW: Forever date we know, with certainty ratings
 //   9.  `/library`    — The reference threads: what's on the shelves and what's coming
-//   10. `/quiz`       — Random Pop Quiz question (spoiler bar or reaction reveal)
+//   10. `/quiz`       — Random Pop Quiz question (answer behind a spoiler bar)
 //   11. `/didyouknow` — Random did-you-know fact from the verified library
 //   12. `/build`      — Link to someone's build thread with party roster choices
 //   13. `/leeroy`     — The yell with channel cooldown: "LEEROOOOOOOOY JENKINS!"
@@ -24,14 +24,20 @@
 //   21. Context menus — "Ask Leeroy" & "Fix this fact" on any Discord message
 // =============================================================================
 
-import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
+import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS, isPrPreviewEnv } from "./ai-models.js";
+import { askWallPlan, memberLine, memberAck, guestLibraryOnly, MEMBER_FAILED_LINE } from "./research/no-wall.js";
+import { researchModeOn } from "./research/provider.js";
+import { loadPublicInputs, projectForAnonymous, projectLaunch } from "./public-party.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
-import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
+import { mapPlanChoices, resolveMapPlan, MAP_PLAN_ALIASES } from "./map-plan.js";
+import { askChannel, isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
-import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
-import { buildStartReply } from "./announce.js";
+import { hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
+import { buildStartReply, buildAnnounceBody, lookupRosterId, postChannelMessage, DISCORD_CONTENT_MAX } from "./announce.js";
 import { resolveMember } from "./members.js";
+import { saveMember, checkGuildMember, readStoredMembers, auditMemberAdd } from "./member-write.js";
+import { slugify } from "./member-model.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { saltProblems, SaltMissingError } from "./salts.js";
 import { BUILD_MODAL_ID, buildModalEnabled, buildProjectEnabled, buildModalResponse, parseBuildSubmit, saveConfirmedBuild, isSnowflake } from "./build-modal.js";
@@ -41,6 +47,9 @@ import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-comma
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordBallot, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, loadConfigKeyStrict, libraryShelfLine, buildThreadMention } from "./config.js";
+import { groupMemoryOn } from "./research/group-memory.js";
+import { listenerMode, QUIET_COMMAND_NAME } from "./listener-config.js";
+import { setQuiet } from "./listener.js";
 import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
 import { updateKvJson, KvConflictError } from "./kv-cas.js";
@@ -65,6 +74,7 @@ import { tonightLines, LAUNCH_EPOCH } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { partyForMember, redactIntentBody, sheetIntentBody } from "./sheet-privacy.js";
 import { sheetValueProblem } from "./sheet-values.js";
+import { VOCAB_LIST, canonicalVocab } from "./sheet-vocab.js";
 import { canManageGuild } from "./setup-command.js";
 
 // Staff check for the mailbox commands (/intents, /ack, /answer). Two conditions:
@@ -83,12 +93,34 @@ async function rosterAdminCheck(env, interaction) {
   if (typeof roster.guildId !== "string" || !/^[0-9]{5,25}$/.test(roster.guildId)) return { ok: false, gateOff: false };
   return { ok: String(interaction.guild_id || "") === roster.guildId, gateOff: false };
 }
+// The names of the roster's channels whose ids are well formed (what /say can post to). Names only: ids never leave this module.
+function sayChannelKeys(roster) {
+  const map = roster && roster.channels;
+  if (!map || typeof map !== "object" || Array.isArray(map)) return [];
+  return Object.keys(map).filter((k) => lookupRosterId(roster, "channels", k) !== null);
+}
+// The channel an /ask came from, for ask_turns.channel: a guild channel only. A DM has no guild_id and stores null.
+function askOriginChannel(interaction) {
+  return interaction && interaction.guild_id ? askChannel(String(interaction.channel_id || "")) : null;
+}
+
 export const GATE_OFF_NOTE = "Server check is off: no roster server is set, so any server admin can use this.";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
+import { readTextCapped } from "./limits.js";
+export const DISCORD_MAX_BODY_BYTES = 256 * 1024;
+import { dataCachePath } from "./public-docs.js";
 import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
 
 export const GOLD = 0xffd100; // WoW UI Gold
 export const LAUNCH_UTC = Date.UTC(2026, 10, 4, 23, 0, 0); // Wed Nov 4 2026, 6:00 PM EST
+// /tooltip: "Verified in" is true only when the page's title or an alias contains the name asked for; a facts-only hit is "Mentioned on".
+function tooltipNamedBy(row, name) {
+  const needle = String(name || "").trim().toLowerCase();
+  if (!needle) return false;
+  let aliases = [];
+  try { const a = JSON.parse((row && row.aliases_json) || "[]"); if (Array.isArray(a)) aliases = a; } catch { /* unreadable aliases: title only */ }
+  return [row && row.title, ...aliases].some((t) => typeof t === "string" && t.toLowerCase().includes(needle));
+}
 export const STRESS_UTC = Date.UTC(2026, 9, 21, 21, 0, 0); // Wed Oct 21 2026, 5:00 PM EDT
 
 // Channel cooldown tracking for /leeroy (in-memory per isolate)
@@ -170,7 +202,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
     description: "Open a place, zone or route plan on the Living Board Azeroth Atlas",
     options: [
       { name: "place", description: "Place or zone slug (e.g. orgrimmar, crossroads, tirisfal-glades)", type: 3, required: false, autocomplete: true },
-      { name: "plan", description: "Meeting route plan slug (e.g. vos, xroads)", type: 3, required: false, autocomplete: true },
+      { name: "plan", description: "Place to chart a route plan to (e.g. orgrimmar, the-crossroads, or a sign-up meeting point)", type: 3, required: false, autocomplete: true },
     ],
   },
   {
@@ -250,19 +282,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
   },
   {
     name: "quiz",
-    description: "One random Pop Quiz question (answer hidden)",
-    options: [
-      {
-        name: "reveal",
-        description: "How the answer shows",
-        type: 3,
-        required: false,
-        choices: [
-          { name: "Spoiler bar (default)", value: "spoiler" },
-          { name: "React with eyes to reveal", value: "reaction" },
-        ],
-      },
-    ],
+    description: "One random Pop Quiz question (answer behind a spoiler bar)",
   },
   {
     name: "didyouknow",
@@ -337,6 +357,33 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
     options: [
       { name: "after", description: "Sequence number to start after", type: 4, required: false },
       { name: "limit", description: "Maximum intents to return (default 10)", type: 4, required: false },
+    ],
+  },
+  {
+    name: "say",
+    description: "Post a message as the bot to a configured channel (server admins only)",
+    default_member_permissions: "32", // Manage Server: hides it from everyone else in Discord; the handler enforces the same admin gate as /intents.
+    dm_permission: false,
+    options: [
+      { name: "channel", description: "Channel key from the roster (pick from the list)", type: 3, required: true, autocomplete: true },
+      { name: "text", description: "What to post (max 2000 characters)", type: 3, required: true, max_length: 2000 },
+    ],
+  },
+  {
+    name: "member",
+    description: "Add or list roster members (server admins only)",
+    default_member_permissions: "32", // Manage Server: hides it from everyone else in Discord; the handler enforces the same admin gate as /say.
+    dm_permission: false,
+    options: [
+      {
+        name: "add", description: "Add or update a roster member", type: 1,
+        options: [
+          { name: "user", description: "The Discord user", type: 6, required: true },
+          { name: "name", description: "Display name (1 to 40 characters)", type: 3, required: true },
+          { name: "match", description: "Extra match words, separated by spaces or commas", type: 3, required: false },
+        ],
+      },
+      { name: "list", description: "List roster members (slug, name, id)", type: 1 },
     ],
   },
   {
@@ -594,9 +641,9 @@ export async function patchOriginalWithRetry(interaction, content, components = 
 
 // Run an answer and edit the placeholder (@original) with the result. The final edit is ALWAYS sent, exactly once:
 // the answer, or the persona error line plus "Try again in a moment" when the provider chain failed or the deadline
-// (ASK_DEADLINE_MS, 24s, under the roughly 30s waitUntil cap) passed. An answer that lands after the deadline is still
+// (ASK_DEADLINE_MS, 26s, under the 30s waitUntil cap) passed. An answer that lands after the deadline is still
 // stored by answerWithAi in ask_turns (the website shows it) and is never sent a second time.
-export async function answerAndDeliver({ env, interaction, intentId, persona, answer, wrap = (s) => s, isPrivate = false, askerId = "" }) {
+export async function answerAndDeliver({ env, interaction, intentId, persona, answer, wrap = (s) => s, isPrivate = false, askerId = "", memberOpen = false }) {
   const startedAt = Date.now();
   const deadlineMs = Number(env && env.ASK_DEADLINE_MS) > 0 ? Number(env.ASK_DEADLINE_MS) : ASK_DEADLINE_MS;
   const work = Promise.resolve().then(answer).then(() => "done", () => "failed");
@@ -619,8 +666,13 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
     } catch {}
   }
   if (!text) {
-    const line = pickLine(persona, "errorLines", intentId);
-    text = /try again/i.test(line) ? line : `${line} Try again in a moment.`;
+    if (memberOpen) {
+      // ASK_RESEARCH on, a member: an in-voice line with no "try again", no limit, no time (research/no-wall.js).
+      text = memberLine(persona, intentId);
+    } else {
+      const line = pickLine(persona, "errorLines", intentId);
+      text = /try again/i.test(line) ? line : `${line} Try again in a moment.`;
+    }
   }
   // ANSWER_UX: More, Sources, Helpful and Off buttons on a real answer. Any failure here only means no buttons.
   const ux = answerUxEnabled(env);
@@ -659,7 +711,7 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
 
 // Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
-  const state = { verified: false, type: null };
+  const state = { verified: false, type: null, member: false };
   let res;
   try {
     res = await handleDiscordInteractionInner(req, env, ctx, origin, state);
@@ -668,9 +720,14 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     if (!state.verified || state.type === 1) throw err;
     // Name and a fixed tag only: err.message can carry a slice of user input.
     console.error("Discord interaction failed:", String((err && err.name) || "Error"), "[interaction_catch]");
+    // ASK_RESEARCH on, a roster member: the old line says "before you try again"; a member never reads retry wording (research/no-wall.js). Everyone else, and flag off: unchanged.
+    let failedLine = SLASH_COPY.interactionFailed();
+    if (state.member && state.type !== 4) {
+      try { if (await researchModeOn(env, { preview: isPrPreviewEnv(env) })) failedLine = MEMBER_FAILED_LINE; } catch {}
+    }
     const body = state.type === 4
       ? { type: 8, data: { choices: [] } }
-      : { type: 4, data: { content: SLASH_COPY.interactionFailed(), flags: 64 } };
+      : { type: 4, data: { content: failedLine, flags: 64 } };
     // Falls through to hardenInteractionBody below, so the catch reply carries allowed_mentions too.
     res = new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   }
@@ -691,7 +748,10 @@ export function likePattern(term) {
 }
 
 async function handleDiscordInteractionInner(req, env, ctx, origin, state = { verified: false, type: null }) {
-  const rawBody = await req.text();
+  // Anyone can post here, so the body is capped before it is read and before the signature is checked (a real interaction is a few KB).
+  const read = await readTextCapped(req, DISCORD_MAX_BODY_BYTES);
+  if (read.tooLarge) return new Response("Payload too large", { status: 413 });
+  const rawBody = read.text;
   if (!env.DISCORD_PUBLIC_KEY) {
     return new Response(JSON.stringify({ error: "DISCORD_PUBLIC_KEY not configured" }), { status: 500 });
   }
@@ -736,6 +796,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     "Guest";
   const membersConfig = await loadConfigKey(env, "discord_members");
   const member = resolveMember(user.id, rawUser, membersConfig); // null when the user is not a recognised party member
+  state.member = Boolean(member); // read by the catch in handleDiscordInteraction
   const byName = member ? member.name : String(rawUser).slice(0, 80);
   const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
   // CARDS_ENABLED: flush a due board line and retry an unfinished card edit. Cheap D1 reads; the scheduled ticks do the same.
@@ -758,11 +819,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         headers: { "Content-Type": "application/json" },
       });
     }
-    const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
+    // ASK_RESEARCH on: a roster member is never walled (noWall); everyone else keeps the check, on the guests' budget keys (research/no-wall.js). Flag off: exactly askBudgetKeys.
+    const { research, noWall, budget: askBudget } = await askWallPlan(env, { isMember: Boolean(member), userPart: await hashId(user.id), preview: isPrPreviewEnv(env) });
     // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
-    if (askBudget) {
+    if (askBudget && !noWall) {
       const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env), new Date(), { skipGlobal: provider !== "workers-ai" });
-      if (verdict && verdict.code !== "budget_global") {
+      if (verdict && verdict.code !== "budget_global" && !guestLibraryOnly(research, verdict)) { // research: a guest at the guests' share gets library facts from answerWithAi, not this refusal
         return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -773,7 +835,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     const now = new Date().toISOString();
 
     try {
-      await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now, channel: askOriginChannel(interaction) }, { discordId: user.id, slug: member && member.slug });
     } catch (e) {
       if (!(e instanceof SaltMissingError)) throw e;
       return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -796,15 +858,16 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         persona,
         isPrivate,
         askerId: String(user.id || ""),
+        memberOpen: noWall,
         wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
-        answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
+        answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || "") }),
       })
     );
 
     // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
     if (persona) {
       return new Response(
-        JSON.stringify({ type: 4, data: { content: pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
+        JSON.stringify({ type: 4, data: { content: noWall ? memberAck(persona, intentId) : pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -820,6 +883,24 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     const opts = interaction.data.options || [];
     const focused = opts.find((o) => o.focused);
     const query = focused ? String(focused.value).trim().toLowerCase() : "";
+
+    if (cmd === "say") {
+      // Admin only (same gate as the command); channel KEYS only, never ids. Anyone else gets an empty list.
+      let choices = [];
+      try {
+        const gate = await rosterAdminCheck(env, interaction);
+        if (gate.ok && focused && focused.name === "channel") {
+          const roster = await loadConfigKey(env, "discord_roster");
+          choices = sayChannelKeys(roster).filter((k) => k.toLowerCase().startsWith(query)).slice(0, 25).map((k) => ({ name: k.slice(0, 100), value: k.slice(0, 100) }));
+        }
+      } catch (e) {
+        console.error("autocomplete /say failed:", e && e.message);
+      }
+      return new Response(
+        JSON.stringify({ type: 8, data: { choices } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     if (cmd === "page") {
       let choices = [];
@@ -861,6 +942,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         JSON.stringify({ type: 8, data: { choices } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    if (cmd === "map" && focused && focused.name === "plan") {
+      let signups = null;
+      try { const r = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first(); signups = r ? JSON.parse(r.json) : null; } catch { /* unreadable sign-ups: the routable places alone */ }
+      const planChoices = mapPlanChoices(signups).filter((m) => m.name.toLowerCase().includes(query) || m.value.includes(query) || Object.entries(MAP_PLAN_ALIASES).some(([a, v]) => v === m.value && a.includes(query))).slice(0, 25).map((m) => ({ name: m.name, value: m.value }));
+      return new Response(JSON.stringify({ type: 8, data: { choices: planChoices } }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     if (cmd === "map") {
@@ -996,20 +1084,21 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first(),
       ]);
       const signups = signupsRow ? JSON.parse(signupsRow.json) : { entries: [] };
-      const party = partyRow ? JSON.parse(partyRow.json) : { members: [] };
+      const stored = partyRow ? JSON.parse(partyRow.json) : { members: [] };
+      const party = projectForAnonymous(stored, (await loadPublicInputs(env, { partyDoc: stored })).sheets);
       const lines = tonightLines({ now: Math.floor(Date.now() / 1000), byName, party, signups, boardUrl });
       const tonightRows = [
         {
           type: 1,
           components: [
-            { type: 2, style: 5, label: "Open Tonight on Board", url: `${boardUrl}/#tonight` },
+            { type: 2, style: 5, label: Date.now() >= LAUNCH_UTC ? "Open the Board" : "Open Tonight on Board", url: `${boardUrl}/#tonight` },
           ],
         },
       ];
       // INTEREST_NUDGES: one-tap answers. "I'm in" (the existing sign-up button) only before launch and while this member's RSVP is empty:
       // after launch the sign-up record is history, and a click would write rsvp:in into it.
       if (await interestOn(env)) {
-        const mine = (signups.entries || []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
+        const mine = (signups && Array.isArray(signups.entries) ? signups.entries : []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
         const beforeLaunch = Math.floor(Date.now() / 1000) < LAUNCH_EPOCH;
         const nudges = [...(member && beforeLaunch && !mine.rsvp ? [{ type: 2, style: 3, label: "I'm in tonight", custom_id: "signup:rsvp:in" }] : []), askLevelButton(), countsButton()];
         tonightRows.push({ type: 1, components: nudges });
@@ -1048,9 +1137,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         }
         // Same server rule as POST /sheet. A slash option is always a string, so level ("34") is refused here: it is set on the board.
         // The registered command does not offer level; this holds even for an interaction built by hand.
-        if (sheetValueProblem(field, value)) {
+        if (sheetValueProblem(field, value, undefined, { loose: true })) {
+          const listed = VOCAB_LIST[field]; // race, class, spec, professions, plan zone: refused unless the value is on the board's list (sheet-vocab.js); nothing is written
           return new Response(
-            JSON.stringify({ type: 4, data: { content: `${field === "level" ? "Level" : "That field"} is set on the board, not here. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
+            JSON.stringify({ type: 4, data: { content: listed ? `That is not on the board's list for ${field.replace(/_/g, " ")}. Pick it on your sheet: ${boardUrl}/#five` : `${field === "level" ? "Level" : "That field"} is set on the board, not here. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -1059,7 +1149,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           slug: target.slug,
           name: target.name,
           field,
-          value, // value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
+          value: canonicalVocab(field, value, { loose: true }), // the stored form (a slug, or a list of slugs for professions); value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
           source: "discord",
           at: now,
         });
@@ -1135,9 +1225,6 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         const entry = { slug: member.slug, name: byName, state, at: now };
         if (idx >= 0) rows[idx] = entry;
         else rows.push(entry);
-        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
-          .bind(JSON.stringify(rows), now)
-          .run();
         const savedLaunch = await recordSheetEventInD1(env, origin, {
           slug: member.slug,
           name: byName,
@@ -1146,6 +1233,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           source: "discord",
           at: now,
         });
+        // the sheet event first: an unreadable events log must leave no launch row behind
+        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
+          .bind(JSON.stringify(rows), now)
+          .run();
         await insertIntent(env, {
           slug: member.slug,
           kind: "launch",
@@ -1153,11 +1244,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           ver: 1,
           at: now,
         });
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/launch.json"]);
+        await purgeWorkerCache(origin, PARTY_CACHE_PATHS); // /state and /data/launch carry the launch list, both spellings
         await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
       }
-      const summary = rows.length
-        ? rows.map((r) => `• **${r.name}:** \`${r.state}\``).join("\n")
+      // The stored rows stay whole (they were written above); the reply is the public form: a member who hid launch_state shows no state to anyone else.
+      const shownRows = rows.length ? projectLaunch(rows, (await loadPublicInputs(env)).sheets, member.slug).filter((r) => r && r.state) : [];
+      const summary = shownRows.length
+        ? shownRows.map((r) => `• **${r.name}:** \`${r.state}\``).join("\n")
         : "No launch states set yet.";
       return new Response(
         JSON.stringify({
@@ -1175,8 +1268,20 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     if (cmd === "map") {
       const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
       const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
-      const hash = plan ? `#atlas.plan.${plan}` : place ? `#atlas.${place}` : "#atlas";
-      const label = plan ? `Meeting Route Plan (${plan})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
+      let planMeet = null;
+      if (plan) {
+        let signups = null;
+        try { const r = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first(); signups = r ? JSON.parse(r.json) : null; } catch { /* unreadable sign-ups: the routable places alone */ }
+        planMeet = resolveMapPlan(plan, signups);
+      }
+      if (plan && !planMeet) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: `No route plan for "${plan}". Pick a place from the \`plan\` list (e.g. \`orgrimmar\`, \`the-crossroads\`, \`valley-of-strength\`).`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const hash = planMeet ? `#atlas.plan.${planMeet.value}` : place ? `#atlas.${place}` : "#atlas";
+      const label = planMeet ? `Meeting Route Plan (${planMeet.value})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
       return new Response(
         JSON.stringify({
           type: 4,
@@ -1267,7 +1372,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           at: entry.updated,
         });
 
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+        await purgeWorkerCache(origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
         await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
         if (cardsBefore) await afterSignupChange(env, ctx, cardsBefore, doc);
 
@@ -1344,7 +1449,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           name: "Free Server Stress Test",
           value: `<t:${stressSec}:F> (<t:${stressSec}:R>)\n**${humanDuration(toStress)}** to go. Battle.net > WoW > Game Version "World of Warcraft: Forever Stress Test".`,
         });
-      } else {
+      } else if (toLaunch > 0) {
         fields.push({
           name: "Character Name Reservation",
           value: "Names open for pack buyers: up to three characters per account until Nov 3.",
@@ -1430,13 +1535,11 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
     // 2j. `/quiz`
     if (cmd === "quiz") {
-      const reveal = getOpt("reveal") || "spoiler";
       const qList = QUIZ_DATA.questions || [];
       const q = qList[Math.floor(Math.random() * qList.length)] || qList[0];
       const head = `**${q.round}** #${q.n}`;
-      const content = reveal === "reaction"
-        ? `${head}\n${q.q}\n-# React with 👀 to reveal the answer. Full quiz on the Living Board.`
-        : `${head}\n${q.q}\n||${q.a}||\n${SLASH_COPY.quizSpoilerFooter()}`;
+      // Always the spoiler bar: the Worker has no reaction handling, so an old registered "reveal: reaction" choice is ignored.
+      const content = `${head}\n${q.q}\n||${q.a}||\n${SLASH_COPY.quizSpoilerFooter()}`;
 
       return new Response(
         JSON.stringify({ type: 4, data: { content } }),
@@ -1502,15 +1605,17 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
     // 2n. `/help`
     if (cmd === "help") {
+      // The mailbox commands are admin-only, so only an admin sees them (same check as /intents).
+      const staffHelp = (await rosterAdminCheck(env, interaction)).ok;
       const help = [
         helpIntro(await loadPersona(env), "**Leeroy Jenkins, party assistant.** Ask anything about WoW: Forever."),
         `**The Living Board:** [open it](<${boardUrl}>) in any browser, nothing to install.`,
-        "**Ask:** `/ask <question>` plus your question, or set `private: True` to keep the answer to yourself.",
+        "**Ask:** `/ask` with your question, or set `private: True` to keep the answer to yourself.",
         "**Ask about a message:** computer, right-click it; phone, press and hold it. Then Apps -> **Ask Leeroy** (or **Fix this fact**).",
-        "**Quick:** `/tonight` your launch night, `/countdown` the clock, `/dates` every date, `/signup` sign up, `/page` a library page, `/tooltip` a spell, `/map` the Atlas, `/library` the shelves.",
+        "**Quick:** `/tonight` " + (Date.now() >= LAUNCH_UTC ? "the launch-night recap" : "your launch night") + ", `/countdown` the clock, `/dates` every date, `/signup` sign up, `/page` a library page, `/tooltip` a spell, `/map` the Atlas, `/library` the shelves.",
         "**Fun:** `/quiz` Pop Quiz, `/didyouknow` random facts, `/build` party builds, `/leeroy` the yell.",
         "**Votes:** `/vote start` with a title and 2 to 5 choices separated by |; everyone presses buttons to vote.",
-        "**Worker Mailbox:** `/intents` view pending mailbox changes, `/ack` clear intents, `/answer` answer an ask turn.",
+        ...(staffHelp ? ["**Worker Mailbox (admins):** `/intents` view pending mailbox changes, `/ack` clear intents, `/answer` answer an ask turn."] : []),
         "-# Leeroy never pings anyone. At least he has chicken.",
       ].join("\n");
 
@@ -1585,7 +1690,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     if (cmd === "tooltip") {
       const name = getOpt("name");
       const row = await env.DB.prepare(
-        "SELECT id, category, title FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR aliases_json LIKE ? ESCAPE '\\' OR facts_json LIKE ? ESCAPE '\\' LIMIT 1"
+        "SELECT id, category, title, aliases_json FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR aliases_json LIKE ? ESCAPE '\\' OR facts_json LIKE ? ESCAPE '\\' LIMIT 1"
       )
         .bind(likePattern(name), likePattern(name), likePattern(name))
         .first();
@@ -1611,7 +1716,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
               {
                 color: GOLD,
                 title: `Tooltip: ${name}`,
-                description: `Verified in **${row.title}** (\`${row.category}\`).\nView the full tooltip and item stats on the Living Board.`,
+                description: `${tooltipNamedBy(row, name) ? "Verified in" : "Mentioned on"} **${row.title}** (\`${row.category}\`).\nView the full tooltip and item stats on the Living Board.`,
                 url: `${boardUrl}/#lib.${row.id}`,
               },
             ],
@@ -1623,6 +1728,17 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     }
 
     // 2q. `/journey`
+    // /quiet (LISTENER on): a roster member tells Leeroy to stay out of this channel's chat, or lets him back in. Tagging him or replying to him still gets an answer.
+    if (cmd === QUIET_COMMAND_NAME && listenerMode(env) !== "off") {
+      if (!member) return unknownMemberResponse();
+      const on = getOpt("state") === "on";
+      const done = await setQuiet(env, String(interaction.channel_id || ""), on);
+      const content = !done ? "I could not change that just now. Try again in a moment."
+        : on ? "Fine. From now on I will not read this channel's chat or chime in (anything said before stays in my memory). Tag me or reply to me and I still answer. /quiet off lets me back in."
+        : "I am back. I may read this channel and chime in when I have a real answer. /quiet on shuts me up again.";
+      return new Response(JSON.stringify({ type: 4, data: { content, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
     if (cmd === "journey") {
       if (!member) return unknownMemberResponse();
       const choice = getOpt("choice") || "curious";
@@ -1709,6 +1825,100 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    // 2r2. `/say`: an admin posts as the bot. Same gate as /intents; the channel is a roster KEY, never an id; one inline fetch, ephemeral replies only.
+    if (cmd === "say") {
+      const sayReply = (content) => new Response(
+        JSON.stringify({ type: 4, data: { content, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+      const sayGate = await rosterAdminCheck(env, interaction);
+      if (!sayGate.ok) return sayReply("That command is for server admins.");
+      const roster = await loadConfigKey(env, "discord_roster");
+      const channelKey = getOpt("channel");
+      const channelId = lookupRosterId(roster, "channels", channelKey);
+      if (!channelId) {
+        const keys = sayChannelKeys(roster);
+        return sayReply(`Unknown channel. Valid channels: ${keys.length ? keys.join(", ") : "none configured"}.`);
+      }
+      const rawText = opts.find((x) => x.name === "text");
+      const text = rawText && typeof rawText.value === "string" ? rawText.value : "";
+      if (!text.trim()) return sayReply("Nothing to post: text is empty.");
+      if (text.length > DISCORD_CONTENT_MAX) return sayReply(`Text is too long (${text.length} characters). The limit is ${DISCORD_CONTENT_MAX}.`);
+      if (!env.DISCORD_BOT_TOKEN) return sayReply("Discord bot token not configured");
+      const built = buildAnnounceBody({ text });
+      if (!built.ok) return sayReply("Nothing to post: text is empty.");
+      const posted = await postChannelMessage(env, channelId, built.body);
+      if (posted.timedOut) return sayReply("Discord was slow to answer. The post may have gone through: check the channel before posting again.");
+      if (!posted.ok) return sayReply("Discord refused the post");
+      return sayReply(`Posted to ${channelKey}.${sayGate.gateOff ? `
+${GATE_OFF_NOTE}` : ""}`);
+    }
+
+    // 2r3. `/member add|list`: an admin edits the discord_members roster. Same gate as /say. `add` goes through saveMember, the code POST /api/admin/members runs.
+    // Replies are ephemeral with no mentions; ids are shown as plain digits and any "@" or "<" in a stored name is broken so nothing renders as a mention.
+    if (cmd === "member") {
+      const memberReply = (content) => new Response(
+        JSON.stringify({ type: 4, data: { content, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+      const memberGate = await rosterAdminCheck(env, interaction);
+      if (!memberGate.ok) return memberReply("That command is for server admins.");
+      // Stored text shown to an admin: no mentions, no markdown, no line breaks.
+      const inert = (s) => String(s).replace(/[\r\n]+/g, " ").replace(/@/g, "@​").replace(/</g, "<​").replace(/[\\[\]()`*_~|]/g, "\\$&");
+      if (memberGate.gateOff) return memberReply("Set the roster server first.");
+      const gateNote = "";
+      const sub = opts.find((x) => x.type === 1 || x.name === "add" || x.name === "list");
+      const subOpts = (sub && sub.options) || [];
+      const subOpt = (n) => {
+        const o = subOpts.find((x) => x.name === n);
+        return o && o.value !== undefined && o.value !== null ? String(o.value).trim() : "";
+      };
+      if (sub && sub.name === "list") {
+        const rows = await loadConfigKey(env, "discord_members");
+        const list = Array.isArray(rows) ? rows.filter((m) => m && typeof m === "object") : [];
+        if (!list.length) return memberReply(`No members on the roster.${gateNote}`);
+        const lines = [];
+        let used = 0;
+        for (const m of list) {
+          const line = `${inert(m.slug)} | ${inert(m.name)} | ${typeof m.id === "string" && /^[0-9]{17,20}$/.test(m.id) ? m.id : "no id"}`;
+          if (used + line.length + 1 > 1700) break;
+          lines.push(line);
+          used += line.length + 1;
+        }
+        const more = list.length - lines.length;
+        return memberReply(`Roster (${list.length}), slug | name | id:\n${lines.join("\n")}${more > 0 ? `\n...and ${more} more.` : ""}${gateNote}`);
+      }
+      if (sub && sub.name === "add") {
+        const name = subOpt("name");
+        const userId = subOpt("user");
+        if (!name) return memberReply("Nothing added: name is empty.");
+        if (!userId) return memberReply("Nothing added: pick a user.");
+        const slug = slugify(name);
+        if (!slug) return memberReply("Nothing added: the name needs at least one letter or digit.");
+        // Fail closed: the picked user must be in the roster guild (the gate above guarantees one is set).
+        const rosterRow = await loadConfigKey(env, "discord_roster");
+        const guildId = rosterRow && typeof rosterRow.guildId === "string" ? rosterRow.guildId : "";
+        const here = await checkGuildMember(env, guildId, userId);
+        if (here === "absent") return memberReply("That user is not in this server.");
+        if (here !== "in") return memberReply("Could not confirm membership with Discord; nothing was written.");
+        const typed = [...new Set(subOpt("match").toLowerCase().split(/[\s,]+/).filter(Boolean))];
+        const stored = await readStoredMembers(env);
+        if (stored === null) return memberReply("Nothing added: Could not read the roster.");
+        const prior = stored.find((m) => m && m.slug === slug);
+        // No match typed: an update keeps its non-empty list, otherwise the lowercased display-name tokens are used.
+        const keep = !typed.length && prior && Array.isArray(prior.match) && prior.match.length > 0;
+        const tokens = typed.length ? typed : [...new Set(name.toLowerCase().split(/[\s,]+/).filter((w) => w.length >= 3))];
+        const entry = { slug, name, id: userId, ...(keep ? {} : { match: tokens }) };
+        const saved = await saveMember(env, entry, { noRebind: true });
+        if (!saved.ok && saved.code === "taken") return memberReply("Nothing added: that name is already on the roster; use a different name.");
+        if (!saved.ok) return memberReply(`Nothing added: ${saved.status === 413 ? "that entry is too large (too many match words)." : inert(saved.error) + "."}`);
+        const audited = await auditMemberAdd(env, { by: user.id || "", added: userId, slug: saved.slug });
+        if (!audited) console.error("member.add audit row failed");
+        return memberReply(`Saved ${inert(saved.slug)} (${inert(name)}), id ${userId}. ${saved.entries} on the roster.${gateNote}`);
+      }
+      return memberReply("Use /member add or /member list.");
     }
 
     // 2s. `/ack`
@@ -1833,7 +2043,7 @@ ${GATE_OFF_NOTE}` : ""}`,
       const intentId = crypto.randomUUID();
       const provider = resolveAiProvider(env);
       try {
-        await insertAskTurn(env, { id: intentId, byName, question: text, provider, share: true, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+        await insertAskTurn(env, { id: intentId, byName, question: text, provider, share: true, createdAt: now, channel: askOriginChannel(interaction) }, { discordId: user.id, slug: member && member.slug });
       } catch (e) {
         if (!(e instanceof SaltMissingError)) throw e;
         return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -1847,21 +2057,35 @@ ${GATE_OFF_NOTE}` : ""}`,
         at: now,
       });
 
+      // GROUP_MEMORY: the text is someone else's message. Resolve its author against the roster so group memory files it under THEIR slug (never as this member's own ask); flag off: no read.
+      let messageTarget = null;
+      if (groupMemoryOn(env)) {
+        let authorSlug = "";
+        try {
+          const authorId = String((targetMsg.author && targetMsg.author.id) || "");
+          const roster = await loadConfigKey(env, "discord_members");
+          const hit = authorId && Array.isArray(roster) ? roster.find((m) => m && m.id === authorId) : null;
+          if (hit && typeof hit.slug === "string") authorSlug = hit.slug;
+        } catch {}
+        messageTarget = { authorSlug };
+      }
       const persona = await loadPersona(env);
+      const { noWall, budget: menuBudget } = await askWallPlan(env, { isMember: Boolean(member), userPart: await hashId(user.id), preview: isPrPreviewEnv(env) }); // same plan as /ask: no pre-check for a member, the guests' keys otherwise
       ctx.waitUntil(
         answerAndDeliver({
           env,
           interaction,
           intentId,
           persona,
+          memberOpen: noWall,
           wrap: (answerText) => `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${answerText}`,
           askerId: String(user.id || ""),
-          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }), isMember: Boolean(member), storeDetails: true }),
+          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: menuBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || ""), ...(messageTarget ? { messageTarget } : {}) }),
         })
       );
 
       return new Response(
-        JSON.stringify(persona ? { type: 4, data: { content: pickLine(persona, "ackLines", intentId) } } : { type: 5, data: {} }),
+        JSON.stringify(persona ? { type: 4, data: { content: noWall ? memberAck(persona, intentId) : pickLine(persona, "ackLines", intentId) } } : { type: 5, data: {} }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -1976,12 +2200,18 @@ ${GATE_OFF_NOTE}` : ""}`,
     if (!vote) return ephemeral("That vote no longer exists.");
     const nowMs = Date.now();
     if (parsed.action === "results") return ephemeral(`**${vote.title}**\n${tallyLines(vote).join("\n")}`);
-    if (!isOpen(vote, nowMs)) return ephemeral("That vote is closed. No new votes are counted.");
+    // A closed vote answers by updating the message itself, so the client's stale buttons turn disabled and "Closed." shows.
+    // If the stored vote cannot be rendered, fall back to the plain ephemeral "closed" answer.
+    const closedUpdate = (v) => {
+      try { return new Response(JSON.stringify({ type: 7, data: renderMessage(v, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } }); } catch { return ephemeral("That vote is closed. No new votes are counted."); }
+    };
+    if (!isOpen(vote, nowMs)) return closedUpdate(vote);
     const discordId = String(user.id || "");
     if (!discordId) return ephemeral("I can't tell who you are, so I can't count that vote.");
     if (saltProblems(env, ["USER_SALT"]).length) return ephemeral("Voting is unavailable: the Worker is missing its USER_SALT secret.");
     const result = castVote(vote, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
-    if (!result.ok) return ephemeral(result.error === "closed" ? "That vote is closed. No new votes are counted." : "That choice does not exist.");
+    // isOpen was checked above with the same nowMs, so castVote cannot report "closed" here.
+    if (!result.ok) return ephemeral("That choice does not exist.");
     await recordBallot(env.DB, vote.id, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
     const fresh = (await loadVote(env.DB, vote.id)) || result.vote; // re-read so the counts shown include ballots cast at the same moment
     await purgeWorkerCache(origin, ["/api/votes"]);
@@ -2075,7 +2305,7 @@ ${GATE_OFF_NOTE}` : ""}`,
         at: entry.updated,
       });
 
-      await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+      await purgeWorkerCache(origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
       await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
       return new Response(
         JSON.stringify({
@@ -2088,7 +2318,7 @@ ${GATE_OFF_NOTE}` : ""}`,
   }
 
   return new Response(
-    JSON.stringify({ type: 4, data: { content: "Command received by Leeroy.", flags: 64 } }),
+    JSON.stringify({ type: 4, data: { content: "Nothing was done: Leeroy does not recognise that command or button.", flags: 64 } }),
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
 }

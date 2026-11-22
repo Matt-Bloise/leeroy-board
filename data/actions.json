@@ -826,8 +826,7 @@
    "discord": [
     {
      "kind": "slash",
-     "command": "quiz",
-     "option": "reveal"
+     "command": "quiz"
     }
    ],
    "brain": null,

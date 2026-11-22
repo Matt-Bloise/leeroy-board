@@ -34,8 +34,8 @@ function mount() {
 mount();
 
 const decideUrl = () => (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/decide.json")) || "data/decide.json";
-const decideOwn = () => (window.BoardFetch ? window.BoardFetch.json("data/decide.json", { cache: "no-store" }) : fetch("data/decide.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`${"data/decide.json"} answered ${r.status}`); return r.json(); }));
-const decideLoad = () => { const u = decideUrl(); return u === "data/decide.json" ? decideOwn() : fetch(u, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => (j != null ? j : decideOwn())); };
+const decideOwn = () => (window.BoardFetch ? window.BoardFetch.json("data/decide.json", { cache: "no-store" }) : Promise.reject(new Error("the decisions need the board's server"))); /* no brain base: BoardFetch asks the ?api= Worker or fails; there is no static file */
+const decideLoad = () => { const u = decideUrl(); return u === "data/decide.json" ? decideOwn() : fetch(u, { cache: "no-cache", mode: "cors", credentials: "omit" }).then((r) => { if (!r.ok) throw new Error(`the decisions answered ${r.status}`); return r.json(); }); }; /* the Worker or nothing: the deploy publishes no static data/decide.json (it is the whole party) */
 const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= decideLoad().then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
 if (window.BoardBrain && window.BoardBrain.on) {
   window.BoardBrain.on("decide", (d) => {
@@ -103,7 +103,7 @@ function personView(d, key) {
   const m = byKey(key), p = d.people.find((x) => x.class_key === key);
   if (!m || !p) return h("p", { class: "dc-sum", text: "No record for that person on the board." });
   return h("div", { class: "dc-person", "data-who": key },
-    h("h3", { class: "dc-name" }, crest(m), `${m.name}: ${m.race} ${m.class}`),
+    h("h3", { class: "dc-name" }, crest(m), `${m.name}: ${K.raceClass(m)}`),
     h("p", { class: "dc-sum", text: summary(p) }),
     h("div", { class: "dc-cards" }, p.decisions.map((x) => card(d, x))));
 }
@@ -112,7 +112,7 @@ function allView(d) {
     const m = byKey(p.class_key); if (!m) return null;
     return h("li", { class: "dc-row", style: `--cc: ${K.classVar(m.class_key)}` },
       h("button", { type: "button", class: "dc-open", "aria-label": `${m.name}: open their choices`, onclick: () => pick(m.class_key) }, crest(m), h("b", { text: m.name })),
-      h("span", { class: "dc-rowt", text: `${m.race} ${m.class}. ${summary(p)}` }));
+      h("span", { class: "dc-rowt", text: `${K.raceClass(m)}. ${summary(p)}` }));
   })));
 }
 const tick = () => [s("svg", { class: "dc-tick", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M5 12.5l4.5 4.5L19 7" })), h("span", { class: "sr-only", text: "yes" })];
@@ -147,6 +147,12 @@ function partyView(d) {
 function render() {
   const panel = $("#panel-decide"), d = DV.data; if (!panel || !d || !D.party) return;
   const w = who();
+  if (d.withheld) { /* a member keeps part of their build private: the Worker withheld every member-derived section (people, party composition) and sent the one line */
+    $("#dc-who").replaceChildren(); $("#dc-dates").replaceChildren(...dateLines(d));
+    $("#dc-main").replaceChildren(h("p", { class: "dc-note dc-withheld", text: d.withheld })); $("#dc-party").replaceChildren();
+    DV.j = K.JR(); const old0 = $("#dc-all-btn"); if (old0) old0.remove();
+    K.emit("decide", w); return;
+  }
   $("#dc-who").replaceChildren(h("b", { class: "dc-q", text: "Whose choices?" }),
     ...members().map((m) => h("button", { type: "button", class: "lib-tool dc-pill", "data-who": m.class_key, "aria-pressed": String(w === m.class_key), style: `--cc: ${K.classVar(m.class_key)}`, onclick: () => pick(m.class_key) }, crest(m), m.name)),
     h("button", { type: "button", class: "lib-tool dc-pill", "data-who": "all", "aria-pressed": String(w === "all"), onclick: () => pick("all") }, `All ${K.pn.word()}`));
@@ -185,7 +191,7 @@ function pick(w, quiet) {
 }
 function fail(e) {
   const main = $("#dc-main"); if (!main || DV.data) return;
-  if (window.BoardFetch) window.BoardFetch.fail(main, "the decisions", () => get().then(() => render())); else main.replaceChildren(h("p", { class: "dc-sum", text: "The decision data did not load. A refresh may help." }));
+  if (window.BoardFetch) window.BoardFetch.fail(main, "the decisions", () => get().then(() => render()), 0, "This part of the board could not load. Try again in a moment."); else main.replaceChildren(h("p", { class: "dc-sum", text: "The decision data did not load. A refresh may help." }));
 }
 const shown = () => { const p = $("#dc-main .dc-person"); return p ? p.dataset.who : null; };
 K.on("scene", (k) => {
@@ -211,7 +217,7 @@ function stepWho(by) {
   const B = window.BoardSeals, el = $("#seal"), m = next === "all" ? null : byKey(next), p = next === "all" ? null : d.people.find((x) => x.class_key === next);
   const openAll = d.people.reduce((n, x) => n + x.decisions.filter((y) => y.state === "open").length, 0);
   const openN = p ? p.decisions.filter((x) => x.state === "open").length : openAll;
-  const line = next === "all" ? `All ${K.pn.word()}: ${openAll === 1 ? "one thing" : `${openAll} things`} still open on the Party Board between you.` : `${m.name}: ${summary(p)}`;
+  const line = d.withheld ? d.withheld : next === "all" ? `All ${K.pn.word()}: ${openAll === 1 ? "one thing" : `${openAll} things`} still open on the Party Board between you.` : `${m.name}: ${summary(p)}`;
   const btn = $("#seal .seal-btn"); if (btn) btn.setAttribute("aria-label", `${TITLE} seal, showing ${next === "all" ? `all ${K.pn.word()}` : m.name}. Press for the next friend; arrow keys go either way.`);
   if (!B || !el) return;
   snd("latch");

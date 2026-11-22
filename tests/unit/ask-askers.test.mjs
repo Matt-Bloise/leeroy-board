@@ -41,7 +41,7 @@ test("every ask_turns insert goes through insertAskTurn, and every call site nam
     for (const m of src.matchAll(/await insertAskTurn\(([^\n]*)\)/g)) calls.push({ f, args: m[1] });
   }
   assert.deepEqual(inserts, ["answer-ux.js"], "an ask_turns row must only be written by insertAskTurn");
-  assert.deepEqual(calls.map((c) => c.f).sort(), ["discord.js", "discord.js", "index.js"], "the three known ask paths");
+  assert.deepEqual(calls.map((c) => c.f).sort(), ["discord.js", "discord.js", "index.js", "listener.js"], "the four known ask paths (the listener answers a tag or a reply as an ask)");
   for (const c of calls) assert.match(c.args, /(slug|discordId)/, `${c.f}: insertAskTurn call has no asker`);
 });
 

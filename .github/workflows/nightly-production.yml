@@ -172,9 +172,44 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  probe-selftest:
+    name: production probe self-test (local fixtures, no Worker requests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Probe self-test, every case in one piece
+        working-directory: tests
+        run: |
+          set -o pipefail
+          # About 17 minutes; prints one progress line per case. Per PR the same cases run in 3 shards (preview-tests.yml, job browser).
+          node browser/prod-probe-selftest.mjs 2>&1 | tee "$RUNNER_TEMP/probe-selftest.log"
+
+      - name: Upload the log
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-probe-selftest-log
+          path: ${{ runner.temp }}/probe-selftest.log
+          if-no-files-found: ignore
+          retention-days: 14
+
   notify:
     name: issue after two failures in a row
-    needs: [degraded, zap]
+    needs: [degraded, zap, probe-selftest]
     if: always() && !cancelled()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -188,12 +223,13 @@ jobs:
         env:
           DEGRADED: ${{ needs.degraded.result }}
           ZAP: ${{ needs.zap.result }}
+          SELFTEST: ${{ needs['probe-selftest'].result }}
         with:
           script: |
             const { owner, repo } = context.repo;
-            const failed = process.env.DEGRADED !== "success" || process.env.ZAP !== "success";
+            const failed = process.env.DEGRADED !== "success" || process.env.ZAP !== "success" || process.env.SELFTEST !== "success";
             const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
-            core.summary.addRaw(`degraded-modes: ${process.env.DEGRADED}, ZAP: ${process.env.ZAP}`).write();
+            core.summary.addRaw(`degraded-modes: ${process.env.DEGRADED}, ZAP: ${process.env.ZAP}, probe self-test: ${process.env.SELFTEST}`).write();
             if (!failed) { console.log("Both suites passed: nothing to do."); return; }
             // State without writes: the previous finished run of this workflow is the memory. This run ends red (last step), so it counts for the next night.
             const { data } = await github.rest.actions.listWorkflowRuns({ owner, repo, workflow_id: "nightly-production.yml", status: "completed", per_page: 10 });
@@ -227,7 +263,7 @@ jobs:
             }
 
       - name: End red when a suite failed
-        if: needs.degraded.result != 'success' || needs.zap.result != 'success'
+        if: needs.degraded.result != 'success' || needs.zap.result != 'success' || needs['probe-selftest'].result != 'success'
         run: |
-          echo "::error::Nightly failed (degraded=${{ needs.degraded.result }}, zap=${{ needs.zap.result }})."
+          echo "::error::Nightly failed (degraded=${{ needs.degraded.result }}, zap=${{ needs.zap.result }}, probe-selftest=${{ needs['probe-selftest'].result }})."
           exit 1

@@ -41,6 +41,7 @@
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
 import { ignoredConsoleError, cspCheck, sweepContext } from "../helpers/sweep-filters.mjs";
 import { pageUrl } from "../helpers/page-url.mjs";
+import { standIn } from "../helpers/fictional-party.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
 import { XR_JS, sameOrigin, captureConsoleError } from "../helpers/sweep-diag.mjs";
@@ -263,7 +264,11 @@ function measure({ touch, w }) {
 }
 
 // WebKit under CSS zoom: a locator click aims at the unzoomed rect and times out, so click the zoom-aware centre of the element instead.
-async function press(page, locator, timeout = 20000) {
+// The click wait grows with the page's pixel count: a 5120x2880 page takes a loaded CI runner several times longer to lay out and paint than a 1366x768 one (CI: "5120x2880 member: locator.click: Timeout 20000ms" twice in a row, cell and retry,
+// on a slow runner while every other size passed). 20 s up to full HD, scaled linearly beyond it, never more than 3x (60 s).
+const pressTimeout = (w, h, base = 20000) => Math.round(base * Math.min(3, Math.max(1, ((Number(w) || 0) * (Number(h) || 0)) / (1920 * 1080))));
+async function press(page, locator, timeout = null) {
+  if (timeout === null) { const vp = page.viewportSize() || {}; timeout = pressTimeout(vp.width, vp.height); }
   if (ENGINE !== "webkit") return locator.click({ timeout });
   // wait for the target to be visible first (the same wait locator.click() does on the other engines); on a timeout say what the page showed, so a CI-only miss names its cause instead of a bare "elementHandle: Timeout"
   try { await locator.waitFor({ state: "visible", timeout }); }
@@ -315,7 +320,7 @@ async function openState(page, state) {
       await sceneOpen(20000);
     }
     await page.waitForSelector("#tn-me .tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
-    await press(page, page.getByRole("button", { name: /Bloise/ }).first());
+    await press(page, page.getByRole("button", { name: new RegExp(standIn(3).name) }).first());
     await press(page, page.getByRole("button", { name: /Show me what is next/ }).first());
   }
   await page.waitForTimeout(state === "gate" ? 300 : 1200);

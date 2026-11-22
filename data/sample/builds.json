@@ -7,8 +7,8 @@
    "spec_path": "Feral",
    "spec_at_40": "Feral",
    "professions": [
-    "Leatherworking",
-    "Skinning"
+    "Herbalism",
+    "Alchemy"
    ],
    "level": 14,
    "goals": "Keep every dungeon on time."
@@ -31,7 +31,7 @@
    "spec_path": "Retribution to 40",
    "spec_at_40": "Holy",
    "professions": [
-    "Blacksmithing",
+    "Skinning",
     "Mining"
    ],
    "level": 9,

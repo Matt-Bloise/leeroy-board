@@ -11,7 +11,7 @@ Totals seen in the Chromium run (current policy): 8 documents, 131 scripts, 90 s
 ## Result 1: the policy in `_headers` today, enforced
 
 ```
-default-src 'self'; script-src 'self' 'sha256-FxN80pVgbTlbRq/Hn4p2zVWpiQ+tjIQ+PtbVBeJkZhk=' 'sha256-8S7wxnaCGT8ugLT4Wfj6nm96exEFITisKFDMIKJWkbo=' 'sha256-3Fpc/F1O6xKaU4gzvZYNmh5O/iE3Ffic4TY60K/QcDg=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https://api.leeroy.party wss://api.leeroy.party https://*.joshbblaine.workers.dev wss://*.joshbblaine.workers.dev https://*.jmattbloise.workers.dev wss://*.jmattbloise.workers.dev https://cloudflareinsights.com; object-src 'none'; base-uri 'none'; frame-ancestors 'self' https://discord.com https://*.discordsays.com
+default-src 'self'; script-src 'self' 'sha256-FxN80pVgbTlbRq/Hn4p2zVWpiQ+tjIQ+PtbVBeJkZhk=' 'sha256-8S7wxnaCGT8ugLT4Wfj6nm96exEFITisKFDMIKJWkbo=' 'sha256-3Fpc/F1O6xKaU4gzvZYNmh5O/iE3Ffic4TY60K/QcDg=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https://api.leeroy.party wss://api.leeroy.party https://*.example-account.workers.dev wss://*.example-account.workers.dev https://*.example-owner.workers.dev wss://*.example-owner.workers.dev https://cloudflareinsights.com; object-src 'none'; base-uri 'none'; frame-ancestors 'self' https://discord.com https://*.discordsays.com
 ```
 
 **0 blocks** in Chromium, WebKit and Firefox: no inline script, style, font, image or connect host is refused on any page (`script`, `style`, `font`, `image`, `connect`, `worker` all 0). The three inline scripts in `index.html` are covered by hash (`tests/unit/csp-headers.test.mjs` keeps them in step).
@@ -19,7 +19,7 @@ default-src 'self'; script-src 'self' 'sha256-FxN80pVgbTlbRq/Hn4p2zVWpiQ+tjIQ+Pt
 ## Result 2: the same policy without `style-src 'unsafe-inline'`
 
 ```
-default-src 'self'; script-src 'self' 'sha256-FxN80pVgbTlbRq/Hn4p2zVWpiQ+tjIQ+PtbVBeJkZhk=' 'sha256-8S7wxnaCGT8ugLT4Wfj6nm96exEFITisKFDMIKJWkbo=' 'sha256-3Fpc/F1O6xKaU4gzvZYNmh5O/iE3Ffic4TY60K/QcDg=' https://static.cloudflareinsights.com; style-src 'self'; img-src 'self' data:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https://api.leeroy.party wss://api.leeroy.party https://*.joshbblaine.workers.dev wss://*.joshbblaine.workers.dev https://*.jmattbloise.workers.dev wss://*.jmattbloise.workers.dev https://cloudflareinsights.com; object-src 'none'; base-uri 'none'; frame-ancestors 'self' https://discord.com https://*.discordsays.com
+default-src 'self'; script-src 'self' 'sha256-FxN80pVgbTlbRq/Hn4p2zVWpiQ+tjIQ+PtbVBeJkZhk=' 'sha256-8S7wxnaCGT8ugLT4Wfj6nm96exEFITisKFDMIKJWkbo=' 'sha256-3Fpc/F1O6xKaU4gzvZYNmh5O/iE3Ffic4TY60K/QcDg=' https://static.cloudflareinsights.com; style-src 'self'; img-src 'self' data:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https://api.leeroy.party wss://api.leeroy.party https://*.example-account.workers.dev wss://*.example-account.workers.dev https://*.example-owner.workers.dev wss://*.example-owner.workers.dev https://cloudflareinsights.com; object-src 'none'; base-uri 'none'; frame-ancestors 'self' https://discord.com https://*.discordsays.com
 ```
 
 10 distinct blocks, all inline styles (nothing else changes). Chromium:
@@ -42,7 +42,7 @@ So dropping `'unsafe-inline'` from `style-src` entirely is **not ready**: roughl
 The current policy plus `frame-ancestors`, sent as `Content-Security-Policy` (enforcing) next to the existing Report-Only header while it soaks:
 
 ```
-default-src 'self'; script-src 'self' 'sha256-FxN80pVgbTlbRq/Hn4p2zVWpiQ+tjIQ+PtbVBeJkZhk=' 'sha256-8S7wxnaCGT8ugLT4Wfj6nm96exEFITisKFDMIKJWkbo=' 'sha256-3Fpc/F1O6xKaU4gzvZYNmh5O/iE3Ffic4TY60K/QcDg=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https://api.leeroy.party wss://api.leeroy.party https://*.joshbblaine.workers.dev wss://*.joshbblaine.workers.dev https://*.jmattbloise.workers.dev wss://*.jmattbloise.workers.dev https://cloudflareinsights.com; object-src 'none'; base-uri 'none'; frame-ancestors 'self' https://discord.com https://*.discordsays.com
+default-src 'self'; script-src 'self' 'sha256-FxN80pVgbTlbRq/Hn4p2zVWpiQ+tjIQ+PtbVBeJkZhk=' 'sha256-8S7wxnaCGT8ugLT4Wfj6nm96exEFITisKFDMIKJWkbo=' 'sha256-3Fpc/F1O6xKaU4gzvZYNmh5O/iE3Ffic4TY60K/QcDg=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' https://api.leeroy.party wss://api.leeroy.party https://*.example-account.workers.dev wss://*.example-account.workers.dev https://*.example-owner.workers.dev wss://*.example-owner.workers.dev https://cloudflareinsights.com; object-src 'none'; base-uri 'none'; frame-ancestors 'self' https://discord.com https://*.discordsays.com
 ```
 
 - `frame-ancestors 'self' https://discord.com https://*.discordsays.com` lets the Discord Activity frame the board and nothing else. It only works in an enforcing header (browsers ignore it in Report-Only, which is why `_headers` leaves it out today).

@@ -22,6 +22,12 @@ const SESSION = [M]; // per-user Discord session token (account.js): neither ano
 // route -> principals allowed through. Hand written on purpose; do not generate it from the code.
 const TABLE = {
   "POST /discord": PUBLIC, // Discord signs the request; the signature is checked inside the handler, not a board key
+  "POST /listen": PUBLIC, // the PC forwarder signs the event (HMAC with a key derived from the bot token, checked inside the handler, not a board key); 404 while LISTENER is off
+  "POST /shadow/ask": PUBLIC, // signed with the same key as /listen (checked inside the handler); 404 while SHADOW_ASK is off; posts nothing
+  "POST /heartbeat": PUBLIC, // signed with its own derived key (checked inside the handler); 404 while DEADMAN is off; posts nothing
+  "POST /heartbeat/status": PUBLIC, // same key; read only; 404 while DEADMAN is off
+  "POST /facts/load": PUBLIC, // signed with its own derived key (checked inside the handler); 404 while GAME_FACTS_LOAD is off; writes only game_facts rows, posts nothing
+  "POST /selftest/claude": PUBLIC, // signed with the same key as /listen (checked inside the handler); 404 without a usable bot token; one call per 60 s
   "GET /discord/commands": PUBLIC,
   "GET /votes": PUBLIC,
   "GET /me": MEMBER,
@@ -171,6 +177,12 @@ const HEADERS = {
 // A concrete request for each route. Docs that are not on the allow list use a private name.
 const CALLS = {
   "POST /discord": ["POST", "/api/discord", "{}"],
+  "POST /listen": ["POST", "/api/listen", "{}"],
+  "POST /selftest/claude": ["POST", "/api/selftest/claude", "{}"],
+  "POST /shadow/ask": ["POST", "/api/shadow/ask", "{}"],
+  "POST /heartbeat": ["POST", "/api/heartbeat", "{}"],
+  "POST /heartbeat/status": ["POST", "/api/heartbeat/status", "{}"],
+  "POST /facts/load": ["POST", "/api/facts/load", "{}"],
   "GET /discord/commands": ["GET", "/api/discord/commands"],
   "GET /votes": ["GET", "/api/votes"],
   "GET /me": ["GET", "/api/me"],
@@ -426,4 +438,16 @@ test("GET /api/admin/export is admin only: anonymous and a member key are 401, t
     const res = await call(await makeEnv(), "GET /admin/export", principal);
     assert.equal(res.status, want, principal);
   }
+});
+
+// tools/add-member.mjs reads the party document in order to write it back. The public read has what members hid cut out, so the tool reads the stored one: admin only, never cached.
+test("GET /api/data/party?stored=1 (the stored document, for a read-then-write tool) is admin only: anonymous and a member key are 401, the admin token is let in and the answer is no-store", async () => {
+  for (const [principal, want] of [[A, 401], [M, 401], [D, 200]]) {
+    const res = await call(await makeEnv(), "GET /data/*", principal, ["GET", "/api/data/party?stored=1"]);
+    assert.equal(res.status, want, principal);
+    if (want === 200) assert.equal(res.headers.get("Cache-Control"), "no-store");
+  }
+  const plain = await call(await makeEnv(), "GET /data/*", A, ["GET", "/api/data/party"]);
+  assert.equal(plain.status, 200, "the public read is unchanged");
+  assert.equal(plain.headers.get("Cache-Control"), "no-store", "member documents are never held in a cache (index.js memberPath), so the plain read is no-store too; the point of this test is that it is 200 and the projection, not the stored document");
 });

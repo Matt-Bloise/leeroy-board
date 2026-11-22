@@ -1,5 +1,5 @@
 {
- "comment": "DRAFT for the owner and architect to confirm. Allow-list of hosts that library data/library/*.json may cite, with licence, attribution text and stored-text policy. storedText: link-only = cite the URL, never store the host's text; attribution-required = text may be stored with the attribution shown. Sources: docs/roadmap/research/notes-R5-ip-commercial.md section 3 and docs/compliance/blizzard-checklist.md rules 5 and 6. Licence fields marked 'not reviewed' were not read; treat them as all rights reserved. knownViolations lists what the data does today, with a reason each; it may only shrink (tests/unit/library-sources.test.mjs). Do not add a host to hosts or raise a count to silence the test.",
+ "comment": "DRAFT for the owner and architect to confirm. Allow-list of hosts that library data/library/*.json may cite, with licence, attribution text and stored-text policy. storedText: link-only = cite the URL, never store the host's text; attribution-required = text may be stored with the attribution shown. Sources: the private IP and commercial notes (section 3) and docs/compliance/blizzard-checklist.md rules 5 and 6. Licence fields marked 'not reviewed' were not read; treat them as all rights reserved. knownViolations lists what the data does today, with a reason each; it may only shrink (tests/unit/library-sources.test.mjs). Do not add a host to hosts or raise a count to silence the test.",
  "version": 1,
  "hosts": {
   "wowforevertools.com": {
@@ -61,7 +61,7 @@
    "licenceUrl": "https://warcraft.wiki.gg/wiki/Warcraft_Wiki:Copyrights",
    "attribution": "Credit Warcraft Wiki (warcraft.wiki.gg) contributors, link the page, link the CC BY-SA 4.0 licence, state any change. Adapted text stays CC BY-SA. Never mirror images.",
    "storedText": "attribution-required",
-   "reviewed": "docs/roadmap/research/notes-R5-ip-commercial.md 3.1 (2026-11-02); standard CC BY-SA terms not re-read"
+   "reviewed": "reviewed in the private IP and commercial notes (2026-11-02); standard CC BY-SA terms not re-read"
   },
   "www.wowhead.com": {
    "name": "Wowhead",
