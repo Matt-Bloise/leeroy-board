@@ -72,6 +72,11 @@ const mapState = () => {
   return { colours: seen.size, roads: document.querySelectorAll("#rd-list li.road:not(.road-wait)").length, heading: document.querySelector("#rd-h").textContent, label: c.getAttribute("aria-label") || "" };
 };
 
+// Cloudflare injects its Web Analytics beacon into Pages previews (not in our repo): its endpoint refuses a preview origin (CORS) and its script evaluates a string,
+// which the report-only CSP logs. Both are the beacon's, as the other suites say (addon-page.mjs); Report-Only lines are never page errors.
+const RUM = /cloudflareinsights\.com\/cdn-cgi\/rum/;
+const cloudflareNoise = (m) => { const t = m.text(), u = (m.location() && m.location().url) || ""; return /^\[Report Only\]/.test(t) || RUM.test(u) || (RUM.test(t) && /CORS|ERR_FAILED/.test(t)); };
+
 async function session(id, w, h, touch, dpr, { room = false } = {}) {
   const tag = `[${id}]`;
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, hasTouch: touch, isMobile: touch, serviceWorkers: "block" });
@@ -80,7 +85,7 @@ async function session(id, w, h, touch, dpr, { room = false } = {}) {
   ctx.on("requestfinished", async (r) => { seen.push(r.url()); try { const s = await r.sizes(); bytes += s.responseBodySize + s.responseHeadersSize; } catch (e) {} });
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !cloudflareNoise(m)) errors.push(m.text()); });
   await page.addInitScript(OBSERVE);
   await page.goto(room ? pageUrl(DOOR, { params: { room: "gl" } }) : DOOR, { waitUntil: "load" });
   await page.waitForSelector("#su-who:not(:empty)", { timeout: 20000 }).catch(() => {});
