@@ -24,7 +24,7 @@ const STUB = `export class DiscordSDK {
       getInstanceConnectedParticipants: async () => { window.__participantCalls = (window.__participantCalls || 0) + 1; (window.__participantTimes ||= []).push(performance.now()); return { participants: [{ username: "ada" }, { username: "bram" }] }; },
       openExternalLink: async (a) => { (window.__ext ||= []).push(a.url); return {}; },
     }; }
-  ready() { return new Promise((r) => setTimeout(r, window.__sdkDelay || 0)); }
+  ready() { return new Promise((r) => setTimeout(() => { (window.__marks ||= {}).ready = performance.now(); r(); }, window.__sdkDelay || 0)); }
   async subscribe() {}
 }
 `;
@@ -36,10 +36,10 @@ async function open(browser, { delay, query = {}, stub = true, quiet = null, hos
      came up and when Discord mode began. The timing checks below are made on these marks, never on how long the harness slept after the frame's load event (see the loop below). */
   if (host) await ctx.addInitScript((h) => {
     if (location.hostname !== h) return;
-    const t = (window.__marks = { start: performance.now(), board: null, discord: null });
+    const t = (window.__marks = { start: performance.now(), ready: null, board: null, boardSdk: null, discord: null });
     const look = () => {
       const b = document.getElementById("board"), p = document.getElementById("presence-text");
-      if (t.board === null && b && !b.hidden) t.board = performance.now();
+      if (t.board === null && b && !b.hidden) { t.board = performance.now(); t.boardSdk = !!window.__sdk; } /* window.__sdk is set by index.html only once ready() has resolved: false here means the first start was the 4 s preview fallback */
       if (t.discord === null && p && /In this Activity/.test(p.textContent || "")) t.discord = performance.now();
     };
     new MutationObserver(look).observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
@@ -90,10 +90,14 @@ try {
     await page.waitForFunction((ms) => window.__marks && window.__marks.discord !== null && performance.now() - window.__marks.discord >= ms, SETTLE_MS, { timeout: 30000 }).catch(() => {});
     const m = await page.evaluate(() => ({ ...window.__marks, now: performance.now(), calls: (window.__participantTimes || []).slice() }));
     const rel = (x) => (x === null || x === undefined ? "never" : `${Math.round(x - m.start)} ms`);
-    const marks = `page clock: board up at ${rel(m.board)}, Discord mode at ${rel(m.discord)}, participant calls at ${m.calls.map(rel).join(", ") || "none"}, read at ${rel(m.now)}`;
+    const marks = `page clock: SDK ready at ${rel(m.ready)}, board up at ${rel(m.board)} (window.__sdk ${m.boardSdk === null ? "unknown" : m.boardSdk ? "already set" : "not yet set"}), Discord mode at ${rel(m.discord)}, participant calls at ${m.calls.map(rel).join(", ") || "none"}, read at ${rel(m.now)}`;
+    // Anchored to the stub SDK's own ready() time and to how the board first started, not to each other: a board that waited for the SDK (no 4 s fallback), an SDK that was
+    // not late, or a Discord mode that began before ready() all fail here.
+    ok(`[${label}] Discord mode started only after the SDK said it was ready`, m.ready !== null && m.discord !== null && m.discord >= m.ready, marks);
     if (delay > 4000) {
-      ok(`[${label}] the board came up in preview mode (the 4 s fallback) before Discord mode started`, m.board !== null && m.discord !== null && m.board < m.discord, marks);
-      ok(`[${label}] and Discord mode started only once the SDK was ready (5 s on the page clock)`, m.discord !== null && m.discord - m.start >= 5000, marks);
+      ok(`[${label}] the SDK was late: ready() resolved ${delay / 1000} s after the frame started, on the frame's clock`, m.ready !== null && m.ready - m.start >= delay - 50, marks);
+      ok(`[${label}] the board first came up in preview mode (the 4 s fallback), before the SDK was ready`, m.board !== null && m.ready !== null && m.board <= m.ready && m.boardSdk === false, marks);
+      ok(`[${label}] and Discord mode followed it on the same page, once the SDK was ready`, m.board !== null && m.discord !== null && m.board < m.discord, marks);
     }
     ok(`[${label}] Discord mode is on: presence reads "In this Activity now"`, /In this Activity now/.test(await presence(page)), await presence(page));
     const atStart = m.discord === null ? [] : m.calls.filter((c) => c >= m.discord && c < m.discord + START_WINDOW_MS);
