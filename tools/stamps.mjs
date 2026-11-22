@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 
 const REF = /(?<![A-Za-z0-9_./:@-])([A-Za-z0-9_./-]+\.(?:js|mjs|css))\?v=(0+|[0-9a-f]{10})(?![0-9a-f])/g;
 const BARE = /(?<!=)["'`]((?:js|scenes|css|vendor|cloth|room|next)\/[A-Za-z0-9_./-]+\.(?:js|mjs|css))["'`]/g;
-const SCAN_DIRS = ["js", "scenes", "css", "vendor", "cloth", "room", "next", "atlas", "img"];
+const SCAN_DIRS = ["js", "scenes", "css", "vendor", "cloth", "room", "next", "atlas", "img", "door"];
 const SCAN_EXT = /\.(?:js|mjs|css|html)$/;
 const HASHABLE = /\.(?:js|mjs|css|html)$/;
 

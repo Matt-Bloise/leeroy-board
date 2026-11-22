@@ -12,6 +12,7 @@
 # js, scenes, css, vendor, cloth, next, room: immutable for a year. Every reference carries ?v=<sha256 first 10 hex of the file> and CI (tools/stamps.mjs --check) fails on a stale stamp, so a changed file is a new URL.
 # /atlas: only the 10 atlas js files and panels.css are immutable, listed one by one (every reference to them carries ?v=, enforced by stamps --check).
 # Tiles (/atlas/tiles/*) and plates (/atlas/plates/*) are binary and get the short /img-style cache; tiles/index.json is fetched no-store by atlas.js. These rules do not overlap the file rules.
+# /door (the preview of the new first screen, docs/cinematic/door.md): its 5 js and css files are immutable, listed one by one (every reference carries ?v=, stamps --check); /door/ itself, the HTML, has no rule and keeps the Pages default.
 # /cards: the picture cards for Discord replies (tools/cards). Each file name ends in the first 12 hex characters of the sha256 of its decoded pixels, so a changed picture is a new URL and an old one never changes: immutable for a year.
 
 /fonts/*
@@ -84,4 +85,19 @@
   Cache-Control: public, max-age=31536000, immutable
 
 /atlas/panels.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/door/door.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/door/door.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/door/model.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/door/map.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/door/room.js
   Cache-Control: public, max-age=31536000, immutable
