@@ -28,6 +28,7 @@ The scene list is read from the page (`window.__boardKit.SCENES`), so a new scen
 Every input that is not the page's own code is fixed, so a commit is meant to render the same pixels on every run (calibration below measures how true that is):
 
 - The site is the checkout itself, served by `tools/static-server.mjs` (the rules of `_headers`, the private member files answer 404, as on Pages). No preview, no secret.
+- The library is pinned too: every read of `data/library` (over `/api/library/<file>` or the static `data/library/<file>`) is answered from `tests/fixtures/library`, never from the checkout. The library header shows page, fact and open-question counts, so a library data PR (new facts) would otherwise move the library screens: PR 441 added 49 facts and failed `library-390x844` by 25 pixels over the limit. A library data PR therefore passes this gate unchanged. `data/library` stays a site path for the scope rule (visitors are served it and the browser and layout suites render the live files), so the gate still runs on such a PR and must pass. Refresh the fixture only on purpose (see Library fixture below).
 - `/api/` is answered from `tests/fixtures/api-snapshot` (`stubbed()`, zero Worker requests). Member names in the fixtures are made up (`tests/helpers/fictional-party.mjs`).
 - Chromium from `tests/package-lock.json` (Playwright 1.49.1) on `ubuntu-24.04`.
 - `prefers-reduced-motion: reduce`, light scheme, time zone UTC, locale `en-US`, service workers blocked, `Math.random` seeded.
@@ -48,6 +49,10 @@ A screen fails, in compare mode and when baselines are written, when:
 - it shows a real member name. The names are read from `data/party.json` at run time and never printed: the check looks at the page text, `aria-label`, `title`, `alt`, `placeholder` and input values.
 
 `tests/unit/visual-baseline-gate.test.mjs` checks the committed set in every unit run. Every PNG decodes at its size, the set is exactly the screens times the sizes (scenes read from `js/board.js`), and none is nearly blank or more than 1 percent magenta. It also checks the PNG codec, the pixel diff, the threshold boundaries, the workflow wiring and the report logic.
+
+## Library fixture
+
+`tests/fixtures/library/` is a copy of `data/library/*.json` as it stood when the gate was pinned. It changes only when a change is meant to alter what the library screens show (a new library layout, a new count field): copy `data/library/*.json` over it in the same PR, then run Visual Baselines on the branch to re-render `library-*`. `tests/unit/visual-library-fixture.test.mjs` fails if the suite stops answering the library from the fixture or if the fixture is not a complete library. Data that is not the library (`data/party.json`, `data/timeline.json` and so on) is still read live through the stub; a PR that changes those can move the wall or a scene the same way, and wants the same treatment.
 
 ## The threshold
 

@@ -65,6 +65,9 @@ const SEED_JS = `(() => { let a = ${SEED} >>> 0; Math.random = function () { a =
 
 // On a loopback host (tools/static-server.mjs) the page has no API unless asked: ?brain=local points it at its own origin's /api/, which the stub answers. A --url with its own brain= wins.
 const ORIGIN = new URL(BASE).origin;
+// The library is pinned, like /api/: every read of data/library (over /api/library or the static files) is answered from tests/fixtures/library, never from the checkout, so a library data PR
+// (new facts, new counts in the library header) cannot move a screenshot. Refresh the fixture on purpose (docs/runbooks/visual-baselines.md, Library fixture), with new baselines in the same PR.
+const LIBRARY_FIXTURE = path.join(here, "..", "fixtures", "library");
 const LOOPBACK = /^(127\.0\.0\.1|localhost|\[::1\])$/.test(new URL(BASE).hostname);
 const BOARD = pageUrl(BASE, { params: { preview: "1" }, defaults: LOOPBACK ? { brain: "local" } : {} }), ROOT = dirOf(BASE);
 
@@ -256,6 +259,12 @@ function explain(base, actual, box, tol) {
 async function newContext(browser, size) {
   const { id: _id, ...opts } = size;
   const ctx = await browser.newContext({ ...opts, deviceScaleFactor: 1, reducedMotion: "reduce", colorScheme: "light", serviceWorkers: "block", timezoneId: TZ, locale: LOCALE });
+  // the static copy of the library (the page falls back to it and the data scene reads it): the fixture too, a missing file is a 404 the shot fails on
+  await ctx.route((u) => u.origin === ORIGIN && /\/data\/library\/[A-Za-z0-9._-]+$/.test(u.pathname), async (route) => {
+    const f = path.join(LIBRARY_FIXTURE, path.basename(new URL(route.request().url()).pathname));
+    if (!existsSync(f)) return route.fulfill({ status: 404, contentType: "text/plain", body: "not in tests/fixtures/library" });
+    return route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", headers: { "cache-control": "no-store" }, body: readFileSync(f, "utf8") });
+  });
   await ctx.clock.pauseAt(new Date(pinnedClock(argv).getTime() + PAUSE_AT_MS)); // before any page exists: every page starts at this instant, paused
   await ctx.addInitScript({ content: SEED_JS });
   return ctx;
@@ -307,7 +316,7 @@ mkdirSync(ACTUAL, { recursive: true }); mkdirSync(DIFF, { recursive: true });
 for (const f of readdirSync(ACTUAL)) rmSync(path.join(ACTUAL, f)); for (const f of readdirSync(DIFF)) rmSync(path.join(DIFF, f));
 if (WRITE) mkdirSync(WRITE, { recursive: true });
 const T0 = Date.now();
-const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
+const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}), { libraryDir: LIBRARY_FIXTURE });
 let sceneList = null;
 try {
   { // the scene list comes from the page, so a new scene shows up as a screen without a baseline and fails until one is committed

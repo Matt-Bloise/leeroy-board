@@ -1,14 +1,15 @@
 // Decides whether a pull request can change what a visitor sees in a browser, or how CI itself behaves, so the full suite (api, browser, layout)
 // is required for it. The full suite is slow and each full run holds a preview environment, so Worker-only, test-only and docs-only changes skip the browser and layout jobs.
 // A scope bug is a silent gate bypass, so every doubt resolves to "true" (run everything).
-// tests/fixtures/api-snapshot/ is what every browser suite and the visual gate answer /api/ from, so a change there changes what they render.
+// tests/fixtures/api-snapshot/ is what every browser suite and the visual gate answer /api/ from, so a change there changes what they render; tests/fixtures/library/ is the library the visual gate pins.
+// data/ (including data/library/) stays a site path on purpose: visitors are served it and the browser and layout suites render the live files. The visual gate itself no longer reads it (tests/browser/visual-baseline.mjs), so a library data PR passes it unchanged.
 // Forces a full run: the site paths below, anything under .github/ (every workflow), tools/ (the CI tools themselves), infrastructure/wrangler*
 // (deploy config) and any package*.json at any depth (dependencies), plus any path of an unknown shape.
 // Usage: <list of paths, one per line> | node tools/ci-scope.mjs   (prints "true" when the full suite must run, else "false")
 // The caller must list renames on both sides (filename and previous_filename), as tools/docs-only.mjs expects.
 import { pathToFileURL } from "node:url";
 
-const FORCE_DIRS = ["css/", "js/", "scenes/", "landing/", "door/", "privacy/", "terms/", "rate/", "atlas/", "cards/", "cloth/", "next/", "room/", "vendor/", "fonts/", "img/", "data/", "pages-worker/", "tests/browser/", "tests/helpers/", "tests/fixtures/six-members/", "tests/fixtures/api-snapshot/", ".github/", "tools/"];
+const FORCE_DIRS = ["css/", "js/", "scenes/", "landing/", "door/", "privacy/", "terms/", "rate/", "atlas/", "cards/", "cloth/", "next/", "room/", "vendor/", "fonts/", "img/", "data/", "pages-worker/", "tests/browser/", "tests/helpers/", "tests/fixtures/six-members/", "tests/fixtures/api-snapshot/", "tests/fixtures/library/", ".github/", "tools/"];
 const FORCE_PREFIXES = ["infrastructure/wrangler"];
 const SITE_FILES = new Set(["index.html", "404.html", "robots.txt", "_headers"]);
 
