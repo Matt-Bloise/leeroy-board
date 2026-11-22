@@ -17,10 +17,11 @@ let cached = null;
 // (checked when the snapshot was recorded), so the stub reads those from data/ instead of duplicating 1.5 MB in the snapshot.
 const DATA = path.join(here, "..", "..", "data");
 const MEMBER_DOCS = new Set(["party", "decide", "tonight", "client", "guided-atlas", "signups"]);
-export function repoDoc(key) {
+// libraryDir: serve /library/<x> from this folder instead of the live data/library (the visual gate pins it to tests/fixtures/library, so a library data PR cannot move a screenshot).
+export function repoDoc(key, libraryDir = null) {
   const m = key.match(/^\/(data|library|atlas)\/([A-Za-z0-9._-]+)$/);
   if (!m) return null;
-  let f = path.join(DATA, m[1] === "data" ? "" : m[1], m[2]);
+  let f = m[1] === "library" && libraryDir ? path.join(libraryDir, m[2]) : path.join(DATA, m[1] === "data" ? "" : m[1], m[2]);
   // the member documents (the five and the sign-ups) are asked for WITHOUT an extension (js/board.js memberUrl: <brain>/data/<name>); the Worker answers them with nobody hiding, i.e. the repo file of the same name
   if (m[1] === "data" && !/\./.test(m[2]) && MEMBER_DOCS.has(m[2])) f = path.join(DATA, m[2] + ".json");
   // data/ documents are served with the member names swapped for fictional ones (tests/helpers/fictional-party.mjs), the same swap the recorded snapshot carries, so the repo documents and the snapshot agree
@@ -30,12 +31,12 @@ export function repoDoc(key) {
 export function loadSnapshot(file = SNAPSHOT_PATH) { return (cached ||= JSON.parse(readFileSync(file, "utf8"))); }
 
 // What a suite's own route handler gets from `route.fetch()` on an API URL: the snapshot answer instead of a request to the Worker (same methods as Playwright's APIResponse).
-export function snapshotResponse(key, snapshot = loadSnapshot()) {
-  const hit = snapshot.routes[key] || repoDoc(key) || { status: 404, type: "application/json", body: '{"error":"not in api-snapshot"}' };
+export function snapshotResponse(key, snapshot = loadSnapshot(), libraryDir = null) {
+  const hit = snapshot.routes[key] || repoDoc(key, libraryDir) || { status: 404, type: "application/json", body: '{"error":"not in api-snapshot"}' };
   return { status: () => hit.status, ok: () => hit.status < 400, headers: () => ({ "content-type": hit.type, ...(hit.etag ? { etag: hit.etag } : {}) }), text: async () => hit.body, json: async () => JSON.parse(hit.body), body: async () => Buffer.from(hit.body), url: () => key };
 }
 
-export async function installApiStub(context, { snapshot = loadSnapshot() } = {}) {
+export async function installApiStub(context, { snapshot = loadSnapshot(), libraryDir = null } = {}) {
   const served = {}, writes = [], misses = new Set();
   const cors = (req) => ({ "access-control-allow-origin": req.headers()["origin"] || "*", "access-control-allow-credentials": "true", "access-control-expose-headers": "ETag", "access-control-allow-headers": "Authorization, Content-Type, If-None-Match, If-Match", "access-control-allow-methods": "GET, HEAD, PUT, POST, DELETE, OPTIONS", vary: "Origin" });
   // a suite's own handler (registered later, so it runs first) often does `const res = await route.fetch(); ...change it...; route.fulfill(...)`; on an API URL that fetch must not reach the Worker either
@@ -49,7 +50,7 @@ export async function installApiStub(context, { snapshot = loadSnapshot() } = {}
     const req = route.request(), u = new URL(req.url()), key = u.pathname.replace(/^\/api/, ""), method = req.method();
     if (method === "OPTIONS") return route.fulfill({ status: 204, headers: cors(req) });
     if (method !== "GET" && method !== "HEAD") { writes.push(`${method} ${key}`); return route.fulfill({ status: 200, contentType: "application/json", headers: cors(req), body: '{"ok":true}' }); }
-    const hit = snapshot.routes[key] || repoDoc(key);
+    const hit = snapshot.routes[key] || repoDoc(key, libraryDir);
     if (!hit) { misses.add(`${method} ${key}`); return route.fulfill({ status: 404, contentType: "application/json", headers: cors(req), body: '{"error":"not in api-snapshot"}' }); }
     served[key] = (served[key] || 0) + 1;
     return route.fulfill({ status: hit.status, contentType: hit.type, headers: { ...cors(req), "cache-control": "no-store", ...(hit.etag ? { etag: hit.etag } : {}) }, body: method === "HEAD" ? "" : hit.body });

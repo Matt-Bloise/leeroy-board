@@ -53,10 +53,12 @@ test("the union of the browser shards is the full suite list, each suite exactly
 test("every .mjs in tests/browser is either a browser suite, a known helper or the self-test: nothing is outside the shards by accident", () => {
   const all = readdirSync(BROWSER_DIR).filter((f) => f.endsWith(".mjs"));
   const full = new Set(listShard(null));
-  const helpers = new Set(["run.mjs", "smoke-retry.mjs", "prod-probe.mjs", "prod-probe-selftest.mjs"]);
+  const helpers = new Set(["run.mjs", "smoke-retry.mjs", "prod-probe.mjs", "prod-probe-selftest.mjs", "visual-baseline.mjs"]);
   for (const f of all) assert.ok(full.has(f) || helpers.has(f), `${f} is neither in the browser shards nor a known helper`);
   for (const f of helpers) assert.ok(!full.has(f), `${f} must not run as a browser suite`);
   assert.ok(all.includes("prod-probe-selftest.mjs"));
+  // the visual gate is outside the shards because it needs the checkout served locally, not the preview: its own job must run it
+  assert.match(wf.jobs.visual.steps.map((st) => st.run || "").join("\n"), /node browser\/visual-baseline\.mjs --url/);
 });
 
 test("preview-tests.yml: one job named browser whose legs are the browser shards and the self-test shards, each passing --shard i/n to its own runner", () => {

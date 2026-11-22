@@ -6,6 +6,7 @@
 //    sdk.commands.openExternalLink with an http(s) URL. mailto stays a plain link. Outside the Activity (?preview=1, no SDK) nothing is intercepted.
 // 3. Settings: a visitor outside the Activity who is not signed in does not see the "Sign in with Discord" row; inside the Activity it shows.
 // The stub SDK module replaces vendor/embedded-app-sdk.mjs by route interception; its ready() resolves after window.__sdkDelay ms.
+// Every timing check in 1 reads the Activity frame's own clock (window.__marks, the stub's call times), so a slow harness or a slow request cannot move it.
 import { pageUrl } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
@@ -20,10 +21,10 @@ const STUB = `export class DiscordSDK {
     this.commands = {
       setOrientationLockState: async () => {},
       authorize: async () => { throw new Error("stub: no authorize"); },
-      getInstanceConnectedParticipants: async () => { window.__participantCalls = (window.__participantCalls || 0) + 1; return { participants: [{ username: "ada" }, { username: "bram" }] }; },
+      getInstanceConnectedParticipants: async () => { window.__participantCalls = (window.__participantCalls || 0) + 1; (window.__participantTimes ||= []).push(performance.now()); return { participants: [{ username: "ada" }, { username: "bram" }] }; },
       openExternalLink: async (a) => { (window.__ext ||= []).push(a.url); return {}; },
     }; }
-  ready() { return new Promise((r) => setTimeout(r, window.__sdkDelay || 0)); }
+  ready() { return new Promise((r) => setTimeout(() => { (window.__marks ||= {}).ready = performance.now(); r(); }, window.__sdkDelay || 0)); }
   async subscribe() {}
 }
 `;
@@ -31,6 +32,18 @@ const STUB = `export class DiscordSDK {
 async function open(browser, { delay, query = {}, stub = true, quiet = null, host = null, dataStatus = 0 }) {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, serviceWorkers: "block", reducedMotion: "reduce" });
   await ctx.addInitScript((d) => { window.__sdkDelay = d; window.__ext = []; }, delay || 0);
+  /* The Activity frame writes down, on ITS OWN clock (the one its 4 s preview fallback, the SDK's ready() and the 15 s presence re-poll run on), when it started, when the board
+     came up and when Discord mode began. The timing checks below are made on these marks, never on how long the harness slept after the frame's load event (see the loop below). */
+  if (host) await ctx.addInitScript((h) => {
+    if (location.hostname !== h) return;
+    const t = (window.__marks = { start: performance.now(), ready: null, board: null, boardSdk: null, discord: null });
+    const look = () => {
+      const b = document.getElementById("board"), p = document.getElementById("presence-text");
+      if (t.board === null && b && !b.hidden) { t.board = performance.now(); t.boardSdk = !!window.__sdk; } /* window.__sdk is set by index.html only once ready() has resolved: false here means the first start was the 4 s preview fallback */
+      if (t.discord === null && p && /In this Activity/.test(p.textContent || "")) t.discord = performance.now();
+    };
+    new MutationObserver(look).observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
+  }, host);
   /* Activity runs: the page is served on a fictional https://<id>.discordsays.com host (as the Developer Portal proxy does), every request answered from BASE.
      Registered first so the API stub and the SDK stub below win for /api/ and the SDK module. */
   if (host) await ctx.route(`https://${host}/**`, async (r) => { const u = new URL(r.request().url()); /* /api/data/* and /api/library/* are answered from fixtures (the repo's data files, as the Worker would serve them to an all-visible party): the member documents have no static fallback, so a 404 here would stop the board. dataStatus makes the data routes fail instead (the closed rule: presence and link interception must still start). */
@@ -60,24 +73,35 @@ const footClick = (page, text) => page.evaluate((t) => {
   window.removeEventListener("click", rec, false);
   return { prevented, href: a.getAttribute("href"), ext: window.__ext.slice() };
 }, text);
-const boardShown = (page) => page.evaluate(() => !document.getElementById("board").hidden);
 const presence = (page) => page.evaluate(() => (document.getElementById("presence-text") || {}).textContent || "");
 
 const ACT_HOST = "123456789012345678.discordsays.com"; /* fictional */
 const browser = stubbed(await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}));
 try {
+  // Timing is judged on the frame's own clock (window.__marks and the stub's call times), not on harness sleeps. Until 2026-11-22 this loop slept 4.6 s and then 2.5 s
+  // counted from the frame's LOAD event, while the page's timers count from its start: when a load-blocking request of the framed board answered late (in CI every request
+  // is proxied to the preview), the "4.6 s" check ran after the SDK was ready and the participant count was read after the board's own 15 s re-poll, so the late-SDK case
+  // failed with "Discord mode has not started yet" and "exactly once at start: calls 2" about once in 60 full runs. Reproduced by holding one hero image back 14 s.
+  const START_WINDOW_MS = 15000; /* js/board.js startDiscordPresence re-polls every 15 s by design; "exactly once at start" counts the calls before that */
+  const SETTLE_MS = 7000; /* past the 6 s race in startDiscordPresence, so a second start's first poll (immediate or after 6 s) would be counted */
   for (const [label, delay] of [["late SDK (ready after 5 s)", 5000], ["fast SDK (ready at once)", 0]]) {
     const { ctx, page, errors } = await open(browser, { delay, host: ACT_HOST });
+    await page.waitForFunction(() => window.__marks && window.__marks.discord !== null, null, { timeout: 30000 }).catch(() => {});
+    await page.waitForFunction((ms) => window.__marks && window.__marks.discord !== null && performance.now() - window.__marks.discord >= ms, SETTLE_MS, { timeout: 30000 }).catch(() => {});
+    const m = await page.evaluate(() => ({ ...window.__marks, now: performance.now(), calls: (window.__participantTimes || []).slice() }));
+    const rel = (x) => (x === null || x === undefined ? "never" : `${Math.round(x - m.start)} ms`);
+    const marks = `page clock: SDK ready at ${rel(m.ready)}, board up at ${rel(m.board)} (window.__sdk ${m.boardSdk === null ? "unknown" : m.boardSdk ? "already set" : "not yet set"}), Discord mode at ${rel(m.discord)}, participant calls at ${m.calls.map(rel).join(", ") || "none"}, read at ${rel(m.now)}`;
+    // Anchored to the stub SDK's own ready() time and to how the board first started, not to each other: a board that waited for the SDK (no 4 s fallback), an SDK that was
+    // not late, or a Discord mode that began before ready() all fail here.
+    ok(`[${label}] Discord mode started only after the SDK said it was ready`, m.ready !== null && m.discord !== null && m.discord >= m.ready, marks);
     if (delay > 4000) {
-      await page.waitForTimeout(4600);
-      ok(`[${label}] at 4.6 s the board is already up in preview mode`, await boardShown(page));
-      ok(`[${label}] and Discord mode has not started yet`, (await presence(page)).indexOf("In this Activity") < 0);
+      ok(`[${label}] the SDK was late: ready() resolved ${delay / 1000} s after the frame started, on the frame's clock`, m.ready !== null && m.ready - m.start >= delay - 50, marks);
+      ok(`[${label}] the board first came up in preview mode, 4 s after the frame started (3.9 to 4.8 s), before the SDK was ready`, m.board !== null && m.ready !== null && m.board <= m.ready && m.boardSdk === false && m.board - m.start >= 3900 && m.board - m.start <= 4800, marks);
+      ok(`[${label}] and Discord mode followed it on the same page, once the SDK was ready`, m.board !== null && m.discord !== null && m.board < m.discord, marks);
     }
-    await page.waitForFunction(() => /In this Activity now/.test((document.getElementById("presence-text") || {}).textContent || ""), null, { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(2500);
     ok(`[${label}] Discord mode is on: presence reads "In this Activity now"`, /In this Activity now/.test(await presence(page)), await presence(page));
-    const calls = await page.evaluate(() => window.__participantCalls || 0);
-    ok(`[${label}] presence asked Discord for participants exactly once at start`, calls === 1, `calls ${calls}`);
+    const atStart = m.discord === null ? [] : m.calls.filter((c) => c >= m.discord && c < m.discord + START_WINDOW_MS);
+    ok(`[${label}] presence asked Discord for participants exactly once at start (the first ${START_WINDOW_MS / 1000} s of Discord mode)`, atStart.length === 1 && m.calls.every((c) => c >= m.discord), `calls ${atStart.length} in the window, ${m.calls.length} in all; ${marks}`);
     const priv = await footClick(page, "Privacy");
     ok(`[${label}] a footer click is intercepted (default prevented before it reaches the frame)`, priv.prevented === true, JSON.stringify(priv));
     ok(`[${label}] one click, one openExternalLink (no duplicate listener)`, priv.ext.length === 1 && priv.ext[0] === "https://leeroy.party/privacy/", JSON.stringify(priv.ext));

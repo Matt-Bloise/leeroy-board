@@ -32,7 +32,8 @@ export function verifyComment(body, want) {
 const ok = (r) => r === "success";
 const skipped = (r) => r === "skipped";
 
-// in: { apiNeeded (false only when no Worker or API file changed), sha7, sha (full head sha), runId, previewSkipped (full run, preview secrets absent), docsOnly, siteChanged, full, results: {unit, stamps, api, browser, layout}, counts: {uPass,uFail,aPass,aFail,bPass,bFail,lFail}, pagesUrl, failing, visual, runUrl }
+// in: { apiNeeded (false only when no Worker or API file changed), sha7, sha (full head sha), runId, previewSkipped (full run, preview secrets absent), docsOnly, siteChanged, full, results: {unit, stamps, api, browser, layout, visual}, counts: {uPass,uFail,aPass,aFail,bPass,bFail,lFail,vPass,vFail}, pagesUrl, failing, visual, runUrl }
+// results.visual is the visual baseline gate (job `visual`); `visual` at the top level is only the `visual` LABEL (the non-gating visual audit).
 // out: { body, pass, gate }  (gate: the body carries the merge-gate phrase)
 export function buildReport(i) {
   // The preview crawl is its own job (it hides a member and must run alone) but belongs to the API gate: the API row is green only when api AND crawl are. A crawl result that is not given
@@ -40,31 +41,36 @@ export function buildReport(i) {
   const both = (a, c) => (c === undefined || c === a ? a : a === "success" && c === "success" ? "success" : "failure");
   const r = { ...i.results, api: both(i.results.api, i.results.crawl) };
   const unitStamps = ok(r.unit) && ok(r.stamps);
+  // The visual baseline gate (job `visual`, tests/browser/visual-baseline.mjs) needs no preview, so it runs in light and full runs alike whenever the scope rule says a site file changed,
+  // and must then succeed; it may be absent only when no site file changed. A visual result that is not given at all is ignored (callers from before the job); the CLI always gives one,
+  // and a missing VISUAL_RESULT reaches here as "missing", never as a pass.
+  const visualGiven = r.visual !== undefined, visualRan = ok(r.visual);
+  const visualOk = !visualGiven || (i.siteChanged ? ok(r.visual) : ok(r.visual) || skipped(r.visual));
   let pass, mode, ran, notRun;
   // B72: the API suite may be absent only when tools/api-scope.mjs said no Worker or API file changed (apiNeeded === false). Anything else (true, undefined) needs api to succeed.
   const apiOk = i.apiNeeded === false ? ok(r.api) || skipped(r.api) : ok(r.api);
   if (i.docsOnly) {
     mode = "docs";
-    pass = unitStamps;
+    pass = unitStamps && visualOk;
     ran = "unit, stamps";
     notRun = "preview, api, browser, layout (docs only: nothing a visitor or the Worker runs changed)";
   } else if (i.full && i.previewSkipped) {
     // Preview secrets are absent (docs/runbooks/ci-secrets.md): preview, api, browser and layout were skipped on purpose. Never a gate pass.
     mode = "skipped";
-    pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout);
+    pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout) && visualOk;
     ran = "unit, stamps";
     notRun = "preview, api, browser, layout (preview secrets are not configured)";
   } else if (i.full) {
     mode = "full";
     if (i.siteChanged) {
-      pass = unitStamps && apiOk && ok(r.browser) && ok(r.layout);
+      pass = unitStamps && apiOk && ok(r.browser) && ok(r.layout) && visualOk;
       ran = i.apiNeeded === false ? "unit, stamps, browser, layout" : "unit, stamps, api, browser, layout";
       notRun = i.apiNeeded === false ? "api (scope rule: no Worker or API file changed)" : "none";
     } else {
       // Browser and layout may only be absent because the scope rule said no site, tooling, workflow, config or dependency file changed.
       // Advisor follow-up (Nov 9): with the API suite skipped nothing else proved the preview deploy, so a failed preview must not earn the gate phrase.
       const previewOk = i.apiNeeded === false ? ok(i.previewResult) : true;
-      pass = unitStamps && apiOk && previewOk && (skipped(r.browser) || ok(r.browser)) && (skipped(r.layout) || ok(r.layout));
+      pass = unitStamps && apiOk && previewOk && (skipped(r.browser) || ok(r.browser)) && (skipped(r.layout) || ok(r.layout)) && visualOk;
       ran = i.apiNeeded === false ? "unit, stamps" : "unit, stamps, api";
       notRun = i.apiNeeded === false ? "api, browser, layout (scope rules: no Worker, API, site, tools, .github, wrangler or package*.json file changed)" : "browser, layout (scope rule: no site, tools, .github, wrangler or package*.json file changed)";
     }
@@ -73,10 +79,11 @@ export function buildReport(i) {
   } else {
     mode = "light";
     // A PR that changes the production probe, its self-test or what they read must run the self-test: no light pass for it (tools/ci-scope.mjs probeChanged; the self-test legs are part of the `browser` job).
-    pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout) && i.probeChanged !== true;
+    pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout) && i.probeChanged !== true && visualOk;
     ran = "unit, stamps";
     notRun = "preview, api, browser, layout (full suite not requested)";
   }
+  if (visualRan) ran += ", visual";
   const heading = mode === "light" ? "Light checks" : "Preview tests";
   const gate = pass && mode !== "light" && mode !== "skipped";
   const label = (outcome, name) => {
@@ -86,7 +93,7 @@ export function buildReport(i) {
       if (mode === "light") return "not run (full suite not requested)";
       if (mode === "skipped") return "not run (preview secrets missing)";
       if (name === "api") return i.apiNeeded === false ? "not run (scope rule)" : "not run";
-      return name === "browser" || name === "layout" ? (i.siteChanged ? "not run" : "not run (scope rule)") : "not run";
+      return name === "browser" || name === "layout" || name === "visual" ? (i.siteChanged ? "not run" : "not run (scope rule)") : "not run";
     }
     return "FAIL";
   };
@@ -109,8 +116,10 @@ export function buildReport(i) {
   } else if (mode === "light") {
     lines.push(
       pass
-        ? "Full suite not requested: only unit and stamps ran. The API, browser and layout suites need the `ci-full` label, added when the PR is final. This comment is not the merge gate."
-        : "Unit or stamps failed. The full suite was not requested (no `ci-full` label). This comment is not the merge gate.",
+        ? `Full suite not requested: only ${visualRan ? "unit, stamps and the visual baselines" : "unit and stamps"} ran. The API, browser and layout suites need the \`ci-full\` label, added when the PR is final. This comment is not the merge gate.`
+        : visualGiven && !visualOk && unitStamps
+          ? "The visual baselines failed: a screen changed and its new baseline is not committed in this PR, or a screen is broken (see the `visual` job and its `visual-baseline` artifact; docs/runbooks/visual-baselines.md). The full suite was not requested (no `ci-full` label). This comment is not the merge gate."
+          : "Unit or stamps failed. The full suite was not requested (no `ci-full` label). This comment is not the merge gate.",
       ""
     );
   }
@@ -123,6 +132,7 @@ export function buildReport(i) {
     `| API | ${label(r.api, "api")} | ${cell(c.aPass)} | ${cell(c.aFail)} |`,
     `| Browser smoke (Chromium + WebKit) | ${label(r.browser, "browser")} | ${cell(c.bPass)} | ${cell(c.bFail)} |`,
     `| Layout sweep (Chromium) | ${label(r.layout, "layout")} | - | ${cell(c.lFail)} |`,
+    ...(visualGiven ? [`| Visual baselines (Chromium) | ${label(r.visual, "visual")} | ${cell(c.vPass)} | ${cell(c.vFail)} |`] : []),
     ""
   );
   lines.push(mode === "docs" ? "No preview (docs only)." : mode === "light" ? "No preview (light run)." : i.pagesUrl ? `Preview: ${i.pagesUrl}` : "No preview URL was found.");
@@ -134,7 +144,7 @@ export function buildReport(i) {
 
 function parseLogs(dir) {
   const read = (f) => { try { return readFileSync(`${dir}/${f}`, "utf8"); } catch (e) { return ""; } };
-  const unit = read("unit.log"), api = read("api.log"), br = read("browser.log"), lay = read("layout.log");
+  const unit = read("unit.log"), api = read("api.log"), br = read("browser.log"), lay = read("layout.log"), vis = read("visual.log");
   const num = (re, s) => { const m = s.match(re); return m ? Number(m[1]) : null; };
   const counts = { uPass: num(/^\S+ pass (\d+)$/m, unit), uFail: num(/^\S+ fail (\d+)$/m, unit), aPass: num(/^\S+ pass (\d+)$/m, api), aFail: num(/^\S+ fail (\d+)$/m, api) };
   counts.bPass = num(/live-smoke: all (\d+) checks passed/, br);
@@ -143,7 +153,10 @@ function parseLogs(dir) {
   if (bf) { counts.bFail = Number(bf[1]); counts.bPass = Number(bf[2]) - counts.bFail; }
   const lm = lay.match(/layout-sweep: .*?(\d+) failures/);
   counts.lFail = lm ? Number(lm[1]) : null;
-  const failing = [...br.split("\n"), ...lay.split("\n")].filter((l) => l.startsWith("FAIL ")).slice(0, 10);
+  const vm = vis.match(/visual-baseline: compared (\d+) of (\d+) screens, .*?, (\d+) failed/);
+  counts.vFail = vm ? Number(vm[3]) : null;
+  counts.vPass = vm ? Number(vm[2]) - Number(vm[3]) : null;
+  const failing = [...br.split("\n"), ...lay.split("\n"), ...vis.split("\n")].filter((l) => l.startsWith("FAIL ")).slice(0, 10);
   const apiFailing = api.split("\n").filter((l) => /^\S+ .* \(\d/.test(l) && !/^\S*✔/.test(l) && /fail|✖/i.test(l)).slice(0, 10);
   return { counts, failing: [...apiFailing, ...failing] };
 }
@@ -169,7 +182,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href && process.arg
     apiNeeded: e.API_NEEDED !== "false", // fails closed: only the literal "false" lets the API suite be absent
     full: e.FULL === "true",
     previewResult: e.PREVIEW_RESULT,
-    recoverResult: e.RECOVER_RESULT || "missing", results: { unit: e.UNIT_RESULT, stamps: e.STAMPS_RESULT, api: e.API_RESULT, crawl: e.CRAWL_RESULT || "missing", browser: e.BROWSER_RESULT, layout: e.LAYOUT_RESULT },
+    recoverResult: e.RECOVER_RESULT || "missing", results: { unit: e.UNIT_RESULT, stamps: e.STAMPS_RESULT, api: e.API_RESULT, crawl: e.CRAWL_RESULT || "missing", browser: e.BROWSER_RESULT, layout: e.LAYOUT_RESULT, visual: e.VISUAL_RESULT || "missing" },
     counts, failing, pagesUrl: e.PAGES_URL || "", visual: e.VISUAL === "true", runUrl: e.RUN_URL || "",
   });
   writeFileSync(process.argv[2], out.body, "utf8");

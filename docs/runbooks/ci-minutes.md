@@ -10,11 +10,12 @@ Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `secu
 
 ## Light by default, heavy on request
 
-Every push runs only `scope`, `unit`, `stamps` and `report` (Preview Tests). Everything else needs the label **`ci-full`**.
+Every push runs only `scope`, `unit`, `stamps` and `report` (Preview Tests), plus `visual` when a site file changed. Everything else needs the label **`ci-full`**.
 
 | What | Runs when | Where |
 | :--- | :--- | :--- |
 | scope, unit, stamps, report | every push, draft or ready, same-repo PRs | `preview-tests.yml` |
+| visual (visual baselines, gating) | every push of a same-repo PR where `tools/ci-scope.mjs` says a site file changed, light or full; no preview, no secret, 0 Worker requests (the checkout is served on the runner) | `preview-tests.yml`, `docs/runbooks/visual-baselines.md` |
 | preview environment (Worker, D1, Pages) | label `ci-full`, PR not docs-only | `pr-preview-cloudflare.yml` |
 | api | label `ci-full`, PR not docs-only, and `tools/api-scope.mjs` says "true" (a path under `infrastructure/` other than markdown, `tests/api/`, `tests/helpers/`, `tests/fixtures/`, `data/`, `.github/`, `tools/`, schema, migration or `wrangler*` files, any `package*.json`, `docs/openapi.yaml`) | `preview-tests.yml` |
 | browser, layout | label `ci-full` AND `tools/ci-scope.mjs` says "full" (site, tools, `.github`, wrangler, `package*.json` change) | `preview-tests.yml` |
@@ -23,6 +24,8 @@ Every push runs only `scope`, `unit`, `stamps` and `report` (Preview Tests). Eve
 | ZAP baseline against the preview | PR has BOTH labels `security` and `ci-full` | `security.yml` |
 | ZAP baseline against production | nightly | `nightly-production.yml` |
 | degraded-modes, all 144 checks, against production | nightly | `nightly-production.yml` |
+| Visual drift (the committed baselines against master, two shots per screen) | daily 07:35 UTC and "Run workflow"; report only, opens one issue when a scheduled run fails | `visual-drift.yml`, `docs/runbooks/visual-baselines.md` |
+| Visual Baselines (render and commit new baselines, or calibrate) | "Run workflow" on a branch, never master | `visual-baselines.yml` |
 | degraded-modes, 3 conditions (API aborted, API 500, JavaScript off) | in the browser job, per PR | `tests/browser/run.mjs` |
 
 Behaviour of the labels:
@@ -62,7 +65,7 @@ What each comment means:
 | :--- | :--- | :--- |
 | `### Light checks: passed (<sha7>)` | only unit and stamps ran; text says the full suite was not requested and never contains the words "Preview tests" | no |
 | `### Light checks: FAILED (<sha7>)` | unit or stamps failed | no |
-| `### Preview tests: passed (<sha7>)` with a `Suites run: unit, stamps, api, browser, layout` line | `ci-full`, site-affecting change, and `api`, `browser` and `layout` all `success` | yes |
+| `### Preview tests: passed (<sha7>)` with a `Suites run: unit, stamps, api, browser, layout, visual` line | `ci-full`, site-affecting change, and `api`, `browser`, `layout` and `visual` all `success` | yes |
 | `### Preview tests: passed (<sha7>)` with `Not run: browser, layout (scope rule ...)` | `ci-full`, scope rule says no site-affecting file changed, `api` success, browser and layout skipped (or success) | yes |
 | `### Preview tests: passed (<sha7>)` with `**passed (docs only)**` | docs-only PR, unit and stamps success | yes |
 | `### Preview tests: FAILED (<sha7>)` | anything else in a `ci-full` or docs-only run, including a skipped suite that the scope rule does not explain | no |
@@ -95,6 +98,7 @@ Estimates from the job list with each job rounded up to a whole minute. Duration
 | Teardown, preview exists | probe, wrangler install, deletes, retry step | about 2 |
 | Production deploy per merge | unchanged | 1 |
 | Nightly | degraded about 9, ZAP about 7, Lighthouse about 4 (the former per-PR figure, assumed), notify 1 | about 21 (about $0.13 per night, about $4 per month) |
+| Visual drift | one job: install about 1, 30 screens twice about 6 (measured 2026-11-22: 160 s for one pass over all 30 screens, 164 s and 144 s on CI) | about 7 (about $0.04 per night, about $1.2 per month) |
 
 Typical PR: five light pushes (about 35), one full run (about 38), one teardown (about 2) is about 75 minutes, about $0.45, against about 127 minutes for six pushes at the measured baseline. The saving comes from fewer heavy runs and from not cancelling or failing them mid-way, not from a cheaper heavy run.
 

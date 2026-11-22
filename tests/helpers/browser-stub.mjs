@@ -11,12 +11,12 @@ export const ALLOW_MISS = process.env.API_STUB_ALLOW_MISS === "1";
 export const LIVE_API = process.argv.includes("--live-api") || process.env.LIVE_API === "1";
 // The same wrapper pins the page clock of every context (tests/helpers/clock-arg.mjs pinnedClock: a fixed time before the launch, or --clock), also with --live-api, so the first-visit
 // view a suite reads does not depend on the time the suite runs at. `argv` is only for the unit test.
-export function stubbed(browser, { live = LIVE_API, label = "api-stub", argv = process.argv.slice(2) } = {}) {
+export function stubbed(browser, { live = LIVE_API, label = "api-stub", argv = process.argv.slice(2), libraryDir = null } = {}) {
   const makeContext = browser.newContext.bind(browser);
   browser.newContext = async (...args) => { const ctx = await makeContext(...args); try { await pinContext(ctx, argv); } catch (e) { console.error(e.message); process.exit(2); } return ctx; };
   if (live) { console.log(`${label}: off (--live-api): this suite talks to the real API`); return browser; }
   const make = browser.newContext.bind(browser), close = browser.close.bind(browser), stubs = [];
-  browser.newContext = async (...args) => { const ctx = await make(...args); stubs.push(await installApiStub(ctx)); return ctx; };
+  browser.newContext = async (...args) => { const ctx = await make(...args); stubs.push(await installApiStub(ctx, { libraryDir })); return ctx; };
   browser.apiStubReport = () => {
     const r = stubs.map((s) => s.report());
     return { served: r.reduce((n, x) => n + x.served, 0), writes: r.reduce((n, x) => n + x.writes.length, 0), misses: [...new Set(r.flatMap((x) => x.misses))] };
