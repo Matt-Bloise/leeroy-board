@@ -15,6 +15,7 @@ import { signupCardUrl } from "./card-images.js";
 import { noiseDay, recordShadow } from "./noise.js";
 import { cardMembers, parseClassEmoji, iconFor, claimEntries } from "./card-members.js";
 import { loadPublicInputs, projectForAnonymous, WITHHELD_LINE } from "./public-party.js";
+import { replyStyleOn, styleSignupCard, styleBoardCard, BOARD_STYLE_RESERVE } from "./reply-style.js";
 
 export const CARDS_KEY = "cards";
 export const CARD_EDIT_KEY = "cards_edit";
@@ -176,7 +177,8 @@ const fmtUpdated = (iso) => {
 const NO_MENTIONS = { parse: [] };
 
 // The sign-up card. Returns a message body usable for POST and PATCH: { embeds, components, allowed_mentions }.
-export function renderSignupCard(state) {
+// opts.style (REPLY_STYLE, passed by the executors below and never read from the sign-up document): the house style of reply-style.js on top.
+export function renderSignupCard(state, opts = {}) {
   const t = tallyEntries(state);
   const fields = [];
   const members = state && Array.isArray(state.members) ? state.members : null;
@@ -233,7 +235,8 @@ export function renderSignupCard(state) {
     },
     { type: 1, components: wopts.map((w) => btn(2, `Arrive ${w}`, `signup:when:${w}`)) },
   ];
-  return { embeds: [embed], components, allowed_mentions: NO_MENTIONS };
+  const body = { embeds: [embed], components, allowed_mentions: NO_MENTIONS };
+  return opts && opts.style === true ? styleSignupCard(body, state) : body;
 }
 
 // Discord rejects an embed whose text (title + description + field names + values + footer) passes 6000 characters, and a rejected
@@ -306,8 +309,8 @@ function fitBlocks(blocks, fixedChars) {
 
 // The party board card: one line per person, no buttons (an optional https link button to the board).
 // With state.members (the party document) each person shows class, role and race, including people with no sign-up and sign-ups
-// from people the party sheets do not list yet. Without it the original one-line shape is kept.
-export function renderBoardCard(state) {
+// from people the party sheets do not list yet. Without it the original one-line shape is kept. opts.style: as renderSignupCard.
+export function renderBoardCard(state, opts = {}) {
   const entries = Array.isArray(state && state.entries) ? state.entries : [];
   const t = tallyEntries(state);
   let fields;
@@ -315,7 +318,9 @@ export function renderBoardCard(state) {
   const description = clampText(`${t.rsvp.in.length} in \u00b7 ${t.rsvp.maybe.length} tentative \u00b7 ${t.rsvp.late.length} running late \u00b7 ${t.rsvp.out.length} out${state && state.withheld ? ` · ${WITHHELD_LINE}` : ""}`, 4096);
   const updatedText = fmtUpdated(state && state.updated);
   if (state && Array.isArray(state.members)) {
-    const fit = fitBlocks(boardBlocks(state, entries), "Party board".length + description.length + (updatedText ? `Updated ${updatedText}`.length : 0));
+    // REPLY_STYLE writes an author line and its own footer in place of "Updated ...", so the styled card reserves those instead (reply-style.js).
+    const reserve = opts && opts.style === true ? BOARD_STYLE_RESERVE : updatedText ? `Updated ${updatedText}`.length : 0;
+    const fit = fitBlocks(boardBlocks(state, entries), "Party board".length + description.length + reserve);
     omitted = fit.omitted;
     fields = fit.values.map((value, i) => ({ name: i === 0 ? "Who" : "\u200b", value, inline: false }));
   } else {
@@ -346,7 +351,7 @@ export function renderBoardCard(state) {
   if (typeof url === "string" && /^https:\/\//.test(url) && url.length <= 512) {
     body.components = [{ type: 1, components: [{ type: 2, style: 5, label: "Open the board", url }] }];
   }
-  return body;
+  return opts && opts.style === true ? styleBoardCard(body, state, { omitted }) : body;
 }
 
 export const RENDERERS = { signups: renderSignupCard, board: renderBoardCard };
@@ -476,6 +481,7 @@ export function retryAfterMs(res, json) {
 // editing it (never retry it), so a missing card cannot loop. POST /api/admin/cards/post recreates it.
 export async function redrawCards(env, cards, { fetchImpl = fetch, now = Date.now() } = {}) {
   const state = await loadCardState(env);
+  const look = { style: replyStyleOn(env) };
   const results = [];
   let marked = false;
   let retryAfter = 0;
@@ -488,7 +494,7 @@ export async function redrawCards(env, cards, { fetchImpl = fetch, now = Date.no
       results.push({ card: name, status: "shadow" });
       continue;
     }
-    const r = await discordRest(env, "PATCH", `/channels/${c.channel}/messages/${c.message}`, RENDERERS[name](state), fetchImpl);
+    const r = await discordRest(env, "PATCH", `/channels/${c.channel}/messages/${c.message}`, RENDERERS[name](state, look), fetchImpl);
     if (r.status === 404) {
       next[name].deleted = true;
       marked = true;
@@ -552,7 +558,7 @@ export async function postCard(env, { card, channelId, fetchImpl = fetch, now = 
   const cards = (await loadCards(env.DB)) || {};
   if (cards[card] && !cards[card].deleted && !cards[card].errored && !replace) return { ok: false, error: "card_exists", status: 409 };
   const state = await loadCardState(env);
-  const body = RENDERERS[card](state);
+  const body = RENDERERS[card](state, { style: replyStyleOn(env) });
   if (cardsShadow(env)) {
     await recordShadow(env.DB, "post", channelId, noiseDay(now, null)).catch(() => {});
     return { ok: true, shadow: true, card };
