@@ -193,6 +193,6 @@
     await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const r = card.getBoundingClientRect();
-    return { width: r.width, height: r.height, faces: faces.map((f) => `${f.family}|${f.weight}|${f.style}|${f.status}`).sort() };
+    return { width: r.width, height: r.height, text: card.textContent, faces: faces.map((f) => `${f.family}|${f.weight}|${f.style}|${f.status}`).sort() };
   };
 })();

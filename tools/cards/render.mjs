@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { cardJobs, ROOT } from "./sources.mjs";
 import { decodePng, encodePng, pixelHash, pixelDiff } from "./png.mjs";
-import { uncoveredChars } from "./fonts.mjs";
+import { uncoveredChars, CARD_FONTS } from "./fonts.mjs";
 import { modelHash } from "../../infrastructure/worker/card-models.js";
 import { PIN as BROWSER_PIN, EXECUTABLE, installed as browserInstalled } from "./install-chromium.mjs";
 
@@ -34,7 +34,7 @@ export const CARDS_DIR = "cards";
 export const SCALE = 2;
 export const FIXED_TIME = "2026-01-01T00:00:00Z";
 export const WIDTH = { page: 400, tooltip: 400, signup: 400, map: 800 };
-export const FONT_FILES = ["alegreya-latin.woff2", "alegreya-italic-latin.woff2", "alegreya-sans-sc-500-latin.woff2", "alegreya-sans-sc-700-latin.woff2", "grenze-gotisch-latin.woff2"];
+export const FONT_FILES = CARD_FONTS; // ONE list (fonts.mjs): the files served to the page, hashed into inputs, and checked for glyph coverage
 export const TEMPLATE_FILES = ["card.html", "card.css", "card.js"];
 // Everything else that decides what a card looks like. A change to any of them changes inputsHash(), so the unit test fails until a FULL
 // --write has redrawn every card with it (a partial --write refuses); the CI pixel check then proves the committed pixels.
@@ -147,6 +147,9 @@ export async function openRenderer() {
     const missing = uncoveredChars({ model: job.model, view: job.view });
     if (missing.length) throw new Error(`${job.key}: characters the board's fonts cannot draw (they would be a fallback font or an empty box): ${missing.join(", ")}`);
     const size = await page.evaluate((m) => window.renderCard(m), { ...job.model, ...job.view });
+    // Every character the card really draws (its own fixed strings included, not only the model's data) must be in all the board's fonts.
+    const drawn = uncoveredChars(size.text);
+    if (drawn.length) throw new Error(`${job.key}: the card draws characters the board's fonts cannot draw (a fallback font or an empty box): ${drawn.join(", ")}`);
     const want = WIDTH[job.kind];
     if (size.width !== want) throw new Error(`${job.key}: card is ${size.width} CSS px wide, expected ${want}`);
     if (!Number.isInteger(size.height) || size.height < 80 || size.height > 900) throw new Error(`${job.key}: card height ${size.height} is not a whole number of CSS px in 80..900`);

@@ -31,13 +31,15 @@ export function cardSiteBase(env) {
   return /^https:\/\/[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::\d{1,5})?$/i.test(base) ? base : null;
 }
 
-/** True when `url` answers 200 with a PNG. Never throws; at most one HEAD per URL per minute (per ten minutes once it answered). */
-export async function isPublished(url, { fetchImpl = fetch, now = Date.now() } = {}) {
+/** True when `url` answers 200 with a PNG. Never throws; at most one HEAD per URL per minute (per ten minutes once it answered).
+ *  `timeoutMs`: how long to wait (default PUBLISHED_TIMEOUT_MS, for replies on Discord's 3-second path). `retryMiss`: ignore a remembered miss and ask again
+ *  (for the deferred redraw of the pinned card, which is rare and not time-critical: a miss there would take the picture off the card until the next redraw). */
+export async function isPublished(url, { fetchImpl = fetch, now = Date.now(), timeoutMs = PUBLISHED_TIMEOUT_MS, retryMiss = false } = {}) {
   const seen = published.get(url);
-  if (seen && now - seen.at < (seen.ok ? HIT_TTL_MS : MISS_TTL_MS)) return seen.ok;
+  if (seen && now - seen.at < (seen.ok ? HIT_TTL_MS : MISS_TTL_MS) && !(retryMiss && !seen.ok)) return seen.ok;
   let ok = false;
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), PUBLISHED_TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
     const probe = `${url}?probe=${crypto.randomUUID()}`;
     const res = await fetchImpl(probe, { method: "HEAD", redirect: "manual", signal: ctl.signal });
@@ -54,7 +56,7 @@ export async function isPublished(url, { fetchImpl = fetch, now = Date.now() } =
 }
 
 /** The card URL for a manifest key, or null. `model`: the model of what the reply shows, when the Worker has it. Never throws. */
-export async function cardImageUrl(env, key, { model, fetchImpl = fetch, manifest = MANIFEST, now } = {}) {
+export async function cardImageUrl(env, key, { model, fetchImpl = fetch, manifest = MANIFEST, now, timeoutMs, retryMiss } = {}) {
   try {
     const cards = manifest && manifest.cards;
     const entry = cards && typeof key === "string" && Object.hasOwn(cards, key) ? cards[key] : null;
@@ -64,7 +66,7 @@ export async function cardImageUrl(env, key, { model, fetchImpl = fetch, manifes
     const base = cardSiteBase(env);
     if (!base) return null;
     const url = `${base}/${entry.file}`;
-    return (await isPublished(url, { fetchImpl, now: now === undefined ? Date.now() : now })) ? url : null;
+    return (await isPublished(url, { fetchImpl, now: now === undefined ? Date.now() : now, timeoutMs, retryMiss })) ? url : null;
   } catch {
     return null;
   }

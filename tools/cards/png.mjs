@@ -20,7 +20,9 @@ function paeth(a, b, c) {
 
 // A committed card is held to more than "decodes": what a viewer shows must be exactly what this decoder reads. Ancillary chunks can change
 // that without changing IDAT: an animation (acTL, fcTL, fdAT) shows other frames, tRNS makes a colour transparent, gAMA, cHRM, iCCP and sRGB
-// change colours. So a committed card may hold IHDR, IDAT and IEND only, in RGB or RGBA, and nothing after IEND (encodePng writes exactly that).
+// change colours. So a committed card may hold IHDR, IDAT and IEND only, in that order, IHDR once and first, the IDATs together, IEND last,
+// in RGB or RGBA, and nothing after IEND (encodePng writes exactly that). A second IHDR or an IDAT before the IHDR hashes like the real card
+// but is a broken image in a browser (review of PR 437).
 export const STRICT_CHUNKS = Object.freeze(["IHDR", "IDAT", "IEND"]);
 
 /** Decode a PNG buffer to { width, height, rgba } (rgba: Uint8Array, 4 bytes per pixel, rows top to bottom). Throws on anything unsupported.
@@ -34,6 +36,7 @@ export function decodePng(buf, { strict = false } = {}) {
   let trns = null;
   const idat = [];
   let ended = false;
+  let prev = ""; // the previous chunk's type, for strict ordering
   while (off + 12 <= b.length) {
     const len = b.readUInt32BE(off);
     const type = b.toString("latin1", off + 4, off + 8);
@@ -42,7 +45,14 @@ export function decodePng(buf, { strict = false } = {}) {
     const crc = b.readUInt32BE(off + 8 + len);
     if (zlib.crc32 && (zlib.crc32(b.subarray(off + 4, off + 8 + len)) >>> 0) !== crc) throw new Error(`PNG chunk ${type} has a bad CRC`);
     off += 12 + len;
-    if (strict && !STRICT_CHUNKS.includes(type)) throw new Error(`PNG chunk ${type} is not allowed in a committed card (IHDR, IDAT and IEND only)`);
+    if (strict) {
+      if (!STRICT_CHUNKS.includes(type)) throw new Error(`PNG chunk ${type} is not allowed in a committed card (IHDR, IDAT and IEND only)`);
+      if (prev === "" && type !== "IHDR") throw new Error(`PNG chunk ${type} comes before IHDR`);
+      if (type === "IHDR" && prev !== "") throw new Error("PNG has a second IHDR");
+      if (type === "IDAT" && prev !== "IHDR" && prev !== "IDAT") throw new Error("PNG IDAT chunk is not directly after IHDR or another IDAT");
+      if (type === "IEND" && prev !== "IDAT") throw new Error("PNG IEND does not follow IDAT");
+      prev = type;
+    }
     if (type === "IHDR") {
       ihdr = { width: data.readUInt32BE(0), height: data.readUInt32BE(4), depth: data[8], color: data[9], compression: data[10], filter: data[11], interlace: data[12] };
     } else if (type === "PLTE") palette = data;

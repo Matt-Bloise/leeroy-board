@@ -8,8 +8,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodePng, pixelHash } from "../../tools/cards/png.mjs";
 import { cardJobs, SIGNUP_VARIANTS, SIGNUP_ANSWERS, MAP_PLACE_CHOICES, libraryPages, pageRow, loadAtlas, namedTooltips, tooltipNameOk } from "../../tools/cards/sources.mjs";
-import { uncoveredChars } from "../../tools/cards/fonts.mjs";
-import { inputsHash, MANIFEST_PATH, WIDTH, SCALE, CHROMIUM_ARGS, DRAWING_FILES } from "../../tools/cards/render.mjs";
+import { uncoveredChars, CARD_FONTS } from "../../tools/cards/fonts.mjs";
+import { inputsHash, MANIFEST_PATH, WIDTH, SCALE, CHROMIUM_ARGS, DRAWING_FILES, FONT_FILES } from "../../tools/cards/render.mjs";
 import { cardImageUrl, isPublished, pageCardUrl, tooltipCardUrl, mapCardKey, mapCardUrl, signupCardUrl, cardSiteBase, _forgetPublished, MISS_TTL_MS, PUBLISHED_TIMEOUT_MS } from "../../infrastructure/worker/card-images.js";
 import { modelHash, pageModel, signupModel, cardText, factLabel, cardSlug, PAGE_FACTS, ATTRIBUTION_HOSTS, needsAttribution } from "../../infrastructure/worker/card-models.js";
 import { DEFAULT_MEET, DEFAULT_WHEN, RSVP_BUTTON_LABELS, renderSignupCard, loadCardState } from "../../infrastructure/worker/cards.js";
@@ -400,6 +400,58 @@ test("the pinned sign-up card gets its picture from loadCardState only with the 
     const file = MANIFEST.cards[Object.keys(MANIFEST.cards).find((k) => k.startsWith("signup:"))].file;
     assert.equal(on.cardImage, `${BASE}/${file}`);
     assert.equal(renderSignupCard(on).embeds[0].image.url, `${BASE}/${file}`);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// ---- second review of PR 437 ------------------------------------------------------------------------------------------------------
+test("fonts: one list serves the page, hashes into the inputs and checks coverage; card.css loads exactly those files and draws no CSS-generated text", () => {
+  assert.equal(FONT_FILES, CARD_FONTS, "render.mjs uses the list fonts.mjs checks");
+  const css = fs.readFileSync(path.join(ROOT, "tools/cards/card.css"), "utf8");
+  const loaded = [...css.matchAll(/url\("\/fonts\/([a-z0-9-]+\.woff2)"\)/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(loaded)].sort(), [...CARD_FONTS].sort(), "every @font-face file is a checked font, and every checked font is loaded");
+  for (const f of CARD_FONTS) assert.ok(fs.existsSync(path.join(ROOT, "fonts", f)), f);
+  // text from `content:` never reaches textContent, which is what render.mjs checks for glyph coverage: only empty strings are allowed
+  for (const m of css.matchAll(/(?<![-\w])content\s*:\s*([^;}]*)/g)) assert.match(m[1].trim(), /^(""|''|none|normal)$/, `card.css content: ${m[1]}`);
+  const js = fs.readFileSync(path.join(ROOT, "tools/cards/card.js"), "utf8");
+  assert.match(js, /text: card\.textContent/, "renderCard reports the card's text so every drawn character is checked");
+});
+
+test("the file check can wait longer and ignore a remembered miss (the deferred redraw of the pinned card), while replies keep the short wait", async () => {
+  const url = `${BASE}/cards/page/x-000000000000.png`;
+  const slow = (ms, status = 200) => async (u, init) => new Promise((resolve, reject) => {
+    const t = setTimeout(() => resolve(new Response(null, { status, headers: { "content-type": "image/png" } })), ms);
+    init.signal.addEventListener("abort", () => { clearTimeout(t); reject(new Error("aborted")); });
+  });
+  _forgetPublished();
+  assert.equal(await isPublished(url, { fetchImpl: slow(150), timeoutMs: 40 }), false, "too slow for the short wait");
+  assert.equal(await isPublished(url, { fetchImpl: slow(150), timeoutMs: 400, retryMiss: true }), true, "the longer wait on a remembered miss answers");
+  _forgetPublished();
+  assert.equal(await isPublished(url, { fetchImpl: slow(0, 404) }), false);
+  assert.equal(await isPublished(url, { fetchImpl: slow(0) }), false, "without retryMiss a remembered miss stays a miss for a minute");
+  assert.equal(await isPublished(url, { fetchImpl: slow(0), retryMiss: true }), true, "with retryMiss it asks again");
+  assert.equal(await isPublished(url, { fetchImpl: slow(0, 404), retryMiss: true }), true, "a remembered hit is kept");
+});
+
+test("loadCardState waits for a slow file check (up to 3 s) and retries a remembered miss, so one slow answer cannot take the picture off the pinned card", async () => {
+  const signups = { entries: [] };
+  const db = { prepare: (sql) => ({ bind: () => ({ first: async () => null }), first: async () => (/key = 'signups'/.test(sql) ? { json: JSON.stringify(signups) } : null) }) };
+  const file = MANIFEST.cards[Object.keys(MANIFEST.cards).find((k) => k.startsWith("signup:"))].file;
+  const realFetch = globalThis.fetch;
+  let delay = PUBLISHED_TIMEOUT_MS + 150;
+  globalThis.fetch = async (u, init) => new Promise((resolve, reject) => {
+    const t = setTimeout(() => resolve(new Response(null, { status: 200, headers: { "content-type": "image/png" } })), delay);
+    init.signal.addEventListener("abort", () => { clearTimeout(t); reject(new Error("aborted")); });
+  });
+  try {
+    _forgetPublished();
+    const env = { DB: db, BOARD_PUBLIC_URL: BASE, FLAGS: ON };
+    assert.equal((await loadCardState(env)).cardImage, `${BASE}/${file}`, "an answer slower than a reply would wait still gets the picture");
+    _forgetPublished();
+    assert.equal(await isPublished(`${BASE}/${file}`, { fetchImpl: () => Promise.reject(new Error("down")) }), false); // a miss is now remembered
+    delay = 0;
+    assert.equal((await loadCardState(env)).cardImage, `${BASE}/${file}`, "a remembered miss is asked again by the redraw");
   } finally {
     globalThis.fetch = realFetch;
   }

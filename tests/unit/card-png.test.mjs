@@ -138,3 +138,28 @@ test("strict decoding refuses every chunk that can change what a viewer shows, a
   const pal = pngWithFilter(2, 1, 1, 3, Uint8Array.from([0, 0]), 0, [plte]);
   assert.throws(() => decodePng(pal, { strict: true }), /PLTE is not allowed|colour type 3/);
 });
+
+// Second review of PR 437: strict mode must also fix the chunk ORDER. A second IHDR, or an IDAT before the IHDR, leaves the lenient decoder's
+// pixels (so the hash) unchanged, while a browser shows a broken image.
+test("strict decoding requires IHDR first and once, the IDATs together, and IEND last", () => {
+  const img = image(6, 4, true);
+  const good = encodePng(img);
+  const ihdrChunk = good.subarray(8, 8 + 12 + 13);
+  const idatStart = 8 + 12 + 13;
+  const iendStart = good.length - 12;
+  const idatChunk = good.subarray(idatStart, iendStart);
+  const iendChunk = good.subarray(iendStart);
+  const build = (...parts) => Buffer.concat([SIG, ...parts]);
+  assert.equal(pngPixelHash(build(ihdrChunk, ihdrChunk, idatChunk, iendChunk)), pixelHash(img), "a second IHDR does not change the lenient pixels");
+  assert.throws(() => decodePng(build(ihdrChunk, ihdrChunk, idatChunk, iendChunk), { strict: true }), /second IHDR/);
+  assert.throws(() => decodePng(build(idatChunk, ihdrChunk, iendChunk), { strict: true }), /before IHDR/);
+  assert.throws(() => decodePng(build(ihdrChunk, iendChunk), { strict: true }), /IEND does not follow IDAT/);
+  assert.throws(() => decodePng(build(ihdrChunk, idatChunk, ihdrChunk, idatChunk, iendChunk), { strict: true }), /second IHDR/);
+  const half = Math.floor(zlib.inflateSync(idatChunk.subarray(8, idatChunk.length - 4)).length / 2);
+  assert.ok(half > 0);
+  // two consecutive IDATs are legal and decode the same
+  const raw = zlib.deflateSync(zlib.inflateSync(idatChunk.subarray(8, idatChunk.length - 4)));
+  const a = chunk("IDAT", raw.subarray(0, 10)), c = chunk("IDAT", raw.subarray(10));
+  assert.equal(pixelHash(decodePng(build(ihdrChunk, a, c, iendChunk), { strict: true })), pixelHash(img));
+  assert.equal(pixelHash(decodePng(good, { strict: true })), pixelHash(img));
+});

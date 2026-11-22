@@ -424,7 +424,9 @@ export async function loadCardState(env) {
     }
   } catch { /* legacy shape */ }
   state.classEmoji = parseClassEmoji(env.CARD_CLASS_EMOJI);
-  const picture = await signupCardUrl(env, RSVP_BUTTON_LABELS, meetOptions(state.options).slice(0, 2), whenOptions(state.options).slice(0, 5)); // CARD_IMAGES (off): null, card unchanged
+  // CARD_IMAGES (off): null, card unchanged. This runs in the deferred redraw, never in the 3 s interaction path, so the file check may wait longer and
+  // ignores a remembered miss: a miss here would take the picture off the pinned card until the next redraw.
+  const picture = await signupCardUrl(env, RSVP_BUTTON_LABELS, meetOptions(state.options).slice(0, 2), whenOptions(state.options).slice(0, 5), { timeoutMs: 3000, retryMiss: true });
   if (picture) state.cardImage = picture;
   return state;
 }
