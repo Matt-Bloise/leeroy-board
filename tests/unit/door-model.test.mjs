@@ -132,7 +132,8 @@ test("the roads from the real routes.json: one group per start, the people on ea
 });
 
 test("a link from the data is used only when it is a Discord address over https", () => {
-  assert.equal(M.discordUrl("https://discord.com/channels/123456789012345678/123456789012345678/123456789012345678"), "https://discord.com/channels/123456789012345678/123456789012345678/123456789012345678");
+  const fake = "https://discord.com/channels/10000/20000/30000"; // made-up numbers, not ids
+  assert.equal(M.discordUrl(fake), fake);
   for (const bad of ["javascript:alert(1)", "http://discord.com/channels/12345/12345", "https://discord.com.example/channels/12345/12345", "https://example.com/channels/12345/12345", "https://discord.com/channels/12345/12345?x=1", null, 42])
     assert.equal(M.discordUrl(bad), null, String(bad));
 });
