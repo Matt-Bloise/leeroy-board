@@ -64,7 +64,7 @@ Re-record the snapshot after the API shape changes: `tools/local-browser.sh reco
 
 Needs Node 22 or newer.
 
-Unit tests (`node --test tests/unit/*.test.mjs` from the repo root): run `npm ci` in `tests/` first, because five test files need the `yaml` package.
+Unit tests (`node --test tests/unit/*.test.mjs` from the repo root): run `npm ci` in `tests/` first, because several test files need the `yaml` package.
 On Windows every unit test must pass; any local failure is real, so do not dismiss it as a known Windows failure.
 
 ```
@@ -79,7 +79,7 @@ Set three environment variables. Use the preview URLs from the `cloudflare-pr-pr
 | :--- | :--- |
 | `PREVIEW_API` | Worker origin, for example `https://leeroy-brain-pr-13.<account>.workers.dev` |
 | `PREVIEW_PAGES` | Pages origin, for example `https://pr-13.leeroy-board.pages.dev` |
-| `BOARD_ADMIN_TOKEN` | The admin token of the preview Worker: the per-PR derived value, hex HMAC-SHA256 of `preview:BOARD_ADMIN_TOKEN:leeroy-brain-pr-<PR number>` keyed by the production token (CI computes it in the `api` job). It is never the production token itself. Never commit it or paste it into a file. |
+| `BOARD_ADMIN_TOKEN` | The admin token of the preview Worker: the per-PR derived value, hex HMAC-SHA256 of `preview:BOARD_ADMIN_TOKEN:leeroy-brain-pr-<PR number>` keyed by the `BOARD_PREVIEW_ADMIN_TOKEN` repository secret (CI computes it in the `api` job). It is never the production token. Never commit it or paste it into a file. |
 
 Then:
 
@@ -102,7 +102,7 @@ It runs the unit tests, builds a throwaway local D1 (schema, migrations, seed), 
 
 ## CI
 
-`.github/workflows/preview-tests.yml` runs on every pull request from a branch of this repository (not forks), drafts included, as jobs `unit`, `stamps`, `api` and `browser` (plus `scope`, `preview`, `report`). Docs-only PRs get no preview and run only `unit` and `stamps`; the comment then says `passed (docs only)`. It waits for the preview comment, waits for the preview to answer, derives the per-PR preview admin token from the `BOARD_ADMIN_TOKEN` repository secret and runs the tests with it, uploads logs, and posts a summary comment marked `<!-- preview-tests -->`.
+`.github/workflows/preview-tests.yml` runs on every pull request from a branch of this repository (not forks), drafts included, as jobs `unit`, `stamps`, `api`, `browser` and `layout` (plus `scope`, `preview-secrets`, `preview`, `recover`, `crawl`, `visual-audit`, `report`). Without the label `ci-full` a push runs only `scope`, `unit`, `stamps` and `report`; the preview and the jobs that use it need that label (`docs/runbooks/ci-minutes.md`). Docs-only PRs get no preview and run only `unit` and `stamps`; the comment then says `passed (docs only)`. It waits for the preview comment, waits for the preview to answer, derives the per-PR preview admin token from the `BOARD_PREVIEW_ADMIN_TOKEN` repository secret and runs the tests with it, uploads logs, and posts a summary comment marked `<!-- preview-tests -->`.
 
 **API suite scope (B72).** The `scope` job also runs `tools/api-scope.mjs` on the PR file list (same input as `tools/ci-scope.mjs`, renames on both sides) and outputs `api_needed`. The `api` job (about 117 Worker requests, the only job that calls the real preview Worker) runs only when `api_needed` is `true`. `api_needed` is `true` for any path under `infrastructure/` except `.md`/`.txt`, `tests/api/`, `tests/helpers/`, `tests/fixtures/`, `data/`, `.github/`, `tools/`, any `package*.json`, `wrangler*`, `schema`/`migrations` paths or `.sql` files, `docs/openapi.yaml`, an empty list and any odd path shape. So a PR that only touches css, js, scenes, pages, docs or unit/browser tests skips it. The gate stays honest: `tools/ci-report.mjs` accepts a skipped `api` only when `API_NEEDED` is exactly `false`; a skipped, failed or cancelled `api` with `API_NEEDED` anything else is `FAILED` and never emits `### Preview tests: passed`. A pass comment from a skipped-API run lists `api` under `Not run` with the scope rule. Tests: `tests/unit/api-scope.test.mjs` (classifier) and `tests/unit/api-skip-report.test.mjs` (gate).
 

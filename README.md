@@ -21,7 +21,7 @@ flowchart LR
   AI["AI providers<br/>Claude, Gemini, Groq, Cerebras,<br/>GitHub Models, OpenRouter"]
   WAI["Workers AI binding"]
   SRC["Public wiki and news sources"]
-  CRON["Cron trigger<br/>every 6 hours"]
+  CRON["Cron triggers<br/>every 6 hours, every minute"]
 
   B --> P
   A --> P
@@ -38,8 +38,8 @@ flowchart LR
 
 - Frontend: `index.html`, `js/`, `scenes/`, `css/`, `atlas/`, `room/` (plain browser JavaScript, no build step). [`js/brain.js`](js/brain.js) is the client for the Worker API.
 - Back end: [`infrastructure/worker/index.js`](infrastructure/worker/index.js) is the single Worker entry point (REST routes, Discord interactions, cron handler). [`infrastructure/worker/room.js`](infrastructure/worker/room.js) is the `BoardRoom` Durable Object that fans out live events.
-- AI: [`infrastructure/worker/ai-models.js`](infrastructure/worker/ai-models.js) picks a provider and routes calls through AI Gateway only when both `AI_GATEWAY_ID` and `CLOUDFLARE_ACCOUNT_ID` are non-empty in the Worker environment (`wrangler.toml` ships the account id empty; whether CI fills it in at deploy time is not verified here). Workers AI is used through the `AI` binding.
-- Cron: [`infrastructure/worker/scraper.js`](infrastructure/worker/scraper.js) runs `0 */6 * * *`, snapshots the tracked sources into D1 and proposes wiki updates.
+- AI: [`infrastructure/worker/ai-models.js`](infrastructure/worker/ai-models.js) picks a provider and routes calls through AI Gateway when an account id (`CLOUDFLARE_ACCOUNT_ID`, or `ACCOUNT_ID` / `CF_ACCOUNT_ID`) is set; the gateway id defaults to `leeroy-ai-gateway` when `AI_GATEWAY_ID` is empty. `wrangler.toml` ships the account id empty and the production deploy injects it into `[vars]` (`deploy-cloudflare.yml`, step "Ensure D1 Database Exists & Patch wrangler.toml"). Workers AI is used through the `AI` binding.
+- Cron: [`infrastructure/worker/scraper.js`](infrastructure/worker/scraper.js) runs `0 */6 * * *`, snapshots the tracked sources into D1 and proposes wiki updates. A second trigger, `* * * * *`, runs the timed Discord posts in `infrastructure/worker/moments.js` (see `docs/runbooks/moments.md`), the dead-man check and the board-line and card-edit flush; each is off unless its flag is on (`MOMENTS_*`, `DEADMAN`, `CARDS_ENABLED`, all off by default).
 
 Routes, D1 config keys, secrets and local development are in [`infrastructure/README.md`](infrastructure/README.md).
 
@@ -62,7 +62,7 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: one branch and one pull req
 
 ## Tests and CI
 
-The `Preview Tests` workflow (`.github/workflows/preview-tests.yml`) runs on every non-draft PR from this repository and posts one comment marked `<!-- preview-tests -->` with a result per suite for the head commit. No suite makes AI calls.
+The `Preview Tests` workflow (`.github/workflows/preview-tests.yml`) runs on every PR from a branch of this repository, drafts included, and posts one comment marked `<!-- preview-tests -->` with a result per suite for the head commit. No suite makes AI calls.
 
 | Suite | What it checks | Run locally |
 | :--- | :--- | :--- |

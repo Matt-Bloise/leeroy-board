@@ -37,30 +37,30 @@ Contact details are deliberately not in this repository. Keep them in the owner'
 | Cloudflare dashboard, Workers & Pages, `leeroy-brain`, Metrics / Deployments | Request and error rates, which version is live, deploy times | Dashboard |
 | Cloudflare dashboard, Workers & Pages, `leeroy-board`, Deployments | Pages production deployment history | Dashboard |
 | Cloudflare dashboard, D1, `leeroy-board-db` | Tables, console, Time Travel bookmarks | Dashboard |
-| Live log tail | Real-time Worker invocations and exceptions | `cd infrastructure && npx wrangler tail leeroy-brain --status error --format pretty` (flags confirmed with `--help`, wrangler 3.114.17) |
+| Live log tail | Real-time Worker invocations and exceptions | `cd infrastructure && npx wrangler tail leeroy-brain --status error --format pretty` (flags confirmed with `--help` on wrangler 3.114.17; `--status` and `--format pretty` are also in the source of wrangler 4.148.0, the version `infrastructure/package.json:22` pins) |
 | GitHub Actions | Deploy and preview-test runs, failing step, timestamps | https://github.com/<owner>/leeroy-board/actions (the repository Actions tab) |
-| Preview Tests comment on the PR | Unit, stamps, API and browser results for a head sha (`<!-- preview-tests -->`, `.github/workflows/preview-tests.yml:187-195`) | PR page |
-| AI Gateway `leeroy-ai-gateway` | Provider errors and cache for AI calls (`infrastructure/wrangler.toml:43`) | Dashboard, AI Gateway |
-| Mission control page | Not present in this repository (searched the tree for "mission control" on 2026-11-02, no match). If the owner runs one elsewhere, link it here. | |
+| Preview Tests comment on the PR | Unit, stamps, API and browser results for a head sha (`<!-- preview-tests -->`, `.github/workflows/preview-tests.yml:680-696`) | PR page |
+| AI Gateway `leeroy-ai-gateway` | Provider errors and cache for AI calls (`infrastructure/wrangler.toml:64`) | Dashboard, AI Gateway |
+| Mission control page | No page in this repository (re-searched the tree for "mission control" on 2026-11-22: only comments match, `infrastructure/worker/index.js:830`, `infrastructure/worker/moments.js:252` and `tests/unit/moments.test.mjs:371`, all about the admin `GET /api/admin/moments` status route). If the owner runs one elsewhere, link it here. | |
 
-`wrangler.toml` has no `[observability]` block (`infrastructure/wrangler.toml:1-61`), so persisted Workers Logs are not enabled by configuration. Whether they are on in the dashboard is unverified. `wrangler tail` is live only and keeps nothing; capture what you need while it runs.
+`wrangler.toml` has an `[observability]` block with `enabled = true` and `head_sampling_rate = 1` (`infrastructure/wrangler.toml:22-24`), so persisted Workers Logs are on by configuration (the comment above it gives the free plan as 200,000 events a day and 3 days retention). Whether the dashboard agrees is unverified. `wrangler tail` is live only and keeps nothing; capture what you need while it runs.
 
 Admin-only health detail (provider and AI budget) needs the admin token (`infrastructure/README.md:29`); do not paste it into chat or tickets.
 
 ## Pause merges
 
-Production deploys are triggered only by a push to `master` (`deploy-cloudflare.yml:3-6`); there is no `workflow_dispatch` trigger. Pause options, least to most drastic:
+Production deploys are triggered by a push to `master` (`deploy-cloudflare.yml:3-6`; a push that changes only ignored paths does not deploy, `:7-61`) or by "Run workflow" on `master` (`workflow_dispatch`, `:62-67`; its only input, `allow_create_database`, is for first-time setup, see `rollback.md`, Deploy safety). Pause options, least to most drastic:
 
 1. Disable the production deploy workflow (verified to exist and be active on 2026-11-02 via the GitHub API, workflow id 403954602). Requires repository admin rights:
    ```
    gh workflow disable 403954602 --repo <owner>/leeroy-board
    gh workflow enable  403954602 --repo <owner>/leeroy-board     # to resume
    ```
-   Merges still land on `master` but nothing deploys. Resume deliberately: the next push deploys everything merged in the meantime. Because the workflow has no `workflow_dispatch`, redeploying after enabling needs a new push or a re-run of the last run in the Actions UI.
+   Merges still land on `master` but nothing deploys. Resume deliberately: the next push deploys everything merged in the meantime. After enabling, redeploy with a new push, a re-run of the last run in the Actions UI, or "Run workflow" (`workflow_dispatch`, leave `allow_create_database` off).
 2. Tell the partner and any contributor to stop merging and to hold their open PR. Under `CONTRIBUTING.md:6-7` anything rated 6 or higher is merged only by the owner anyway.
 3. Branch protection or rulesets would give a hard stop, but none exist: the API returns "Branch not protected" for `master` (checked 2026-11-02). Adding protection is a recommended follow-up (`secrets.md`, weakness table).
 
-Closing PRs is also needed to free preview slots; teardown runs on close (`.github/workflows/pr-preview-cloudflare.yml:333-335`), and the account holds 9 previews in total (`CONTRIBUTING.md:6`).
+Closing PRs is also needed to free preview slots; teardown runs on close or when `ci-full` is removed (`.github/workflows/pr-preview-cloudflare.yml:494-496`), and the account holds 9 previews in total (`CONTRIBUTING.md:6`).
 
 ## Resolve
 
