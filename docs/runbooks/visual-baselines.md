@@ -66,6 +66,8 @@ Two earlier versions of the settle failed calibration:
 - With the clock left running, three desktop screens differed between shots by 19.8, 3.8 and 0.0003 percent. Pinning the clock fixed it (see Product races below).
 - With the clock simply paused after the schedule, a slower CI CPU (Intel Xeon Platinum 8370C, run 44999394702) changed 73 percent of `timeline-390x844` and the light canvas of `wall-1366x768`, while 28 screens matched. That is what the final settle with a frozen `Date` fixes.
 
+After the Everything-journey re-render (2026-11-22, Intel Xeon 6975P-C): all 30 screens, 3 shots each, against the committed baselines: 0 pixels beyond 8/255 (largest: 5 pixels with one channel step of 69 on `ledger-1366x768`, 0.001 percent); `timeline-390x844` 60 shots in two runs byte-identical. Runs on AMD runners are not in the table yet: on two earlier runs there (older Guided shots) the phone `timeline` came out about 6 percent darker over the whole sheet, a uniform veil whose cause is not found. A failing screen prints the stack of elements over the paper, large elements, root pseudo-elements, running animations, styles, media and band colours, so the next occurrence names it.
+
 A screen that fails prints `DIAG` lines (where the pixels changed, the brightness of both sides, the best-matching shift, the page state), so a new runner quirk explains itself in the log.
 
 What 0.2 percent catches, measured on the first screen:
