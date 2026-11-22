@@ -1,0 +1,74 @@
+name: Card pixels
+
+# Picture cards for Leeroy's Discord replies (docs/runbooks/card-images.md). Two clean runners each render every card with the pinned browser
+# (tools/cards/chromium.json, driven by the pinned playwright-core in tools/cards/package.json) and fail unless every card decodes to exactly the pixels of its committed
+# PNG under cards/, and the manifest matches the repository's data. Two runners, because "identical pixels" has to hold on machines we did not
+# pick, not only twice on one. Runs only when something that draws a card changes. Never deploys, never commits, reads no secret; when it
+# fails, the renders and a report are uploaded for review.
+
+on:
+  pull_request:
+    paths:
+      - "cards/**"
+      - "tools/cards/**"
+      - "infrastructure/worker/card-models.js"
+      - "infrastructure/worker/card-manifest.json"
+      - "data/library/**"
+      - "data/atlas/**"
+      - "fonts/**"
+      - ".github/workflows/cards.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: card-pixels-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pixels:
+    name: pixels (${{ matrix.run }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [first, second]
+    steps:
+      # Pinned action SHAs: checkout 11bd71901bbe5b1630ceea73d27597364c9af683 v4.2.2, setup-node 39370e3970a6d050c480ffad4ff0ed4d3fdee5af v4.1.0,
+      # upload-artifact b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 v4.4.3
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install the pinned driver and the pinned browser (Chrome for Testing, size and SHA-256 checked)
+        working-directory: tools/cards
+        run: |
+          set -eu
+          npm ci --no-audit --no-fund
+          node install-chromium.mjs
+
+      - name: Render every card and compare decoded pixels with the committed PNGs
+        env:
+          RUN_NAME: ${{ matrix.run }}
+        run: |
+          set -o pipefail
+          lscpu | grep -E "^Model name" || true
+          echo "SIMD: $(grep -o -w -E 'sse4_2|avx2|avx512f|avx512bw' /proc/cpuinfo | sort -u | tr '\n' ' ')"
+          node tools/cards/render.mjs --check --out "$RUNNER_TEMP/cards-$RUN_NAME" 2>&1 | tee "$RUNNER_TEMP/cards-$RUN_NAME.log"
+
+      - name: Upload the renders and the report (only when the check failed)
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: card-renders-${{ matrix.run }}
+          path: ${{ runner.temp }}/cards-${{ matrix.run }}
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,8 @@
+{
+  "about": "The one browser that draws the picture cards (docs/runbooks/card-images.md): Chrome for Testing headless shell, the build playwright-core 1.63.0 is made for (chromium-headless-shell v1243). Installed by node tools/cards/install-chromium.mjs, which checks the size and SHA-256 below before unpacking. A different build may draw different pixels: change this only with a full re-render (node tools/cards/render.mjs --write).",
+  "version": "153.0.8010.12",
+  "url": "https://storage.googleapis.com/chrome-for-testing-public/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip",
+  "bytes": 119809080,
+  "sha256": "a9da028861a0cf789ff25c2fed45f5f1aaf969ed9247835b6a7821a4f7af9d1d",
+  "executable": "chrome-headless-shell-linux64/chrome-headless-shell"
+}

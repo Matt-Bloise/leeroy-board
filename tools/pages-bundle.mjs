@@ -23,7 +23,8 @@ import { PRIVATE_DATA_FILES, canonPath, isPrivatePath, privateRoutes } from "../
 export { PRIVATE_DATA_FILES, canonPath, isPrivatePath };
 
 // What is published, as before: top-level entries of the repository root. (Entries that do not exist are skipped.)
-export const BUNDLE_ITEMS = Object.freeze(["index.html", "404.html", "privacy", "terms", "_headers", "og-1200x630.jpg", "robots.txt", "atlas", "cloth", "css", "data", "fonts", "img", "js", "landing", "rate", "next", "room", "scenes", "vendor"]);
+// cards/: the picture cards for Discord replies (tools/cards, docs/runbooks/card-images.md), immutable files named by their pixel hash.
+export const BUNDLE_ITEMS = Object.freeze(["index.html", "404.html", "privacy", "terms", "_headers", "og-1200x630.jpg", "robots.txt", "atlas", "cards", "cloth", "css", "data", "fonts", "img", "js", "landing", "rate", "next", "room", "scenes", "vendor"]);
 
 // Files that ship in a reduced form because they also hold public records the page uses. The value is a function text -> text.
 // data/atlas/links.json: the `start_zone` records (one per member class) and the per-place `counts[*].records` they add to are removed.

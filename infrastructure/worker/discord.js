@@ -51,6 +51,7 @@ import { groupMemoryOn } from "./research/group-memory.js";
 import { listenerMode, QUIET_COMMAND_NAME } from "./listener-config.js";
 import { setQuiet } from "./listener.js";
 import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
+import { pageCardUrl, tooltipCardUrl, mapCardUrl } from "./card-images.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
 import { updateKvJson, KvConflictError } from "./kv-cas.js";
 import { flushBoardLines } from "./board-lines.js";
@@ -1282,11 +1283,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       }
       const hash = planMeet ? `#atlas.plan.${planMeet.value}` : place ? `#atlas.${place}` : "#atlas";
       const label = planMeet ? `Meeting Route Plan (${planMeet.value})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
+      const card = await mapCardUrl(env, place, planMeet && planMeet.value); // CARD_IMAGES (off): line art of the place, geography only
       return new Response(
         JSON.stringify({
           type: 4,
           data: {
             content: SLASH_COPY.mapLine(label, `${boardUrl}/${hash}`),
+            ...(card ? { embeds: [{ color: GOLD, image: { url: card } }] } : {}),
             components: [
               {
                 type: 1,
@@ -1657,6 +1660,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
       const factLines = facts.map((f) => `• **${f.key}:** ${f.value}`).join("\n");
       const pageUrl = `${boardUrl}/#lib.${row.id}`;
+      const card = await pageCardUrl(env, row); // CARD_IMAGES (off): a picture of this page, only when it was drawn from exactly this row
 
       return new Response(
         JSON.stringify({
@@ -1669,6 +1673,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
                 description: `**Category:** \`${row.category}\`\n\n${factLines || row.blurb || "Open page to view all verified facts."}`,
                 url: pageUrl,
                 footer: { text: "WoW: Forever Verified Library" },
+                ...(card ? { image: { url: card } } : {}),
               },
             ],
             components: [
@@ -1689,6 +1694,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     // 2p. `/tooltip`
     if (cmd === "tooltip") {
       const name = getOpt("name");
+      const cardLookup = tooltipCardUrl(env, name); // CARD_IMAGES (off): the spell or item card; started now so it overlaps the D1 read, never rejects
       const row = await env.DB.prepare(
         "SELECT id, category, title, aliases_json FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR aliases_json LIKE ? ESCAPE '\\' OR facts_json LIKE ? ESCAPE '\\' LIMIT 1"
       )
@@ -1708,6 +1714,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         );
       }
 
+      const card = await cardLookup;
       return new Response(
         JSON.stringify({
           type: 4,
@@ -1718,6 +1725,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
                 title: `Tooltip: ${name}`,
                 description: `${tooltipNamedBy(row, name) ? "Verified in" : "Mentioned on"} **${row.title}** (\`${row.category}\`).\nView the full tooltip and item stats on the Living Board.`,
                 url: `${boardUrl}/#lib.${row.id}`,
+                ...(card ? { image: { url: card } } : {}),
               },
             ],
             flags: 64,

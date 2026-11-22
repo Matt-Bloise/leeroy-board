@@ -8,7 +8,7 @@
 // The caller must list renames on both sides (filename and previous_filename), as tools/docs-only.mjs expects.
 import { pathToFileURL } from "node:url";
 
-const FORCE_DIRS = ["css/", "js/", "scenes/", "landing/", "privacy/", "terms/", "rate/", "atlas/", "cloth/", "next/", "room/", "vendor/", "fonts/", "img/", "data/", "pages-worker/", "tests/browser/", "tests/helpers/", "tests/fixtures/six-members/", "tests/fixtures/api-snapshot/", ".github/", "tools/"];
+const FORCE_DIRS = ["css/", "js/", "scenes/", "landing/", "privacy/", "terms/", "rate/", "atlas/", "cards/", "cloth/", "next/", "room/", "vendor/", "fonts/", "img/", "data/", "pages-worker/", "tests/browser/", "tests/helpers/", "tests/fixtures/six-members/", "tests/fixtures/api-snapshot/", ".github/", "tools/"];
 const FORCE_PREFIXES = ["infrastructure/wrangler"];
 const SITE_FILES = new Set(["index.html", "404.html", "robots.txt", "_headers"]);
 
