@@ -1,0 +1,13 @@
+{
+  "name": "leeroy-card-renderer",
+  "private": true,
+  "type": "module",
+  "description": "Renders Leeroy's picture cards to PNG with one pinned Chromium (docs/runbooks/card-images.md). Exact version on purpose: a different browser build may draw different pixels.",
+  "scripts": {
+    "render": "node render.mjs --write",
+    "check": "node render.mjs --check"
+  },
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

@@ -2,6 +2,8 @@
 
 Parity row 7 (`docs/roadmap/PARITY.md`): the old bot sent 32 picture answers in 15 days (about 2 a day) and had `/page`, `/tooltip` and `/map` cards, drawn by a headless Edge on the owner's PC. Today the Worker answers those commands with text (`infrastructure/worker/discord.js`). Question: can the Worker draw pictures on the Workers Free plan?
 
+**Update 2026-11-22: the CI path (option 2 below) is built**, behind the Flagship flag `CARD_IMAGES` (default off): 217 finite cards (`/page`, `/tooltip`, `/map`, the pinned sign-up card) drawn in CI by one pinned Chrome for Testing build, committed under `cards/` with the pixel hash in each name, served by Pages as immutable files, and named in the Worker's embeds only when they match what the reply shows. Rendering inside the Worker is still not done, for the CPU reasons below. How it works, how to check a card in Discord and turn it on: `docs/runbooks/card-images.md`.
+
 Research only. No renderer, no wasm and no new dependency ships in this change. The one code change is a pure rule, `infrastructure/worker/image-rule.js`, that decides when a picture would be worth sending. It is not wired into `discord.js`.
 
 ## Verdict

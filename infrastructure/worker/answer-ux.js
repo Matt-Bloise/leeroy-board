@@ -6,6 +6,7 @@
 import { toHex, timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { saltProblems, SaltMissingError } from "./salts.js";
 import { ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
+import { replyStyleOn, styleAnswerButtons } from "./reply-style.js";
 
 export const MORE_LABEL = "More if you want it";
 export const SOURCES_LABEL = "Sources";
@@ -161,7 +162,8 @@ export async function buildAnswerComponents(env, { intentId, messageId, hasMore,
       { type: 2, style: 2, label: "Off", custom_id: `leeroy:fb:down:${intentId}:${await signButton(env, "fb:down", intentId, messageId)}` },
     ],
   });
-  return rows;
+  // REPLY_STYLE: the house button colours (reply-style.js); off, the rows are exactly as built above.
+  return replyStyleOn(env) ? styleAnswerButtons(rows) : rows;
 }
 
 // Learns the id of the message about to be edited (GET @original), binds the stored detail row to it (and to the asker when

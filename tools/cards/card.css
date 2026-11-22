@@ -1,0 +1,95 @@
+/* Picture cards for Leeroy's Discord replies (docs/runbooks/card-images.md). Drawn at 400 CSS px (800 for maps) and captured at device scale 2.
+   Only the board's own WOFF2 fonts (fonts/, OFL), no unicode-range: a glyph the font lacks would fall back to a system font, and render.mjs fails
+   the card when DevTools reports any font that is not one of these. font-display: block, so no text is ever painted in a fallback first.
+   Sizes are whole CSS pixels so every card is a whole number of device pixels. Colours are the board's tokens (css/board.css). */
+@font-face { font-family: "Alegreya"; font-style: normal; font-weight: 400 700; font-display: block; src: url("/fonts/alegreya-latin.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya"; font-style: italic; font-weight: 400; font-display: block; src: url("/fonts/alegreya-italic-latin.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 500; font-display: block; src: url("/fonts/alegreya-sans-sc-500-latin.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 700; font-display: block; src: url("/fonts/alegreya-sans-sc-700-latin.woff2") format("woff2"); }
+@font-face { font-family: "Grenze Gotisch"; font-style: normal; font-weight: 500 700; font-display: block; src: url("/fonts/grenze-gotisch-latin.woff2") format("woff2"); }
+
+:root {
+  --oak-0: #120c08; --oak-1: #1c130c; --oak-2: #2a1c12; --oak-3: #3b2819;
+  --brass: #d1a85a; --brass-hi: #eecd8c; --brass-dim: #8a6c35;
+  --cream: #fbf4e4; --l-text: #efe4cc; --l-dim: #e3d4b2; --mute: #a8977a;
+  --parchment: #eadfc4; --parchment-2: #d9c9a3; --ink: #2b1d10; --ink-soft: #46331f; --wax: #a8322a;
+  --tt-bg: #1b120b; --tt-edge: #a3824a; --tt-text: #ffffff; --tt-gold: #ffd200; --tt-green: #3ce63c; --tt-dim: #a8a8a8;
+  --sea: #1e2c31; --sea-line: #2c3f45;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--oak-0); }
+body { font-family: "Alegreya"; font-size: 15px; line-height: 20px; color: var(--l-text); font-kerning: normal; font-variant-ligatures: common-ligatures; text-rendering: geometricPrecision; }
+#stage { display: block; }
+
+/* ---- the frame every card shares ---- */
+.card { position: relative; overflow: hidden; width: 400px; background: var(--oak-1); color: var(--l-text); }
+.card::before { content: ""; position: absolute; inset: 5px; border: 1px solid #5b4524; border-radius: 6px; pointer-events: none; }
+.card::after { content: ""; position: absolute; inset: 0; border: 1px solid #0b0705; pointer-events: none; }
+.card.wide { width: 800px; }
+.inner { position: relative; padding: 18px 22px 0; }
+.kicker { display: flex; align-items: center; gap: 8px; height: 16px; font: 700 12px/16px "Alegreya Sans SC"; letter-spacing: 1.6px; color: var(--brass); text-transform: lowercase; }
+.kicker .dot { width: 5px; height: 5px; background: var(--brass-dim); transform: rotate(45deg); }
+.kicker .rest { color: var(--mute); }
+.title { margin: 4px 0 0; font: 600 34px/38px "Grenze Gotisch"; color: var(--cream); letter-spacing: 0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rule { position: relative; height: 9px; margin: 8px 0 10px; }
+.rule::before { content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 1px; background: #5b4524; }
+.rule::after { content: ""; position: absolute; left: 0; top: 1px; width: 7px; height: 7px; background: var(--oak-1); border: 1px solid var(--brass); transform: rotate(45deg); }
+.foot { position: absolute; left: 22px; right: 22px; bottom: 12px; display: flex; justify-content: space-between; align-items: center; height: 14px; font: 500 11px/14px "Alegreya Sans SC"; letter-spacing: 1.2px; color: #8d7c60; text-transform: lowercase; }
+.foot b { font-weight: 700; color: var(--brass-dim); }
+.clamp2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.clamp3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+
+/* ---- medallion (an inline SVG, drawn by card.js) ---- */
+.medal { position: absolute; right: 18px; top: 16px; width: 52px; height: 52px; }
+
+/* ---- /page: a library plate ---- */
+.card.page { height: 300px; }
+.page .title { padding-right: 60px; }
+.page .blurb { font: 400 15px/20px "Alegreya"; color: var(--l-text); margin: 0 0 10px; }
+.page .facts { display: grid; grid-template-columns: 92px 1fr; column-gap: 12px; row-gap: 7px; margin: 0; }
+.page .facts dt { font: 700 11px/18px "Alegreya Sans SC"; letter-spacing: 1px; color: var(--brass); text-transform: lowercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page .facts dd { margin: 0; font: 400 13px/18px "Alegreya"; color: var(--l-dim); }
+.page .none { font: italic 400 14px/20px "Alegreya"; color: var(--mute); }
+
+/* ---- /tooltip: the board's tooltip, on a plate ---- */
+.card.tooltip { background: var(--tt-bg); background-image: none; }
+.card.tooltip::before { border-color: var(--tt-edge); inset: 4px; border-radius: 5px; }
+.tooltip .inner { padding: 16px 20px 0; }
+.tooltip .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.tooltip .name { font: 700 22px/28px "Alegreya"; color: var(--qc, #ffffff); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tooltip .rank { flex: none; font: 400 15px/20px "Alegreya"; color: var(--tt-dim); }
+.tooltip .row { display: flex; justify-content: space-between; gap: 12px; font: 400 15px/20px "Alegreya"; color: var(--tt-text); }
+.tooltip .line { font: 400 15px/20px "Alegreya"; color: var(--tt-text); overflow-wrap: anywhere; }
+.tooltip .line.g { color: var(--tt-green); }
+.tooltip .line.y, .tooltip .desc { color: var(--tt-gold); }
+.tooltip .desc { margin-top: 6px; font: 400 15px/20px "Alegreya"; }
+.tooltip .src { display: flex; justify-content: space-between; gap: 12px; margin: 10px 0 0; padding: 7px 0 15px; border-top: 1px solid #4a3a22; font: 500 11px/14px "Alegreya Sans SC"; letter-spacing: 1.1px; color: #8d7c60; text-transform: lowercase; }
+
+/* ---- sign-up: what the buttons mean, never who pressed them ---- */
+.card.signup { height: 300px; }
+.signup .group { margin: 0 0 9px; }
+.signup .k { font: 700 11px/14px "Alegreya Sans SC"; letter-spacing: 1px; color: var(--brass); text-transform: lowercase; margin: 0 0 4px; }
+.signup .chips { display: flex; flex-wrap: nowrap; gap: 6px; }
+.signup .chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid #5b4524; border-radius: 13px; background: var(--oak-2); font: 400 14px/24px "Alegreya"; color: var(--l-text); white-space: nowrap; }
+.signup .chip i { width: 8px; height: 8px; border-radius: 4px; background: var(--c, var(--brass-dim)); }
+
+/* ---- /map: line art from the board's atlas data ---- */
+.card.map { width: 800px; height: 450px; background: var(--oak-1); }
+.map .inner { padding: 16px 24px 0; height: 76px; }
+.map .title { font-size: 34px; line-height: 38px; }
+.map .sub { position: absolute; right: 24px; top: 40px; font: 500 14px/18px "Alegreya Sans SC"; letter-spacing: 1px; color: var(--mute); text-transform: lowercase; }
+.map svg.chart { position: absolute; left: 12px; top: 78px; width: 776px; height: 346px; border: 1px solid #5b4524; border-radius: 4px; background: var(--sea); }
+.map .foot { bottom: 7px; left: 24px; right: 24px; }
+.chart .land { fill: var(--parchment-2); stroke: #6f5a35; stroke-width: 1.2; stroke-linejoin: round; }
+.chart .zone { fill: none; stroke: #9b7a45; stroke-width: 1; stroke-dasharray: 4 3; stroke-linejoin: round; }
+.chart .zone.on { fill: var(--parchment); stroke: #7d5a3a; stroke-dasharray: none; stroke-width: 1.6; }
+.chart .zlabel { font: 700 12px "Alegreya Sans SC"; letter-spacing: 1.4px; fill: #7d6a4a; text-transform: lowercase; }
+.chart .zlabel.on { fill: #5a4527; }
+.chart .clabel { font: 700 22px "Alegreya Sans SC"; letter-spacing: 3px; fill: #8a7550; text-transform: lowercase; }
+.chart .hub { fill: var(--ink-soft); stroke: var(--parchment); stroke-width: 1.5; }
+.chart .hlabel { font: 400 14px "Alegreya"; fill: var(--ink); }
+.chart .hlabel.halo { paint-order: stroke; stroke: var(--parchment-2); stroke-width: 4px; stroke-linejoin: round; }
+.chart .pin { fill: var(--wax); stroke: var(--cream); stroke-width: 2; }
+.chart .pinlabel { font: 700 17px "Alegreya"; fill: var(--cream); }
+.chart .plate { fill: var(--oak-1); stroke: var(--brass); stroke-width: 1; }
+.chart .grid { stroke: var(--sea-line); stroke-width: 1; fill: none; }
