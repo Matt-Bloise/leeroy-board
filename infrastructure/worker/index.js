@@ -68,6 +68,7 @@ import { collectInterest } from "./interest.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
+import { activeRoster, rosterScope } from "./roster-source.js";
 import { projectDataDoc, projectBroadcast, loadPublicInputs, writeSheetValueToDoc, SHEET_FIELD_NAMES, MEMBER_DOCS as MEMBER_DOC_KEYS } from "./public-party.js";
 import { PARTY_MEMBERS, loadPartyMembers, normName, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
@@ -78,8 +79,9 @@ export const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "profes
 async function resolveMemberAuth(req, url, env) {
   // 1. Try cryptographic salted hash lookup in `members` table
   const authWho = await authenticate(req, env);
+  const rost = await activeRoster(env); // ROSTER_FROM_D1: null while the flag is off (or the row is missing or invalid), so everything below is today's code
   if (authWho && authWho.slug) {
-    const found = PARTY_MEMBERS.find((m) => m.slug === authWho.slug);
+    const found = (rost ? rost.sheetMembers : PARTY_MEMBERS).find((m) => m.slug === authWho.slug);
     if (found) return { ok: true, member: found };
     // Not one of the built-in five: the party document in D1 may know them (read only on this miss, so the five cost no extra query).
     const fromDoc = (await loadPartyMembers(env)).find((m) => m.slug === authWho.slug);
@@ -90,7 +92,12 @@ async function resolveMemberAuth(req, url, env) {
   // 2. Verified BOARD_ADMIN_TOKEN via constant-time comparison
   const k = extractKey(req);
   if (env.BOARD_ADMIN_TOKEN && k && timingSafeEqualStr(k, env.BOARD_ADMIN_TOKEN)) {
-    return { ok: true, member: PARTY_MEMBERS[3] }; // Default admin to Bloise
+    if (rost) {
+      // ROSTER_FROM_D1: the default admin is the configured slug, never an array position. validateRosterConfig guarantees it is in the roster.
+      const admin = rost.sheetMembers.find((m) => m.slug === rost.defaultAdminSlug);
+      return admin ? { ok: true, member: admin } : { ok: false, member: null };
+    }
+    return { ok: true, member: PARTY_MEMBERS[3] }; // Default admin: member #4 of the built-in list
   }
 
   return { ok: false, member: null };
@@ -532,7 +539,8 @@ export const ROUTES = [
 ];
 
 const worker = {
-  async fetch(req, env, ctx) {
+  async fetch(req, rawEnv, ctx) {
+    const env = rosterScope(rawEnv); // ROSTER_FROM_D1: one roster decision (one flag evaluation, and none unless something asks) for this request
     try { gauge.hit(env, ctx); } catch (e) { /* the gauge can never fail a request */ } // REQUEST_GAUGE (default off): one in-memory add, a batched D1 write every 25 requests; see worker/gauge.js
     const url = new URL(req.url);
     const verdict = originVerdict(req, env);
@@ -2096,7 +2104,8 @@ const worker = {
     }
   },
 
-  async scheduled(controller, env, ctx) {
+  async scheduled(controller, rawEnv, ctx) {
+    const env = rosterScope(rawEnv); // see fetch
     // The every-minute trigger runs only the timed posts; every other trigger is the source sweep. Timed posts are off until MOMENTS_ENABLED.
     if (controller && controller.cron === MOMENTS_CRON) {
       ctx.waitUntil(

@@ -38,6 +38,7 @@ import { groupMemoryOn, buildGroupMemoryBlock, groupRowsForAsk, appendGroupLog, 
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER, degradedLines, DEGRADED_SUFFIX } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty, MAX_PROMPT_CHARS } from "./research/claude.js";
+import { primeRosterPrivacy } from "./roster-source.js";
 import { memberLine, researchTimeoutMs, guestLibraryOnly, hardEndMs } from "./research/no-wall.js";
 import { sheetsHideAnything, WITHHELD_LINE } from "./public-party.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
@@ -1046,6 +1047,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets0 = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     // Research mode: names on the sheets join the roster as keys, and a free-text field that fails the strict guard is dropped before any block is rendered (research/claude.js).
+    if (research) { try { await primeRosterPrivacy(env); } catch (e) { /* ROSTER_FROM_D1: the redaction roster follows the D1 roster (ADR 0002); on any error it stays the built-in one */ } }
     const rparty = research ? researchParty(sheets0, stateMap, { real: researchReal, env }) : null; // RESEARCH_NAMES "real": nothing is dropped for a name (the Claude path sends real names)
     const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
