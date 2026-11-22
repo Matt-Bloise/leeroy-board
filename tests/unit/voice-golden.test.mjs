@@ -7,7 +7,7 @@ import { ROSTER_DATA } from "../../infrastructure/worker/bot-data.js";
 import { scanSecrets } from "../../infrastructure/worker/research/real-names.js";
 import { J, scanText } from "./real-name-scan.mjs";
 
-const read =(rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
+const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 const raw = read("./fixtures/voice-golden/questions.json");
 const doc = JSON.parse(raw);
 const qs = doc.questions;
@@ -90,10 +90,16 @@ test("category rules agree with the expected properties", () => {
 // Allowed: the generic game-role words that are also roster aliases (the set talks about Mages and tanks), and the mention in gs-067, a deliberate ping attempt.
 const ROLE_WORDS = new Set(ROSTER_DATA.flatMap((r) => r.aliases || []).filter((a) => new RegExp("^(?:" + J("ma", "ge") + "|" + J("ta", "nk") + ")$", "i").test(a)).map((a) => `name:${a.toLowerCase()}`));
 const DELIBERATE_MENTION = new Set(["gs-067"]);
+// scanSecrets has no Groq or Cerebras key shape, and the project uses both providers, so those two are added here.
 const privacyHits = (id, text) => [
   ...scanText(text).filter((h) => !ROLE_WORDS.has(h) && !(h === "mention" && DELIBERATE_MENTION.has(id))),
   ...scanSecrets(text, {}),
+  ...(/\b(?:gsk|csk)[-_][A-Za-z0-9]{20,}/.test(text) ? ["groq-or-cerebras-key"] : []),
 ].map((h) => `${id}: ${h}`);
+
+test("the file is canonical JSON (one-space indent, as JSON.stringify(doc, null, 1) writes it), so no duplicate key or escape hides text from the scans", () => {
+  assert.equal(raw, JSON.stringify(doc, null, 1) + "\n", "rewrite the file with JSON.stringify(doc, null, 1) plus a final newline");
+});
 
 test("no roster name, alias, slug, id, email, mention or token appears (shared privacy scan)", () => {
   const problems = [...privacyHits("file", JSON.stringify({ ...doc, questions: [] })), ...qs.flatMap((q) => privacyHits(q.id, JSON.stringify(q)))];
@@ -117,19 +123,21 @@ test("the only links are example.invalid ones", () => {
   for (const l of links) assert.match(l, /^https?:\/\/example\.invalid(?:[/:?#]|$)/i, "only example.invalid links are allowed");
 });
 
-// Every single letter after "member" or "members" (any case, also in lists like "Members A and B") is one of A to E, in the question, the earlier turn and the rationale.
+// Every single letter after "member" or "members" (any case, in brackets, after a colon, in lists like "Members A and B" or ranges like "A-C") is one of A to E,
+// in the question, the earlier turn and the rationale. The article "a" and the pronoun "I" end the list instead of counting as letters ("every member a tank", "the members I know").
 const memberLetters = (s) => {
-  const out = [], w = String(s).split(/[\s,]+/);
+  const out = [], w = String(s).split(/[\s,/]+/).map((x) => x.replace(/^[(\["']+/, "").replace(/[.?!:;'")\]]+$/, "").replace(/'s$/i, ""));
   for (let i = 0; i < w.length; i++) if (/^members?$/i.test(w[i])) for (let j = i + 1; j < w.length; j++) {
-    const t = w[j].replace(/[.?!:;'")]+$/, "").replace(/'s$/i, "");
-    if (/^(?:and|or|&)$/i.test(t)) continue;
-    if (/^[A-Za-z]$/.test(t)) { out.push(t); continue; }
+    const t = w[j];
+    if (/^(?:and|or|&|to)$/i.test(t)) continue;
+    if (/^[A-Za-z]-[A-Za-z]$/.test(t)) { out.push(t[0], t[2]); continue; }
+    if (/^[A-Za-z]$/.test(t) && !/^(?:a|i|I)$/.test(t)) { out.push(t); continue; }
     break;
   }
   return out;
 };
 
 test("members are only ever the letters A to E", () => {
-  assert.deepEqual(memberLetters("ask member f, Members A and g's sheet"), ["f", "A", "g"], "the letter reader itself");
+  assert.deepEqual(memberLetters("ask member f, (Members A and g's) member: H, members A-F, every member a tank, the members I know"), ["f", "A", "g", "H", "A", "F"], "the letter reader itself");
   for (const q of qs) for (const l of memberLetters(`${q.question} ${q.previous || ""} ${q.rationale}`)) assert.match(l, /^[A-E]$/, q.id);
 });

@@ -4,7 +4,7 @@
 
 This is not the answer-grading golden set. That one is `tests/unit/fixtures/golden/` (golden set v2: slices, reference texts, read by `tools/grade-answers.mjs`). This set labels voice properties per question, against the rules in `tools/voice-eval/rubric.md`. The ranker CPU benchmark copied its 80 question texts as the first 80 of `tests/fixtures/ask-cpu/questions.json`; that copy is not kept in sync.
 
-- Members are `A` to `E`, placeholders in no particular order (not positions in the real roster). No real member name, handle or Discord id appears: `tests/unit/voice-golden.test.mjs` runs the shared privacy scan (`tests/unit/real-name-scan.mjs`: roster names, aliases and slugs read from the code at runtime, ids, emails, mentions) and the Worker's token check, and fails on a name from `data/party.json` or a link other than `example.invalid`.
+- Members are `A` to `E`, placeholders in no particular order (not positions in the real roster). No real member name, handle or Discord id appears: `tests/unit/voice-golden.test.mjs` runs the shared privacy scan (`tests/unit/real-name-scan.mjs`: roster names, aliases and slugs read from the code at runtime, ids, emails, mentions) and the Worker's token check, and fails on a name from `data/party.json` or a web address other than `example.invalid` (one with a scheme, `www.` or a Discord invite). The file must stay canonical JSON (`JSON.stringify(doc, null, 1)` plus a newline), so a duplicate key cannot hide text from the scans.
 - `asker_role` is `visitor` (no sheet, no earlier turns) or `member` (`asker_member` is `A` to `E`).
 - `followup` questions carry `previous`, the asker's earlier question. A visitor has none (`null`), so the expected answer asks which question is meant.
 
