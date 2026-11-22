@@ -49,16 +49,33 @@ A screen fails, in compare mode and when baselines are written, when:
 
 A pixel is changed when any channel differs by more than **8 of 255**. A screen fails when more than **0.2 percent** of its pixels changed: 658 pixels at 390x844, 2,098 at 1366x768. A size change always fails. The comparison runs in Node on the decoded files (`tests/helpers/png.mjs`, `tests/helpers/pixel-diff.mjs`), not in a browser canvas.
 
-Calibration, 2026-11-22. This was the starting threshold from outside advice. It was kept after repeat shots on the pinned backend showed noise far below it:
+Calibration, 2026-11-22: 0.2 percent was the starting threshold from outside advice. Repeat shots on the pinned backend put the noise far below it, so it stays.
 
-- Local, before the clock was pinned and the taps fixed: 27 of 30 screens were already identical across fresh contexts. Three were not. `tonight-1366x768` had 19.8 percent of pixels changed: the cloth rail race below moved the panel 10 px. `wall-1366x768` had 3.8 to 4.2 percent: the light followed the mouse left on a tile. `library-1366x768` had 1 pixel.
-- After the fixes, the numbers in "Calibration runs" below.
+| Where | Runs | Screens | Shots each | Pixels beyond 8/255 | Largest channel step |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| Local, between shots | 1 | 30 | 3 | 0 | 1 |
+| CI Intel Xeon 6975P-C, between shots | 2 | 30 | 2 to 3 | 0 | 3 |
+| CI Intel Xeon 6975P-C, against the committed baselines | 3 | 30 | 1 to 3 | 0 | 5 |
+| CI AMD EPYC 7763, against the baselines (rendered on Intel) | 1 | 30 | 2 | 0 | 1 |
 
-What the threshold catches: the CI mutation step shifts the first-visit button 2 px on the phone screen and requires the suite to fail on it. A change smaller than 0.2 percent of the screen passes: for example one word of a sentence, or a small icon recoloured. Lower `maxRatio` in `THRESHOLD` only with new calibration numbers from CI.
+Two earlier versions of the settle failed calibration:
+- With the clock left running, three desktop screens differed between shots by 19.8, 3.8 and 0.0003 percent. Pinning the clock fixed it (see Product races below).
+- With the clock simply paused after the schedule, a slower CI CPU (Intel Xeon Platinum 8370C, run 44999394702) changed 73 percent of `timeline-390x844` and the light canvas of `wall-1366x768`, while 28 screens matched. That is what the final settle with a frozen `Date` fixes.
 
-## Calibration runs
+A screen that fails prints `DIAG` lines (where the pixels changed, the brightness of both sides, the best-matching shift, the page state), so a new runner quirk explains itself in the log.
 
-See the PR that introduced the gate for the per-run table (CPU model, repeat-shot noise, largest difference against the committed baselines). To repeat it: Actions > Visual Baselines > Run workflow with `commit` off and `repeat` 3. It compares three fresh shots of each screen with each other and with the committed baselines, prints a `REPEAT` line per screen, and commits nothing.
+What 0.2 percent catches, measured on the first screen:
+
+| Change | Phone, 390x844 | Desktop, 1366x768 |
+| :--- | ---: | ---: |
+| Primary button moved 2 px (the CI mutation) | 3.4 % (11,194 px), fails | |
+| Primary button moved 1 px | 2.9 %, fails | |
+| Letter spacing on the button, +0.3 px | 0.34 %, fails | 0.45 %, fails |
+| Heading recoloured | 0.28 %, fails | 0.32 %, fails |
+| One character added to a link | 0.25 %, fails | 0.003 % (30 px), passes |
+| A small link recoloured | 0.12 % (387 px), passes | 0.04 % (447 px), passes |
+
+So a change smaller than about 650 pixels on the phone or 2,100 on the desktop passes. Once the gate has run green for a while with 0 px of noise, `maxRatio` in `THRESHOLD` can come down to 0.0002 (66 and 210 pixels), which catches the recoloured link. Do that in its own PR, with the calibration numbers from Visual Baselines runs with `commit` off.
 
 ## When the gate fails
 
