@@ -152,4 +152,5 @@ test("the door's sources: no animation loop, no interval timer, nothing written 
   assert.ok(!/room\/room\.js/.test(read("door", "door.js")) && !/three\.module/.test(read("door", "index.html")));
   assert.match(read("door", "room.js"), /import\("\.\.\/room\/room\.js\?v=[0-9a-f]{10}"\)/);
   assert.match(read("door", "room.js"), /tier: "medium"/, "the 30 fps tier");
+  assert.match(read("room", "room.js"), /medium:\s*\{[^}]*fps:\s*30\b/, "the board's medium tier is the 30 draws a second cap (a software GPU is too slow to show the cap, so it is pinned here)");
 });

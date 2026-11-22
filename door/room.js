@@ -43,18 +43,20 @@ export async function openRoom({ dialog, opener }) {
   on(closeBtn, "click", close);
   on(dialog, "cancel", (e) => { e.preventDefault(); close(); });
   still.hidden = true; canvas.hidden = false; say.textContent = "Lighting the candles.";
-  dialog.showModal(); closeBtn.focus();
+  try { dialog.showModal(); } catch (e) { for (const off of S.offs) off(); S.offs.length = 0; session = null; throw e; } // an old browser without <dialog> modal: let the next press try again
+  closeBtn.focus();
 
   if (RM.matches) { showStill("Motion is reduced on this device, so the room is shown as a painting."); return; }
   if (navigator.connection && navigator.connection.saveData) { showStill("Data saver is on, so the room is shown as a painting."); return; }
+  if ((navigator.deviceMemory || 8) < 4) { showStill("This device has little memory, so the room is shown as a painting."); return; }
   const no = webgl(/[?&]room=gl(?:&|$)/.test(location.search));
   if (no) { showStill(no); return; }
   try {
     const { startRoom } = await import("../room/room.js?v=8f0fc29708");
     if (S.closed) return;
-    const env = () => ({ W: canvas.clientWidth || innerWidth, H: canvas.clientHeight || innerHeight, dpr: 1, rect: null, reduce: false, hidden: document.hidden, sceneOpen: false, wide: { off: false, p3: matchMedia("(color-gamut: p3)").matches } });
+    const env = () => ({ W: canvas.clientWidth || innerWidth, H: canvas.clientHeight || innerHeight, dpr: 1, rect: null, reduce: false, hidden: document.hidden || S.resting, sceneOpen: false, wide: { off: false, p3: matchMedia("(color-gamut: p3)").matches } });
     const aim = { tx: null, ty: null };
-    S.room = await startRoom({ canvas, tier: "medium", env: env(), aim: () => aim, onLost: () => { stopRoom(); showStill("The graphics card stopped the room, so here is the painting."); } });
+    S.room = await startRoom({ canvas, tier: "medium", env: env(), aim: () => aim, onSlow: () => { stopRoom(); showStill("This device could not keep up, so here is the painting."); }, onLost: () => { stopRoom(); showStill("The graphics card stopped the room, so here is the painting."); } });
     if (S.closed) { stopRoom(); return; }
     say.textContent = "Candles, the hearth and the bar. Move the pointer to look around.";
     const rest = () => { if (!S.room || S.closed) return; S.resting = true; S.room.visible(false); say.textContent = "The room is resting to save power. Move the pointer or tap to wake it."; };

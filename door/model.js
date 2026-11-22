@@ -141,10 +141,13 @@ export function placeName(id) { return String(id).split("-").map((w, i) => (i > 
 // start there (party order, by class), the stops on the way, whether it takes a zeppelin or boat, and the minutes on foot. `zoneOf(nodeId)` names the zone.
 export function roadGroups(plan, graph, party, zoneOf) {
   if (!plan || !arr(plan.who).length) return [];
-  const ms = members(party), groups = new Map();
+  // known: the party document is here. `shown` is the classes the table's visible members play: a class nobody shows (a member hid it) is never named or
+  // coloured, so the roads cannot give a hidden class away by elimination. With no party at all (the API is down) every class is shown: that is public route data.
+  const known = !!members(party).length, ms = members(party), groups = new Map();
   for (const w of plan.who) {
-    const g = groups.get(w.from) || { from: w.from, name: placeName(w.from), zone: zoneOf ? zoneOf(w.from) : "", classes: [], people: [], stops: [], transports: [], minutes: w.minutes, status: w.status, edges: w.edges };
+    const g = groups.get(w.from) || { from: w.from, name: placeName(w.from), zone: zoneOf ? zoneOf(w.from) : "", classes: [], shown: [], known, people: [], stops: [], transports: [], minutes: w.minutes, status: w.status, edges: w.edges };
     g.classes.push(w.class_key);
+    if ((!known || ms.some((m) => m.class_key === w.class_key)) && !g.shown.includes(w.class_key)) g.shown.push(w.class_key);
     for (const m of ms) if (m.class_key === w.class_key && !g.people.includes(m.name)) g.people.push(m.name);
     if (!g.stops.length) g.stops = w.route.slice(1, -1).filter((id) => !/^zeppelin-tower-|^boat-/.test(id)).map(placeName);
     for (const id of w.edges) { const t = graph && graph.transportOf ? graph.transportOf.get(id) : null; if (t && !g.transports.includes(t)) g.transports.push(t); }

@@ -29,7 +29,7 @@ let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const warn = (msg) => console.log(`WARN ${msg}`);
 const DOOR = pageUrl(BASE, { path: "door/" });
-const SIZES = [["360x780", 360, 780, true, 3], ["390x844", 390, 844, true, 3], ["430x932", 430, 932, true, 3], ["768x1024", 768, 1024, true, 2], ["1366x768", 1366, 768, false, 1]];
+const SIZES = [["360x780", 360, 780, true, 3], ["390x844", 390, 844, true, 3], ["430x932", 430, 932, true, 3], ["768x1024", 768, 1024, true, 2], ["844x390", 844, 390, true, 3], ["667x375", 667, 375, true, 3], ["1366x768", 1366, 768, false, 1]];
 const MB = 1024 * 1024, CLS_MAX = 0.1, CLS_TARGET = 0.05, BYTES_MAX = 3 * MB, FPS_MAX = 30;
 const browser = stubbed(await pw.chromium.launch({ args: ["--enable-unsafe-swiftshader"] }), { label: "door api-stub" });
 
@@ -174,6 +174,84 @@ async function keyboard() {
   await ctx.close();
 }
 
+// ---- the cases the plain session cannot see: late data, a stalled API, a hidden class, long names, closing while loading, a resize after the room rests ----
+const CORS = { "access-control-allow-origin": "*", "content-type": "application/json; charset=utf-8" };
+// answers /api/bootstrap from the fixtures, after `delay` ms (Infinity: never), with `mutate` applied to the document
+async function boot(ctx, { delay = 0, mutate = null } = {}) {
+  await ctx.route(/\/api\/bootstrap/, async (r) => {
+    const res = await r.fetch(); let body = await res.text();
+    if (mutate) { const j = JSON.parse(body); mutate(j); body = JSON.stringify(j); }
+    if (delay === Infinity) return; // held for ever: the page's own time limit has to end the wait
+    if (delay) await new Promise((x) => setTimeout(x, delay));
+    await r.fulfill({ status: 200, headers: CORS, body }).catch(() => {});
+  });
+}
+async function edge() {
+  // 1. late data while the reader is already looking at the table: layout shift stays within the budget
+  for (const [id, w, h, touch] of [["390x844", 390, 844, true], ["768x1024", 768, 1024, true], ["1280x720", 1280, 720, false]]) {
+    const tag = `[late data ${id}]`;
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, hasTouch: touch, isMobile: touch, serviceWorkers: "block" });
+    await boot(ctx, { delay: 2500 });
+    await ctx.route(/\/data\/atlas\/(routes|world)\.json/, async (r) => { const res = await r.fetch(); await new Promise((x) => setTimeout(x, 2500)); await r.fulfill({ status: 200, headers: CORS, body: await res.text() }).catch(() => {}); });
+    const page = await ctx.newPage(); await page.addInitScript(OBSERVE);
+    await page.goto(DOOR, { waitUntil: "load" });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => document.querySelector("#table").scrollIntoView());
+    await page.waitForTimeout(700);
+    // phones and tablets: the party card stays on screen while it fills; the laptop: the reader is at the bottom while the roads arrive
+    if (touch) await page.evaluate(() => document.querySelector("#c-party").scrollIntoView()); else await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForTimeout(7000);
+    const cls = await page.evaluate(() => window.__door);
+    ok(`${tag} CLS at most ${CLS_MAX} when the data and the roads arrive late`, cls.cls <= CLS_MAX, `${cls.cls.toFixed(4)} ${cls.shifts.slice(0, 3).join(" | ")}`);
+    await ctx.close();
+  }
+  // 2. a stalled API: the table says so, the map is drawn anyway, nothing stays busy
+  { const tag = "[API held 12 s 390x844]", ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, serviceWorkers: "block" });
+    await boot(ctx, { delay: Infinity });
+    const page = await ctx.newPage(); await page.goto(DOOR, { waitUntil: "load" });
+    await page.waitForTimeout(12500);
+    const st = await page.evaluate(() => ({ busy: document.querySelector("#table").getAttribute("aria-busy"), next: document.querySelector("#next-what").textContent }));
+    ok(`${tag} the page gives up waiting and says so`, st.busy === "false" && /did not load/.test(st.next), JSON.stringify(st));
+    await page.locator("#c-roads").scrollIntoViewIfNeeded(); await page.waitForTimeout(2000);
+    const m = await page.evaluate(mapState);
+    ok(`${tag} the map is drawn from the static data, with its label and written roads`, m.colours >= 12 && m.roads >= 1 && /road/.test(m.label), JSON.stringify(m));
+    await ctx.close(); }
+  // 3. a hidden class is never named or coloured on the roads; a 49-letter name wraps instead of widening the page
+  { const tag = "[hidden class and long names 360x780]", ctx = await browser.newContext({ viewport: { width: 360, height: 780 }, hasTouch: true, isMobile: true, serviceWorkers: "block" });
+    await boot(ctx, { mutate: (j) => { const m = j.party.members; delete m[0].class_key; delete m[0].class; m[1].name = "W".repeat(49); } });
+    const page = await ctx.newPage(); await page.goto(DOOR, { waitUntil: "load" });
+    await page.locator("#c-roads").scrollIntoViewIfNeeded(); await page.waitForTimeout(2500);
+    const r = await page.evaluate(() => ({ roads: document.querySelector("#rd-list").textContent, sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+    ok(`${tag} the roads do not name the hidden class`, !/druid/i.test(r.roads) && /Nobody on the board starts here/.test(r.roads), r.roads.slice(0, 160));
+    ok(`${tag} no sideways scroll with a 49-letter name`, r.sw <= r.cw, `${r.sw} > ${r.cw}`);
+    await ctx.close(); }
+  // 4. Escape while the room is still loading: the dialog closes and focus goes back to Step inside
+  { const tag = "[close while loading 1366x768]", ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, serviceWorkers: "block" });
+    await ctx.route(/three\.module/, async (r) => { await new Promise((x) => setTimeout(x, 3000)); await r.continue().catch(() => {}); });
+    const page = await ctx.newPage(); await page.goto(pageUrl(DOOR, { params: { room: "gl" } }), { waitUntil: "load" });
+    await page.waitForTimeout(1500);
+    await page.focus("#room-go"); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+    await page.keyboard.press("Escape"); await page.waitForTimeout(900);
+    const f = await page.evaluate(() => ({ open: document.querySelector("#room").open, id: document.activeElement && document.activeElement.id }));
+    ok(`${tag} focus is back on Step inside and the dialog is closed`, !f.open && f.id === "room-go", JSON.stringify(f));
+    await ctx.close(); }
+  // 5. the rested room stays at rest through a resize (it used to wake and draw 30 times a second with nobody there)
+  { const tag = "[rest then resize 1366x768]", ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, serviceWorkers: "block" });
+    await ctx.clock.install({ time: new Date("2026-11-03T22:10:00Z") });
+    const page = await ctx.newPage(); await page.goto(pageUrl(DOOR, { params: { room: "gl" } }), { waitUntil: "load" });
+    await page.waitForTimeout(1500); await page.click("#room-go");
+    const gl = await page.waitForFunction(() => window.__doorRoom && window.__doorRoom.status(), null, { timeout: 45000 }).then(() => true, () => false);
+    if (!gl) warn(`${tag} no WebGL room here; not run`);
+    else {
+      await page.waitForTimeout(1500); await page.clock.fastForward(31000); await page.waitForTimeout(1500);
+      const a = await page.evaluate(() => ({ f: window.__doorRoom.status().frames, say: document.querySelector("#room-d").textContent }));
+      await page.setViewportSize({ width: 1280, height: 720 }); await page.waitForTimeout(3000);
+      const b = await page.evaluate(() => window.__doorRoom.status().frames);
+      ok(`${tag} a resize does not wake the resting room`, /resting/.test(a.say) && b - a.f <= 2, `${a.say} | ${b - a.f} draws in 3 s`);
+    }
+    await ctx.close(); }
+}
+
 // ---- visual baselines: seeded (clock pinned, fixtures, reduced motion, fonts and the hero decoded), canvases visible ----
 async function compare(a, b) {
   const helper = await (await browser.newContext()).newPage();
@@ -223,6 +301,7 @@ if (WRITE) { await baselines(); await browser.close(); process.exit(0); }
 for (const [id, w, h, touch, dpr] of SIZES) await session(id, w, h, touch, dpr, { room: id === "1366x768" });
 await reduced();
 await keyboard();
+await edge();
 await baselines();
 await browser.close();
 console.log(`door: ${pass} passed, ${fail} failed`);

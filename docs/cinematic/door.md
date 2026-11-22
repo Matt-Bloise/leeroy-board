@@ -1,6 +1,6 @@
 # The door: the reimagined first screen (preview)
 
-The door is a new first screen and landing for the Living Board, built on a preview route that nothing links to: **`/door/`** (on production, https://leeroy.party/door/; on a pull request preview, `https://pr-<N>.leeroy-board.pages.dev/door/`). The board at `/` is unchanged, so the friends keep the current board until the owner turns the door on. The page is `noindex` and `robots.txt` disallows `/door/`.
+The door is a new first screen and landing for the Living Board, built on a preview route that nothing links to: **`/door/`** (on production, https://leeroy.party/door/; on a pull request preview, `https://pr-<N>.leeroy-board.pages.dev/door/`). The board at `/` is unchanged, so the friends keep the current board until the owner turns the door on. The page is `noindex`, and `robots.txt` already disallows the whole site.
 
 It follows the cinematic program (`docs/cinematic/intent.json`, `baseline.md`, `stranger-script.md`) and the outside advice of the council run of 2026-11-22: responsive HTML and CSS for layout, SVG for crests and icons, Canvas 2D for the Atlas, the WebGL tavern loaded on entry; AVIF or WebP with a fallback and width-based `srcset`; CLS at most 0.1, at most 3 MB over a fixed audit session, at most 30 fps for decorative 3D, zero idle loops, instant transitions under reduced motion; keyboard and touch access with semantic equivalents for what a canvas shows; seeded captures at five sizes with canvases visible.
 
@@ -35,7 +35,7 @@ One ease for everything: `cubic-bezier(.22, 1, .36, 1)` (the program's `--cin-ea
 
 - `door/index.html`: static HTML for everything that needs no data (the first screen paints without waiting for the API), an inline SVG sprite (the board's own tile emblems, the seats, a brass medallion and an original glyph per class), `<picture>` art direction with `width`/`height` reserved. No inline script (the CSP in `_headers` stays as it is).
 - `door/door.css`: phone first, three breakpoints (700 px, landscape, 1100 px), the tiers, the motion tokens with every duration at 1 ms under `prefers-reduced-motion`, forced-colors.
-- `door/door.js`: reads `/api/bootstrap` through `js/brain.js` (`BoardBrain.bootstrap()`: the same API origin rules as the board, a PR preview's own Worker included; no key, no cookie) and renders. It writes nothing: no storage, no API write. It reads the board's own `board-me` / `board-as` keys to know a returning member.
+- `door/door.js`: reads `/api/bootstrap` through `js/brain.js` (`BoardBrain.bootstrap()`: the same API origin rules as the board, a PR preview's own Worker included; no key, no cookie) and renders. It writes nothing itself: no storage, no API write (`js/brain.js`, shared with the board, keeps a board key from a `#k=` link in the address, as it does everywhere). It reads the board's own `board-me` / `board-as` keys to know a returning member.
 - `door/model.js`: the pure rules, each copied from the board and named where it is copied: the board's name matching, the next date (`tonightNext`), the sign-up count (`wk()`: the server's tallies before launch, `js/signups-week.js` after; that script loads only after launch), the role line and role words (`roles()`, the Five tile, `roleWords`).
 - `door/map.js`: the roads in Canvas 2D from the board's vector data: `data/atlas/world.json` (land and zone outlines) and `data/atlas/routes.json` through the board's own planner (`atlas/routes.js` `makePlan`) and coast smoothing (`atlas/shape.js`). No map tiles: about 120 KB of JSON before compression instead of the 6 MB of tiles the full Atlas pans over. A start across the sea (before the zeppelin) is drawn in a framed inset joined by the crossing, so every road is legible at phone size. The canvas is `role="img"` with a one-line label, and every road is written out in the list under it, with who starts where and the minutes on foot. It loads when its card is within 320 px of the viewport, draws once, and redraws once on a resize.
 - `door/room.js`: the tavern on entry only. Nothing of it loads before **Step inside**: then `room/room.js` (the board's own scene, three.js) is imported and started at its **medium** tier: at most 30 draws a second, device pixel ratio 1, no shadows. It pauses when the tab is hidden, rests after 30 s without input (the last frame stays, nothing is drawn), and is stopped with its WebGL context released when the dialog closes; focus returns to the button. Reduced motion, data saver, no WebGL2 or a software GPU show the painting instead and start no WebGL (`?room=gl` lets a test start it on a software GPU). The canvas is decorative (`aria-hidden`); the dialog has a heading and a status line that says what is shown.
@@ -83,3 +83,20 @@ Nothing links to the door, so leaving it in place changes nothing for the friend
 - WebKit: the door uses `<dialog>`, `color-mix()` (with a fallback), `aspect-ratio` and `text-wrap`; all are in current Safari, but the suite runs Chromium only.
 - A door view in `docs/cinematic/intent.json` (its test pins the board's two views today) when the door becomes the first screen.
 - HDR and wide gamut: the door uses none of the board's HDR layers.
+
+## Review round (2026-11-22): what an independent adversarial review found and what changed
+
+Found by reproduction and fixed here, each with a check in `tests/browser/door.mjs` (the late-data check was run against the old CSS and fails there: 0.558 at 390x844, 0.242 at 768x1024, 0.105 at 1280x720):
+
+- **CLS when data arrives after the card is on screen.** The lists now reserve their room (the party 352 px for five on a phone, the roads 380 px, the sign-up line 5.2 em; smaller on wide screens). A sixth member still grows the party card once: the number of members is not known before the data.
+- **The resting tavern woke on a resize** (the resize message overwrote its `hidden` state) and drew 30 times a second with nobody there. A resting room now stays at rest.
+- **Closing the tavern while it loads lost focus** (Step inside was disabled). It is no longer disabled; a second press while loading is ignored.
+- **A rotated phone** had the one action below the fold. Short landscape screens put the painting left and the words beside it.
+- **Hidden class by elimination.** The roads named or coloured a class that no visible member plays; they now say "Nobody on the board starts here" and show a neutral dot. The alt text no longer lists the table's races.
+- **A stalled or failed API.** The page gives up after 10 s and says so; the map is static data and is drawn anyway, with no names.
+- **`showModal()` failing** no longer leaves Step inside dead; long unbroken names wrap; two small targets reach 44 px; a device with under 4 GB of memory, or a room that cannot keep its frame budget, shows the painting.
+
+Known and left as it is:
+
+- **Draw rate versus frame callbacks.** At the board's medium tier the room draws at most 30 times a second, but its animation-frame callback still fires at the display rate (60 or 120 a second) and skips the draw. Capping that needs a change in `room/room.js`, which the board shares; this PR does not touch it. The cap itself is pinned by a unit test, because a software GPU draws below 30 and cannot show it.
+- **Phones.** The room is allowed on phones when a person presses Step inside (the board itself gives touch devices no room). It is untested on a real phone and on WebKit (the `imageOrientation: "flipY"` option of `createImageBitmap` that `room/tavern.js` uses is the one thing to look at).

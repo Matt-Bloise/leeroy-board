@@ -1,4 +1,3 @@
 User-agent: *
 Disallow: /
 Disallow: /rate/
-Disallow: /door/

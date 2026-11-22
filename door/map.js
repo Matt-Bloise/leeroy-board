@@ -8,7 +8,7 @@
 // they are drawn at once. A resize redraws once. Nothing runs while the page is idle.
 import { buildGraph, makePlan, slicePath } from "../atlas/routes.js?v=3047650a27";
 import { smoothRing } from "../atlas/shape.js?v=fa8a9c9ac7";
-import { roadGroups, roadLine, zoneAt, word, cap, placeName, andList } from "./model.js?v=29831ed9ea";
+import { roadGroups, roadLine, zoneAt, word, cap, placeName, andList } from "./model.js?v=231bef223f";
 
 const CLASS = { druid: "#ff7c0a", priest: "#ffffff", paladin: "#f48cba", mage: "#3fc7eb", warlock: "#8788ee", hunter: "#aad372", rogue: "#fff468", shaman: "#0070dd", warrior: "#c69b6d" };
 const INK = "#1d140d", BRASS = "#eecd8c", CREAM = "#fbf4e4", LAND = "#3a2c1c", COAST = "rgba(238, 205, 140, .45)", ZONE = "rgba(238, 205, 140, .14)";
@@ -40,12 +40,12 @@ export async function drawRoads({ canvas, list, caption, heading, party, reduce 
 
   // ---- the words: heading, caption and one list item per road (what the canvas shows, for everyone and for assistive technology) ----
   heading.textContent = groups.length <= 10 ? `${cap(word(groups.length))} road${groups.length === 1 ? "" : "s"}` : "The roads";
-  const color = (g) => (g.classes.length === 1 && CLASS[g.classes[0]]) || BRASS;
+  const color = (g) => (g.shown.length === 1 && CLASS[g.shown[0]]) || BRASS;
   list.replaceChildren(...groups.map((g) => {
     const li = document.createElement("li"); li.className = "road"; li.style.setProperty("--rc", color(g));
     const b = document.createElement("b"); b.textContent = `From ${g.name}${g.zone ? `, ${g.zone}` : ""}.`;
     const who = document.createElement("span"); who.className = "road-who";
-    who.textContent = g.people.length ? `${andList(g.people)} ${g.people.length === 1 ? "starts" : "start"} here.` : `The ${andList(g.classes.map(cap))} ${g.classes.length === 1 ? "starts" : "start"} here.`;
+    who.textContent = !g.known ? "" : g.people.length ? `${andList(g.people)} ${g.people.length === 1 ? "starts" : "start"} here.` : "Nobody on the board starts here.";
     li.append(b, ` ${roadLine(g, end)}`, who);
     return li;
   }));
@@ -141,7 +141,7 @@ export async function drawRoads({ canvas, list, caption, heading, party, reduce 
     }
     // markers: a dot per class at each start, and the meeting place as a brass star
     for (const l of legs) {
-      const v = l.far && far ? far : near, x = v.X(l.start), y = v.Y(l.start), cls = l.g.classes;
+      const v = l.far && far ? far : near, x = v.X(l.start), y = v.Y(l.start), cls = l.g.shown.length ? l.g.shown : [null];
       cls.forEach((ck, i) => { const dx = (i - (cls.length - 1) / 2) * 10; c.beginPath(); c.arc(x + dx, y, 5.5, 0, Math.PI * 2); c.fillStyle = CLASS[ck] || BRASS; c.fill(); c.lineWidth = 2; c.strokeStyle = INK; c.stroke(); });
     }
     if (meet && t >= 1) {
@@ -153,11 +153,11 @@ export async function drawRoads({ canvas, list, caption, heading, party, reduce 
       const all = { x: 0, y: 0, w: W, h: H };
       if (far) placedNear.push([far.rect.x - 4, far.rect.y - 4, far.rect.w + 8, far.rect.h + 8]);
       // the markers are obstacles too: no label sits on the star or on a start's dots
-      for (const l of legs) if (!(l.far && far)) { const half = ((l.g.classes.length - 1) / 2) * 10; placedNear.push([near.X(l.start) - half - 7, near.Y(l.start) - 7, 2 * half + 14, 14]); }
+      for (const l of legs) if (!(l.far && far)) { const half = ((Math.max(1, l.g.shown.length) - 1) / 2) * 10; placedNear.push([near.X(l.start) - half - 7, near.Y(l.start) - 7, 2 * half + 14, 14]); }
       if (meet) { label(end, near.X(meet), near.Y(meet), "below", all, placedNear); placedNear.push([near.X(meet) - 11, near.Y(meet) - 11, 22, 22]); }
       for (const l of legs) {
         if (l.far && far) continue;
-        const x = near.X(l.start), y = near.Y(l.start), half = ((l.g.classes.length - 1) / 2) * 10;
+        const x = near.X(l.start), y = near.Y(l.start), half = ((Math.max(1, l.g.shown.length) - 1) / 2) * 10;
         label(l.g.zone || l.g.name, x + (x > W * 0.6 ? -half : half), y, x > W * 0.6 ? "left" : "right", all, placedNear);
       }
       if (far) {

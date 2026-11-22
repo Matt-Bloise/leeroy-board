@@ -2,10 +2,10 @@
 // - Data: window.BoardBrain.bootstrap() from js/brain.js, so the door talks to the same API origin as the board (production, a PR preview's own Worker,
 //   or ?brain= locally) and sends no key and no cookie. After launch night sign-ups are counted by js/signups-week.js (window.BoardWeek), the board's own
 //   weekly rule, loaded only then (before launch the server's tallies are the count and the script is not needed on the first frame).
-// - It writes nothing: no storage, no API write. It reads the board's board-me / board-as keys to know a returning member.
+// - It writes nothing itself: no storage, no API write (js/brain.js, shared with the board, keeps a board key from a #k= link, as it does everywhere). It reads the board's board-me / board-as keys to know a returning member.
 // - Zero idle loops: no timer and no animation frame runs after the first render. The date words are recomputed when the tab comes back into view.
 // - The map (door/map.js, Canvas 2D) loads when its card nears the viewport; the tavern room (door/room.js, WebGL) loads only when a person steps in.
-import { meFrom, nextEvent, eventLabel, openWords, whenWords, signupView, partyView, discordUrl, launchMs, RSVP_SAY, sameName } from "./model.js?v=29831ed9ea";
+import { meFrom, nextEvent, eventLabel, openWords, whenWords, signupView, partyView, discordUrl, launchMs, RSVP_SAY, sameName } from "./model.js?v=231bef223f";
 
 const $ = (s) => document.querySelector(s);
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -114,7 +114,7 @@ function lazyRoads(j) {
   let io = null, started = false;
   const start = () => {
     if (started) return; started = true; if (io) io.disconnect();
-    import("./map.js?v=52821c2f70")
+    import("./map.js?v=46e6da5568")
       .then((m) => m.drawRoads({ canvas: $("#map"), list, caption: $("#rd-cap"), heading: $("#rd-h"), party: j.party, reduce: () => reduceMQ.matches }))
       .catch(() => { list.replaceChildren(h("li", { class: "road road-wait", text: "The map did not load. The board has it under Three roads." })); });
   };
@@ -124,21 +124,23 @@ function lazyRoads(j) {
 function wireRoom() {
   const btn = $("#room-go");
   btn.addEventListener("click", () => {
-    btn.disabled = true;
-    import("./room.js?v=3913983ced")
+    btn.setAttribute("aria-busy", "true"); // not disabled: a disabled button cannot take focus back when the dialog closes while the room is still loading
+    import("./room.js?v=8f90f4660f")
       .then((m) => m.openRoom({ dialog: $("#room"), opener: btn }))
       .catch(() => { $("#rm-say").textContent = "The room did not load. Try again in a moment."; })
-      .finally(() => { btn.disabled = false; });
+      .finally(() => { btn.removeAttribute("aria-busy"); });
   });
 }
 
+// The map is static data (world.json, routes.json), so it is drawn even when the API is down or slow; the roads then carry no names.
+const BOOT_MS = 10000;
 function offline() {
   $("#next-what").textContent = "The dates did not load";
   $("#next-when").textContent = "The board may still have them.";
   $("#su-who").textContent = "The sign-up card did not load.";
   $("#su-tally").hidden = true;
   $("#pt-list").replaceChildren(h("li", { class: "pm pm-wait", text: "The party did not load." }));
-  $("#rd-list").replaceChildren(h("li", { class: "road road-wait", text: "The roads did not load." }));
+  lazyRoads({ party: null });
 }
 
 // the board's weekly sign-up rule, a classic script that sets window.BoardWeek; on failure the count falls back to the server's tallies
@@ -153,7 +155,7 @@ async function main() {
   wireRoom();
   const table = $("#table");
   let j = null;
-  try { const B = window.BoardBrain; j = B && typeof B.bootstrap === "function" ? await B.bootstrap() : null; } catch (e) { j = null; }
+  try { const B = window.BoardBrain; j = B && typeof B.bootstrap === "function" ? await Promise.race([B.bootstrap(), new Promise((r) => setTimeout(() => r(null), BOOT_MS))]) : null; } catch (e) { j = null; }
   if (!j || typeof j !== "object") { offline(); table.setAttribute("aria-busy", "false"); return; }
   const me = meFrom(store, j.party);
   if (Date.now() >= launchMs(j.timeline)) await weekRule();
