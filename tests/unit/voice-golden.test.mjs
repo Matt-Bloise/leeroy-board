@@ -1,11 +1,11 @@
-// Validator for the golden question set (tests/fixtures/golden-set/questions.json). No model, no network.
-// Run: node --test tests/unit/golden-set.test.mjs
+// Validator for the voice golden question set (tests/unit/fixtures/voice-golden/questions.json). No model, no network.
+// Run: node --test tests/unit/voice-golden.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
-const raw = read("../fixtures/golden-set/questions.json");
+const raw = read("./fixtures/voice-golden/questions.json");
 const doc = JSON.parse(raw);
 const qs = doc.questions;
 

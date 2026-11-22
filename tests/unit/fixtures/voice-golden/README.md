@@ -1,8 +1,10 @@
-# Golden question set for /ask (Leeroy)
+# Voice golden question set for /ask (Leeroy)
 
 `questions.json` holds 80 fictional questions used to measure the voice and behaviour of the `/ask` answer path. Tests and fixtures only: nothing here calls a model, and no Worker code reads it.
 
-- Members are `A` to `E`. No real member name, handle or Discord id appears; `tests/unit/golden-set.test.mjs` fails if one of the names in `data/party.json` shows up.
+This is not the answer-grading golden set. That one is `tests/unit/fixtures/golden/` (golden set v2: slices, reference texts, read by `tools/grade-answers.mjs`). This set labels voice properties per question, against the rules in `tools/voice-eval/rubric.md`. Its 80 question texts are also the first 80 of `tests/fixtures/ask-cpu/questions.json` (the ranker CPU benchmark).
+
+- Members are `A` to `E`. No real member name, handle or Discord id appears; `tests/unit/voice-golden.test.mjs` fails if one of the names in `data/party.json` shows up.
 - `asker_role` is `visitor` (no sheet, no earlier turns) or `member` (`asker_member` is `A` to `E`).
 - `followup` questions carry `previous`, the asker's earlier question. A visitor has none (`null`), so the expected answer asks which question is meant.
 
