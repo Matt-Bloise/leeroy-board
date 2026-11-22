@@ -247,7 +247,7 @@ function roads(M) {
     return { rc: K.classVar((m || ms[0] || {}).class_key), title: m ? m.name : r.zone, sub: m ? K.raceClass(m) : "", crest: m ? m.class_key : null, lines };
   };
   const sticky = () => legend.querySelector('.road-btn[aria-pressed="true"]');
-  let cur = null, pinned = null, kept = null; /* kept: the zone whose card keyboard focus opened */
+  let cur = null, pinned = null, kept = null; /* kept: the zone or button whose card the keyboard opened */
   const setCtx = (id) => {
     const M = RM.M, all = id.key === "all", k = id.key;
     M.svg.classList.add("focusing");
@@ -277,7 +277,7 @@ function roads(M) {
   const show = (t, via) => {
     if (!t.isConnected || $("#scene").hidden) return;
     const id = idOf(t); if (!id.key) return;
-    cur = { t, id }; kept = via === "focus" ? t : null; setCtx(id); fill(id);
+    cur = { t, id }; kept = via === "focus" || (via === "tap" && keyMode) ? t : null; setCtx(id); fill(id); /* a tap from the keyboard (Enter or Space on a road button or pin) holds like focus */
     card.hidden = false; t.setAttribute("aria-describedby", "road-card");
     place(t);
     card.classList.remove("flipin"); void card.offsetWidth; card.classList.add("flipin");
