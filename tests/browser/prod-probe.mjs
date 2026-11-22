@@ -13,7 +13,7 @@
 //   - any console error or uncaught page error (only third-party/report-only noise is exempt: the Cloudflare beacon, CSP messages that say they are
 //     report-only, WebKit-without-WebGL when SMOKE_ALLOW_WEBKIT_NO_WEBGL=1; an ENFORCED Content Security Policy violation fails)
 //   - any 4xx/5xx response from the site itself; from the API any 5xx, and any 4xx on /api/bootstrap and /api/state (a 4xx elsewhere, for example an anonymous 401, is a
-//     WARN annotation, the rule tests/browser/live-smoke.mjs has); and any failed request to either (aborted navigations excepted)
+//     WARN annotation: classifyHttp in helpers/probe-checks.mjs; live-smoke.mjs no longer has this rule, it answers /api/ from the fixtures); and any failed request to either (aborted navigations excepted)
 //   - junk text in what is visible: undefined, NaN, [object Object], Infinity, unfilled {{ }}, raw ids (Discord snowflakes, UUIDs, long hex)
 //   - a blank scene (under 20 characters of text after opening it), a scene whose #panel-<name> does not exist, and a member route (five.<slug>) that does not land on that
 //     member's card (the card must exist and carry the board's "landed" mark)
