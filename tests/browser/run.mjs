@@ -10,7 +10,8 @@ let shard = null;
 try { shard = parseShard(rawArgs); } catch (e) { console.error(e.message); process.exit(2); }
 const args = withoutShard(rawArgs).filter((a) => a !== "--list");
 // prod-probe.mjs is the production probe (B53): it spends real Worker requests, so only its own workflows run it (deploy-cloudflare.yml, prod-probe-daily.yml). Its selftest (prod-probe-selftest.mjs) is NOT in this list any more: it takes about 17 minutes on its own, so the CI job `browser` runs it as its own matrix legs (--shard i/n), in preview-tests.yml and nightly-production.yml.
-const helpers = new Set(["run.mjs", "smoke-retry.mjs", "prod-probe.mjs", "prod-probe-selftest.mjs"]);
+// visual-baseline.mjs is the visual gate: it needs the checkout served by tools/static-server.mjs (a pinned backend), not the preview, so the `visual` job runs it (preview-tests.yml).
+const helpers = new Set(["run.mjs", "smoke-retry.mjs", "prod-probe.mjs", "prod-probe-selftest.mjs", "visual-baseline.mjs"]);
 // --shard i/n: this job runs every n-th suite of the ordered list (live-smoke stays first, in shard 0); the shards together are the whole list (tests/unit/browser-shards.test.mjs). --list prints the suites of this shard and exits.
 const all = orderedSuites(readdirSync(here).filter((f) => f.endsWith(".mjs") && !helpers.has(f)));
 const suites = shard ? shardOf(all, shard.index, shard.count) : all;

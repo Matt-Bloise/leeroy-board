@@ -510,6 +510,95 @@ jobs:
             ${{ runner.temp }}/layout-report.json
           if-no-files-found: ignore
 
+  visual:
+    # The visual baseline gate (tests/browser/visual-baseline.mjs, docs/runbooks/visual-baselines.md): the first screen, the wall, every scene and the landing page at 390x844 (touch)
+    # and 1366x768, compared with the PNGs committed in tests/browser/baselines. It serves THIS checkout with tools/static-server.mjs and answers /api/ from the recorded fixtures,
+    # so it needs no preview, no secret and no Worker request, and runs on every push of a PR that changes a site file (light runs too); the report counts it in every mode.
+    # A visual change fails here unless its new baseline is committed in the same PR (Actions > Visual Baselines > Run workflow on the PR branch renders and commits them).
+    # The mutation step proves the gate can still fail: a small injected style change must make the suite exit 1, or the job fails.
+    name: visual
+    needs: scope
+    if: needs.scope.outputs.site_changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Cache the Playwright browsers (keyed on the lockfile)
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tests/package-lock.json') }}
+
+      - name: Install test dependencies
+        # Infrastructure only (no test has run yet), so it gets one retry, as in the browser job; the gate itself never does.
+        timeout-minutes: 15
+        working-directory: tests
+        run: |
+          printf '%s\n' 'Acquire::http::Timeout "20";' 'Acquire::https::Timeout "20";' 'Acquire::Retries "3";' 'DPkg::Lock::Timeout "300";' | sudo tee /etc/apt/apt.conf.d/99ci-resilient >/dev/null
+          install() { sudo apt-get update && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium; }
+          for attempt in 1 2; do
+            if install; then exit 0; fi
+            echo "::warning::Install attempt $attempt failed."
+          done
+          echo "::error::Installing the test dependencies failed twice."
+          exit 1
+
+      - name: Serve this checkout
+        run: |
+          nohup node tools/static-server.mjs 8080 > "$RUNNER_TEMP/static.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fs -o /dev/null http://127.0.0.1:8080/index.html && exit 0; sleep 1; done
+          echo "::error::The static server did not answer"; cat "$RUNNER_TEMP/static.log"; exit 1
+
+      - name: Visual baselines (gating)
+        working-directory: tests
+        run: |
+          set -o pipefail
+          node browser/visual-baseline.mjs --url "http://127.0.0.1:8080/" 2>&1 | tee "$RUNNER_TEMP/visual.log"
+
+      - name: Visual gate mutation test (gating)
+        # A 2 px shift of the first-visit button on the phone screen must FAIL the comparison. If it passes, the gate cannot fail and this job fails.
+        if: ${{ !cancelled() }}
+        working-directory: tests
+        run: |
+          printf '%s\n' '#nx-fr2-go { transform: translateY(2px) !important; }' > "$RUNNER_TEMP/mutation.css"
+          set +e
+          node browser/visual-baseline.mjs --url "http://127.0.0.1:8080/" --only first --sizes 390x844 --inject-css "$RUNNER_TEMP/mutation.css" --out "$RUNNER_TEMP/visual-mutation" > "$RUNNER_TEMP/visual-mutation.log" 2>&1
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/visual-mutation.log"
+          if [ "$rc" -ne 1 ] || ! grep -qE '^FAIL first-390x844: [0-9.]+% of pixels changed' "$RUNNER_TEMP/visual-mutation.log"; then
+            echo "::error::The visual gate did not fail on an injected 2 px change (exit $rc): it cannot catch a visual change."
+            exit 1
+          fi
+          echo "The visual gate fails on an injected 2 px change, as it must."
+
+      - name: Upload the screenshots and diffs
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: visual-baseline
+          path: |
+            tests/browser/out/visual-baseline
+            ${{ runner.temp }}/visual.log
+            ${{ runner.temp }}/visual-mutation.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload the log for the report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: preview-test-logs-visual
+          path: ${{ runner.temp }}/visual.log
+          if-no-files-found: ignore
+
   visual-audit:
     # Non-gating: measures image sizes, overflow, contrast, layout shift and more. Not in the report's needs,
     # so it never changes the pass or fail result. Only runs for PRs labelled `visual`.
@@ -630,7 +719,7 @@ jobs:
 
   report:
     name: report
-    needs: [scope, unit, stamps, preview-secrets, preview, recover, api, crawl, browser, layout]
+    needs: [scope, unit, stamps, preview-secrets, preview, recover, api, crawl, browser, layout, visual]
     # Not on cancel: a newer push cancels this run and its own run posts the result for the newer commit.
     # The comment is the merge gate, so skipped dependencies are judged by tools/ci-report.mjs, never by a blanket `!= 'failure'`.
     if: always() && !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'unlabeled' && (github.event.action != 'labeled' || github.event.label.name == 'ci-full')
@@ -670,6 +759,7 @@ jobs:
           RECOVER_RESULT: ${{ needs.recover.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
           LAYOUT_RESULT: ${{ needs.layout.result }}
+          VISUAL_RESULT: ${{ needs.visual.result }}
           PREVIEW_SECRETS: ${{ needs.preview-secrets.outputs.enabled }}
           RUN_ID: ${{ github.run_id }}
           PAGES_URL: ${{ needs.preview.outputs.pages }}
@@ -704,7 +794,7 @@ jobs:
       - name: Fail the job if a suite failed
         env:
           OK: ${{ steps.build.outputs.ok }}
-          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} crawl=${{ needs.crawl.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }} full=${{ needs.scope.outputs.full }} api_needed=${{ needs.scope.outputs.api_needed }} docs_only=${{ needs.scope.outputs.docs_only }} site_changed=${{ needs.scope.outputs.site_changed }}
+          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} crawl=${{ needs.crawl.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }} visual=${{ needs.visual.result }} full=${{ needs.scope.outputs.full }} api_needed=${{ needs.scope.outputs.api_needed }} docs_only=${{ needs.scope.outputs.docs_only }} site_changed=${{ needs.scope.outputs.site_changed }}
         run: |
           echo "$RESULTS"
           [ "$OK" = "true" ] || { echo "::error::Checks failed ($RESULTS)."; exit 1; }

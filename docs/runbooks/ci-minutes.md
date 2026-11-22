@@ -10,11 +10,12 @@ Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `secu
 
 ## Light by default, heavy on request
 
-Every push runs only `scope`, `unit`, `stamps` and `report` (Preview Tests). Everything else needs the label **`ci-full`**.
+Every push runs only `scope`, `unit`, `stamps` and `report` (Preview Tests), plus `visual` when a site file changed. Everything else needs the label **`ci-full`**.
 
 | What | Runs when | Where |
 | :--- | :--- | :--- |
 | scope, unit, stamps, report | every push, draft or ready, same-repo PRs | `preview-tests.yml` |
+| visual (visual baselines, gating) | every push of a same-repo PR where `tools/ci-scope.mjs` says a site file changed, light or full; no preview, no secret, 0 Worker requests (the checkout is served on the runner) | `preview-tests.yml`, `docs/runbooks/visual-baselines.md` |
 | preview environment (Worker, D1, Pages) | label `ci-full`, PR not docs-only | `pr-preview-cloudflare.yml` |
 | api | label `ci-full`, PR not docs-only | `preview-tests.yml` |
 | browser, layout | label `ci-full` AND `tools/ci-scope.mjs` says "full" (site, tools, `.github`, wrangler, `package*.json` change) | `preview-tests.yml` |
@@ -62,7 +63,7 @@ What each comment means:
 | :--- | :--- | :--- |
 | `### Light checks: passed (<sha7>)` | only unit and stamps ran; text says the full suite was not requested and never contains the words "Preview tests" | no |
 | `### Light checks: FAILED (<sha7>)` | unit or stamps failed | no |
-| `### Preview tests: passed (<sha7>)` with a `Suites run: unit, stamps, api, browser, layout` line | `ci-full`, site-affecting change, and `api`, `browser` and `layout` all `success` | yes |
+| `### Preview tests: passed (<sha7>)` with a `Suites run: unit, stamps, api, browser, layout, visual` line | `ci-full`, site-affecting change, and `api`, `browser`, `layout` and `visual` all `success` | yes |
 | `### Preview tests: passed (<sha7>)` with `Not run: browser, layout (scope rule ...)` | `ci-full`, scope rule says no site-affecting file changed, `api` success, browser and layout skipped (or success) | yes |
 | `### Preview tests: passed (<sha7>)` with `**passed (docs only)**` | docs-only PR, unit and stamps success | yes |
 | `### Preview tests: FAILED (<sha7>)` | anything else in a `ci-full` or docs-only run, including a skipped suite that the scope rule does not explain | no |
