@@ -157,6 +157,13 @@ async function run(label, viewport, mobile) {
   // The sheet really scrolls by 40 px when it can; the dispatched event covers a size where it cannot.
   if (!(await roadsUp(page))) await reopen(page);
   await focusZone(page, 2);
+  // The page rebuilds the whole map when its art has loaded, on new data and on a resize (renderMap in js/board.js). On a slow preview that lands in the middle of
+  // these checks (CI evidence: focus was on BODY at the scroll). A redraw while a zone holds its keyboard tip must keep focus on that zone and the tip open.
+  const zoneKey = await page.evaluate(() => document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute("data-zone"));
+  await page.evaluate(() => { const K = window.__boardKit; if (K && K.render && K.render.map) K.render.map(); });
+  await page.waitForTimeout(250);
+  const redrawn = await page.evaluate(() => { const a = document.activeElement, c = document.getElementById("road-card"); return { zone: a && a.getAttribute ? a.getAttribute("data-zone") : null, onMap: !!a && a.isConnected && !!a.closest && !!a.closest("#map"), tip: !!c && !c.hidden }; });
+  ok(`${label}: a map redraw while a zone holds its tip keeps focus on that zone and the tip open`, !!zoneKey && redrawn.zone === zoneKey && redrawn.onMap && redrawn.tip, JSON.stringify({ zoneKey, redrawn }));
   const armed = await scrollDiagArm(page);
   const moved = await page.evaluate(() => { const b = document.getElementById("sheet-body"); if (!b) return null; const before = b.scrollTop, max = b.scrollHeight - b.clientHeight; b.scrollTop = before + (before + 40 <= max ? 40 : -40); b.dispatchEvent(new Event("scroll")); return { before, after: b.scrollTop, max }; }).catch(() => null);
   await page.waitForTimeout(150);

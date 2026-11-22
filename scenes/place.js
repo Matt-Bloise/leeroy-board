@@ -223,7 +223,7 @@ function roads(M) {
   svg.querySelectorAll(".road-g").forEach((g) => { const pins = [...g.querySelectorAll(".map-pin")].map((p) => p.getAttribute("data-who")).filter(Boolean); if (pins.length) g.setAttribute("aria-description", pins.join("; ")); });
   let card = $("#road-card");
   if (!card) { card = h("div", { class: "place-card road-card", id: "road-card", role: "tooltip", hidden: "" }); sheet.append(card); }
-  if (RM.wired) return;
+  if (RM.wired) { if (RM.refocus) RM.refocus(svg); return; }
   RM.wired = true;
   const SEL = ".map-pin, .road-btn, .road-g, .map-town, .map-mark, .map-zep-g, .route-plate";
   const P = K.D.party;
@@ -303,6 +303,23 @@ function roads(M) {
   addEventListener("pointerdown", (e) => { if (!card.hidden && pinned && !e.target.closest("#road-card") && !e.target.closest(SEL)) hide(); }, true);
   addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) { hide(); e.preventDefault(); e.stopImmediatePropagation(); } }, true); /* slice 6: Esc closes the card first, hovered or pinned; the next Esc leaves the scene */
   K.sceneHooks.push((on) => { if (!on) hide(); });
+  /* renderMap() rebuilds the whole map (once its art has loaded, on new data, on a resize). When a zone or pin held a keyboard tip, focus moves to the same place
+     in the new map and the tip follows it; before, focus fell to the page, so the next scroll hid the tip and the next Esc closed the scene. Not when the reader
+     has moved focus elsewhere meanwhile. */
+  const twinOf = (t, svg) => {
+    if (t.dataset.zone) return svg.querySelector(`.road-g[data-zone="${CSS.escape(t.dataset.zone)}"]`);
+    if (t.matches(".map-pin")) { const w = t.getAttribute("data-who"); return w ? svg.querySelector(`.map-pin[data-who="${CSS.escape(w)}"]`) : null; }
+    const c = [".map-town", ".map-cross", ".map-zep-g", ".route-plate"].find((x) => t.matches(x));
+    return c ? svg.querySelector(c) : null;
+  };
+  RM.refocus = (svg) => {
+    const t = kept; if (!t || t.isConnected || card.hidden) return;
+    const a = document.activeElement; if (a && a !== document.body && a !== document.documentElement) return;
+    const twin = twinOf(t, svg); if (!twin) { hide(); return; }
+    if (pinned === t) pinned = twin;
+    twin.focus({ preventScroll: true });
+    if (!cur || cur.t !== twin) show(twin, "focus");
+  };
   /* A card opened by keyboard focus stays while its zone keeps focus: a scroll of the sheet (the one a focus() itself can cause at 768 px height, or the reader's) moves the card with its zone instead of hiding it, so the next Esc closes the card and not the scene.
      Any other desktop card still hides on scroll, and so does a focus card whose zone has left the visible sheet. */
   const held = () => { const t = kept, a = document.activeElement; return t && t.isConnected && a && (a === t || t.contains(a)) && lap(R(t), visibleBounds(0)) > 0 ? t : null; };
