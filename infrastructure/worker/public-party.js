@@ -247,7 +247,7 @@ export function projectBroadcast(payload, inputs) {
 // Reads what the projections need: the stored party document and the sheet list (the same reconciled list GET /state uses). Never throws: a read that
 // fails comes back as null, which every projection treats as "everything hidden" (fail closed). The sheets row is read here first, because
 // buildPartySheetsFromD1 swallows a failed read and falls back to its visible-everything seed. Pass what the caller already read to skip a read.
-export async function loadPublicInputs(env, { partyDoc, sheets } = {}) {
+export async function loadPublicInputs(env, { partyDoc, sheets, op } = {}) {
   let doc = partyDoc;
   if (doc === undefined) {
     try {
@@ -258,7 +258,7 @@ export async function loadPublicInputs(env, { partyDoc, sheets } = {}) {
   if (sheets !== undefined) return { partyDoc: doc, sheets: Array.isArray(sheets) ? sheets : null };
   try {
     const { buildPartySheetsFromD1 } = await import("./index.js"); // dynamic: index.js imports this module. strict: a read that fails throws, and that is null here
-    return { partyDoc: doc, sheets: (await buildPartySheetsFromD1(env, { persist: false, partyDoc: doc, strict: true })).party };
+    return { partyDoc: doc, sheets: (await buildPartySheetsFromD1(env, { persist: false, partyDoc: doc, strict: true, op })).party };
   } catch { return { partyDoc: doc, sheets: null }; }
 }
 

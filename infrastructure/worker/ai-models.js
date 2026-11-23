@@ -38,7 +38,7 @@ import { groupMemoryOn, buildGroupMemoryBlock, groupRowsForAsk, appendGroupLog, 
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER, degradedLines, DEGRADED_SUFFIX } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty, MAX_PROMPT_CHARS } from "./research/claude.js";
-import { primeRosterPrivacy } from "./roster-source.js";
+import { rosterSnapshot } from "./roster-source.js";
 import { memberLine, researchTimeoutMs, guestLibraryOnly, hardEndMs } from "./research/no-wall.js";
 import { sheetsHideAnything, WITHHELD_LINE } from "./public-party.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
@@ -986,13 +986,14 @@ const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13
 
 const MAX_RANK_PASSES = 4; // the question itself, one more for a follow-up's combined retry, and the abstain page lookups (class + two professions) share this; a plain abstain keeps full coverage, an opener that abstains gets class + one profession
 export const promptPrefixOrderOn = (env) => legacyOn(env, "PROMPT_PREFIX_ORDER");
-export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null, research = false, priorTurns = null, researchReal = false, groupMemory = null, gameFacts = false }) {
+export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null, research = false, priorTurns = null, researchReal = false, groupMemory = null, gameFacts = false, rosterOp = null }) {
+  const op = rosterOp || {}; // the operation this answer belongs to (the Request, a listen event); none given: this answer is its own operation, so it still resolves the roster once
   const isCoach = journey === "guided" && share !== true;
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
     const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets, idxRow] = await Promise.all([
       getParsedLibraryData(env),
       env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('signups', 'timeline', 'tonight')").all(),
-      buildPartySheetsFromD1(env),
+      buildPartySheetsFromD1(env, { op }),
       env.DB.prepare("SELECT stamp FROM lib_blobs WHERE name = 'index.json'").first(),
     ]);
 
@@ -1047,8 +1048,8 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets0 = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     // Research mode: names on the sheets join the roster as keys, and a free-text field that fails the strict guard is dropped before any block is rendered (research/claude.js).
-    if (research) { try { await primeRosterPrivacy(env); } catch (e) { /* ROSTER_FROM_D1: the redaction roster follows the D1 roster (ADR 0002); on any error it stays the built-in one */ } }
-    const rparty = research ? researchParty(sheets0, stateMap, { real: researchReal, env }) : null; // RESEARCH_NAMES "real": nothing is dropped for a name (the Claude path sends real names)
+    const rosterSnap = research ? await rosterSnapshot(env, op) : null; // ROSTER_FROM_D1: this operation's one roster snapshot (null: the built-ins only); handed to researchParty below, never kept in module state
+    const rparty = research ? researchParty(sheets0, stateMap, { real: researchReal, env, roster: rosterSnap }) : null; // RESEARCH_NAMES "real": nothing is dropped for a name (the Claude path sends real names)
     const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
     const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
@@ -1369,6 +1370,7 @@ export async function answerWithAi({
   channel = "", // the Discord channel id of the ask ("" for the website): group memory (GROUP_MEMORY) files and reads by channel
   noFanout = false, // the listener: a turn that is shared in the reply channel only. No webhook post, no stats.recent, no site broadcast of the question or answer
   messageTarget = null, // the right-click "Ask Leeroy": { authorSlug } of the message asked about; group memory files that text as the author's message, not as this asker's ask
+  rosterOp = null, // ROSTER_FROM_D1: the operation object this answer belongs to (the Request, the listen event); it shares that operation's one roster snapshot (roster-source.js). Omitted: this answer is its own operation.
   sink = null, // SHADOW_ASK (shadow-ask.js) only: { shadow: true, record(result), subSpend }. Every production caller passes nothing and gets exactly the behaviour below. With a shadow sink the compose path runs unchanged but nothing is
   // written or sent anywhere (no ask_turns, answer_details, group log, stats, cache purge, socket message or webhook): the result goes to sink.record, and sink.subSpend is the Claude hop's own sub-cap counter.
 }) {
@@ -1420,7 +1422,8 @@ export async function answerWithAi({
     // RESEARCH_NAMES (research code only): "real" sends the Claude hop the real names and the asker's turns untokenised; "tokenised" is the earlier behaviour. Guests never reach Claude.
     const namesReal = research && namesAreReal(env);
     const groupOn = research && groupMemoryOn(env); // GROUP_MEMORY: only with research mode on (so never in a PR preview); off means no read, no write, no prompt text
-    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research, priorTurns, researchReal: namesReal && memberNoWall, ...(memberNoWall && anthropicAvailable(env) ? { gameFacts: true } : {}), ...(groupOn ? { groupMemory: { channel, share: Boolean(share) } } : {}) }); // real only for a member: a guest's Workers AI prompt always takes the tokenised, dropping path
+    const answerOp = rosterOp || {}; // one operation for the whole answer: buildAnswerInputs builds the party and the redaction roster from the same snapshot
+    const inputs = await buildAnswerInputs(env, { rosterOp: answerOp, question, by, memberSlug, journey, share, isMember, previousQuestion, research, priorTurns, researchReal: namesReal && memberNoWall, ...(memberNoWall && anthropicAvailable(env) ? { gameFacts: true } : {}), ...(groupOn ? { groupMemory: { channel, share: Boolean(share) } } : {}) }); // real only for a member: a guest's Workers AI prompt always takes the tokenised, dropping path
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
     // Research mode: names become per-request tokens before any model sees the prompt (research/claude.js). Workers AI gets the same tokenised prompt; with the flag off these are the
     // untouched prompts. If tokenising fails Claude is skipped and Workers AI (inside Cloudflare) takes the prompt as it is.

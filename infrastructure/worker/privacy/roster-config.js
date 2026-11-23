@@ -18,21 +18,13 @@ export function setFirstNameSource(fn) {
 }
 export const getFirstNameSource = () => firstNameSource;
 
-// ROSTER_FROM_D1 (ADR 0002): roster-source.js hands the D1 roster in here. null (the default, and always while the flag is off or refused) means the built-in list only.
-// With an override the redaction roster is the UNION, per redaction key (display name, aliases, first names, character names and the slug), of the D1 roster and the
-// built-ins: a key is covered if ANY source covers it. A D1 member whose display name matches a built-in (same skeleton) gets that built-in's aliases and first
-// names merged in, so a D1 row that omits or changes aliases never uncovers a built-in alias. A built-in with no D1 match is kept whole. D1 members come first.
-// Switching the flag on can therefore never uncover a key the built-ins covered.
-let rosterOverride = null;
-let overrideKey = "null";
-export function setRosterOverride(list) {
-  const next = Array.isArray(list) && list.length ? list.map((m) => ({ display: m.display, aliases: [...(m.aliases || [])], firstNames: [...(m.firstNames || [])], characterNames: [...(m.characterNames || [])] })) : null;
-  const key = JSON.stringify(next);
-  if (key === overrideKey) return; // unchanged: keep the cached roster object (the guard caches its parse per object)
-  rosterOverride = next;
-  overrideKey = key;
-  cached = null;
-}
+// ROSTER_FROM_D1 (ADR 0002 step 2): there is NO module-level roster state here. The D1 roster reaches the redaction layer as an explicit argument (`extra`: the
+// privacy members of one operation's roster snapshot, roster-source.js), so two requests in one isolate can never see each other's roster and the flag or the row cannot change
+// between building the party and tokenising within one operation. With `extra` the redaction roster is the UNION, per redaction key (display name, aliases, first names,
+// character names and the slug), of the D1 roster and the built-ins: a key is covered if ANY source covers it. A D1 member whose display name matches a built-in (same
+// skeleton) gets that built-in's aliases and first names merged in, so a D1 row that omits or changes aliases never uncovers a built-in alias. A built-in with no D1 match is
+// kept whole. D1 members come first. Switching the flag on can therefore never uncover a key the built-ins covered.
+const normaliseExtra = (list) => (Array.isArray(list) && list.length ? list.map((m) => ({ display: m.display, aliases: [...(m.aliases || [])], firstNames: [...(m.firstNames || [])], characterNames: [...(m.characterNames || [])] })) : null);
 
 const dedupe = (names) => {
   const seen = new Set();
@@ -46,8 +38,9 @@ const dedupe = (names) => {
   return out;
 };
 
-// [{ display, aliases, firstNames, characterNames? }] built from ROSTER_DATA (display and aliases only), plus the override when one is set.
-export function researchMembers() {
+// [{ display, aliases, firstNames, characterNames? }] built from ROSTER_DATA (display and aliases only), plus `extra` (one operation's D1 privacy members) when given.
+export function researchMembers(extra = null) {
+  const rosterOverride = normaliseExtra(extra);
   const base = ROSTER_DATA.map((r, i) => ({
     display: r.display,
     aliases: [...(r.aliases || [])],
@@ -92,8 +85,8 @@ const nameStrings = (v, out = []) => {
   return out;
 };
 
-export function researchMembersFor(sheets) {
-  const members = researchMembers();
+export function researchMembersFor(sheets, extra = null) {
+  const members = researchMembers(extra);
   const owner = new Map(); // skeleton -> member index
   const usable = (k) => [...k].length >= 2 && !RESERVED.has(k) && !/^p\d+$/.test(k);
   members.forEach((m, i) => {

@@ -4,7 +4,8 @@
 import { slugify } from "./member-model.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { loadConfigKey } from "./config.js";
-import { activeRoster } from "./roster-source.js";
+import { rosterSnapshot } from "./roster-source.js";
+import { sheetMembersWithBuiltIns, rosterDataWithBuiltIns } from "./roster-shape.js";
 
 export const PARTY_MEMBERS = [
   { slug: "santa", name: "Santa", race: "tauren", class: "druid", spec_path: "feral-combat", professions: ["leatherworking", "skinning"], plan_zone: "mulgore" },
@@ -40,11 +41,12 @@ export function mergePartyMembers(partyDoc, builtIn = PARTY_MEMBERS) {
   return list;
 }
 
-export async function loadPartyMembers(env) {
+// op: the operation this read belongs to (the Request in fetch), so it shares that operation's one roster snapshot (roster-source.js); omitted: resolved afresh.
+export async function loadPartyMembers(env, op) {
   try {
     const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
-    const rost = await activeRoster(env); // null while ROSTER_FROM_D1 is off: the built-ins below, as before
-    return mergePartyMembers(row && row.json ? JSON.parse(row.json) : null, rost ? rost.sheetMembers : PARTY_MEMBERS);
+    const rost = await rosterSnapshot(env, op); // null while ROSTER_FROM_D1 is off (or refused): the built-ins below, as before
+    return mergePartyMembers(row && row.json ? JSON.parse(row.json) : null, rost ? sheetMembersWithBuiltIns(rost.sheetMembers, PARTY_MEMBERS) : PARTY_MEMBERS);
   } catch {
     return PARTY_MEMBERS.slice();
   }
@@ -62,10 +64,10 @@ export function mergeRoster(members, builtIn = ROSTER_DATA) {
   return list;
 }
 
-export async function loadRoster(env) {
+export async function loadRoster(env, op) {
   try {
-    const rost = await activeRoster(env); // null while ROSTER_FROM_D1 is off
-    return mergeRoster(await loadConfigKey(env, "discord_members"), rost ? rost.rosterData : ROSTER_DATA);
+    const rost = await rosterSnapshot(env, op); // null while ROSTER_FROM_D1 is off (or refused)
+    return mergeRoster(await loadConfigKey(env, "discord_members"), rost ? rosterDataWithBuiltIns(rost.rosterData, ROSTER_DATA) : ROSTER_DATA);
   } catch {
     return ROSTER_DATA.slice();
   }

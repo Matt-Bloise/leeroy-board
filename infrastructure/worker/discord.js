@@ -807,7 +807,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
   const boardUrl = env.BOARD_PUBLIC_URL || "https://leeroy.party";
   // Existing /build reply: link to the member's build thread.
   const legacyBuildContent = async (t) => {
-    const person = (await loadRoster(env)).find((r) => r.display.toLowerCase().replace(/ /g, "-") === t.slug) || { display: t.name };
+    const person = (await loadRoster(env, req)).find((r) => r.display.toLowerCase().replace(/ /g, "-") === t.slug) || { display: t.name };
     const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
     return SLASH_COPY.build(t.name, mention || "(thread link not configured)", `${boardUrl}/#five`);
   };
@@ -861,7 +861,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         askerId: String(user.id || ""),
         memberOpen: noWall,
         wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
-        answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || "") }),
+        answer: () => answerWithAi({ env, rosterOp: req, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || "") }),
       })
     );
 
@@ -1086,7 +1086,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       ]);
       const signups = signupsRow ? JSON.parse(signupsRow.json) : { entries: [] };
       const stored = partyRow ? JSON.parse(partyRow.json) : { members: [] };
-      const party = projectForAnonymous(stored, (await loadPublicInputs(env, { partyDoc: stored })).sheets);
+      const party = projectForAnonymous(stored, (await loadPublicInputs(env, { op: req, partyDoc: stored })).sheets);
       const lines = tonightLines({ now: Math.floor(Date.now() / 1000), byName, party, signups, boardUrl });
       const tonightRows = [
         {
@@ -1146,7 +1146,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           );
         }
         const now = new Date().toISOString();
-        const saved = await recordSheetEventInD1(env, origin, {
+        const saved = await recordSheetEventInD1(env, origin, { op: req,
           slug: target.slug,
           name: target.name,
           field,
@@ -1173,7 +1173,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         );
       }
 
-      const { party } = await buildPartySheetsFromD1(env);
+      const { party } = await buildPartySheetsFromD1(env, { op: req });
       // Another member's fields marked visible:false stay hidden; the caller sees their own.
       const mine = partyForMember(party, member ? member.slug : null).find((p) => p.slug === target.slug);
       const fieldSummary = mine && mine.fields
@@ -1226,7 +1226,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         const entry = { slug: member.slug, name: byName, state, at: now };
         if (idx >= 0) rows[idx] = entry;
         else rows.push(entry);
-        const savedLaunch = await recordSheetEventInD1(env, origin, {
+        const savedLaunch = await recordSheetEventInD1(env, origin, { op: req,
           slug: member.slug,
           name: byName,
           field: "launch_state",
@@ -1249,7 +1249,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
       }
       // The stored rows stay whole (they were written above); the reply is the public form: a member who hid launch_state shows no state to anyone else.
-      const shownRows = rows.length ? projectLaunch(rows, (await loadPublicInputs(env)).sheets, member.slug).filter((r) => r && r.state) : [];
+      const shownRows = rows.length ? projectLaunch(rows, (await loadPublicInputs(env, { op: req })).sheets, member.slug).filter((r) => r && r.state) : [];
       const summary = shownRows.length
         ? shownRows.map((r) => `• **${r.name}:** \`${r.state}\``).join("\n")
         : "No launch states set yet.";
@@ -2088,7 +2088,7 @@ ${GATE_OFF_NOTE}` : ""}`,
           memberOpen: noWall,
           wrap: (answerText) => `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${answerText}`,
           askerId: String(user.id || ""),
-          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: menuBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || ""), ...(messageTarget ? { messageTarget } : {}) }),
+          answer: async () => answerWithAi({ env, rosterOp: req, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: menuBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || ""), ...(messageTarget ? { messageTarget } : {}) }),
         })
       );
 

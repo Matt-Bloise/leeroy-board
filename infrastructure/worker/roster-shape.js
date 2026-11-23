@@ -87,3 +87,15 @@ export function rosterDataFromConfig(cfg) {
 export function privacyMembersFromConfig(cfg) {
   return rosterDataFromConfig(cfg).map((r, i) => ({ ...r, firstNames: Array.isArray(cfg.members[i].first_names) ? cfg.members[i].first_names.slice() : [], characterNames: [cfg.members[i].slug] }));
 }
+
+// The roster a consumer works with when the D1 row is active: the row's members first, then every built-in the row does not list (matched by slug for sheet members,
+// by the lowercase display name for the roster list). A built-in member the row omits therefore keeps the member match and the roster entry until step 3 removes the
+// built-ins from the tree: a row can add and change members, it cannot lock a built-in member out. Pure; never mutates its arguments.
+export function sheetMembersWithBuiltIns(rowMembers, builtIns) {
+  const have = new Set(rowMembers.map((m) => m.slug));
+  return [...rowMembers, ...builtIns.filter((b) => !have.has(b.slug))];
+}
+export function rosterDataWithBuiltIns(rowRoster, builtIns) {
+  const have = new Set(rowRoster.map((r) => skeleton(String(r.display))));
+  return [...rowRoster, ...builtIns.filter((b) => !have.has(skeleton(String(b.display))))];
+}

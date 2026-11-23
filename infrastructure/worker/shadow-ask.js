@@ -142,7 +142,7 @@ export async function handleShadowAsk(req, env, deps = {}) {
   const t0 = Date.now();
   try {
     await answerWithAi({
-      env, origin: new URL(req.url).origin, intentId: id, by: asker.name, memberSlug: asker.slug, question, provider: resolveAiProvider(env),
+      env, rosterOp: req, origin: new URL(req.url).origin, intentId: id, by: asker.name, memberSlug: asker.slug, question, provider: resolveAiProvider(env),
       share: !priv, budget: null, isMember: true, storeDetails: false, channel, sink,
     });
   } catch {

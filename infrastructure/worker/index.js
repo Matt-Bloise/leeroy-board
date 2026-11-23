@@ -68,8 +68,9 @@ import { collectInterest } from "./interest.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { activeRoster } from "./roster-source.js";
+import { rosterSnapshot } from "./roster-source.js";
 import { projectDataDoc, projectBroadcast, loadPublicInputs, writeSheetValueToDoc, SHEET_FIELD_NAMES, MEMBER_DOCS as MEMBER_DOC_KEYS } from "./public-party.js";
+import { sheetMembersWithBuiltIns } from "./roster-shape.js";
 import { PARTY_MEMBERS, loadPartyMembers, normName, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
 export { BoardRoom };
@@ -79,12 +80,12 @@ export const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "profes
 async function resolveMemberAuth(req, url, env) {
   // 1. Try cryptographic salted hash lookup in `members` table
   const authWho = await authenticate(req, env);
-  const rost = await activeRoster(env); // ROSTER_FROM_D1: null while the flag is off (or the row is missing or invalid), so everything below is today's code
+  const rost = await rosterSnapshot(env, req); // ROSTER_FROM_D1: this request's one roster snapshot; null while the flag is off or refused (or the row is missing or invalid), so everything below is today's code
   if (authWho && authWho.slug) {
-    const found = (rost ? rost.sheetMembers : PARTY_MEMBERS).find((m) => m.slug === authWho.slug);
+    const found = (rost ? sheetMembersWithBuiltIns(rost.sheetMembers, PARTY_MEMBERS) : PARTY_MEMBERS).find((m) => m.slug === authWho.slug);
     if (found) return { ok: true, member: found };
     // Not one of the built-in five: the party document in D1 may know them (read only on this miss, so the five cost no extra query).
-    const fromDoc = (await loadPartyMembers(env)).find((m) => m.slug === authWho.slug);
+    const fromDoc = (await loadPartyMembers(env, req)).find((m) => m.slug === authWho.slug);
     if (fromDoc) return { ok: true, member: fromDoc };
     return { ok: true, member: { slug: authWho.slug, name: authWho.name || authWho.slug } };
   }
@@ -94,7 +95,7 @@ async function resolveMemberAuth(req, url, env) {
   if (env.BOARD_ADMIN_TOKEN && k && timingSafeEqualStr(k, env.BOARD_ADMIN_TOKEN)) {
     if (rost) {
       // ROSTER_FROM_D1: the default admin is the configured slug, never an array position. validateRosterConfig guarantees it is in the roster.
-      const admin = rost.sheetMembers.find((m) => m.slug === rost.defaultAdminSlug);
+      const admin = sheetMembersWithBuiltIns(rost.sheetMembers, PARTY_MEMBERS).find((m) => m.slug === rost.defaultAdminSlug);
       return admin ? { ok: true, member: admin } : { ok: false, member: null };
     }
     return { ok: true, member: PARTY_MEMBERS[3] }; // Default admin: member #4 of the built-in list
@@ -352,7 +353,7 @@ async function hideFromEvents(env, rows, known, partyDoc, strict, memo = null) {
   });
 }
 
-export async function buildPartySheetsFromD1(env, { persist = true, partyDoc, strict = false } = {}) {
+export async function buildPartySheetsFromD1(env, { persist = true, partyDoc, strict = false, op } = {}) {
   const now = new Date().toISOString();
 
   // 1. Fast path: Read pre-materialized party sheets from kv_state (single point lookup)
@@ -378,7 +379,7 @@ export async function buildPartySheetsFromD1(env, { persist = true, partyDoc, st
   // 2. Slow path / bootstrap fallback: Reconstruct from base + sheet_events
   const bySlug = new Map();
 
-  for (const m of await loadPartyMembers(env)) {
+  for (const m of await loadPartyMembers(env, op)) {
     const fields = {};
     for (const f of SHEET_FIELDS) {
       if (m[f] !== undefined) {
@@ -442,7 +443,7 @@ export async function buildPartySheetsFromD1(env, { persist = true, partyDoc, st
 // keeps its at and source; an older write of a new value is stale and changes nothing (a hide still hides). A write that changes nothing
 // records no event and broadcasts nothing; the reply carries stale and the stored field. The level event row carries the resolved field
 // (value and visible), so the slow-path replay below ends where this commit ended.
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, valueGiven = true, visible, visibleGiven = false, source = "board", at, keepHidden = false, levelRules = false }) {
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, valueGiven = true, visible, visibleGiven = false, source = "board", at, keepHidden = false, levelRules = false, op }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
   // event.visible and event.valJson are set in compute() from the fresh read on every attempt, before the event row is bound.
@@ -461,7 +462,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       // events / orphaned-sheet rule the read path applies (hideFromEvents) BEFORE anything is persisted: otherwise this write would store an all-visible sheet for a renamed member who had hidden fields.
       // strict: a read of the sheet log that fails stops the write (SheetLogUnreadableError, 503, nothing stored). The lenient fallback "all hidden" is for reads; a write would persist it.
       const unreadable = async (read) => { try { return await read(); } catch (err) { throw new SheetLogUnreadableError(err); } };
-      const base = Array.isArray(cur) && cur.length > 0 ? cur : (await unreadable(() => buildPartySheetsFromD1(env, { persist: false, partyDoc, strict: true }))).party;
+      const base = Array.isArray(cur) && cur.length > 0 ? cur : (await unreadable(() => buildPartySheetsFromD1(env, { persist: false, partyDoc, strict: true, op }))).party;
       const reconciled = reconcileSheetsWithDoc(base, partyDoc);
       const currentParty = reconciled === base ? reconciled : await unreadable(() => hideFromEvents(env, reconciled, new Set(base), partyDoc, true, eventsMemo));
       // Same identity as the reconcile above: a write that arrives under a renamed document member's new slug lands on the person's existing
@@ -644,7 +645,7 @@ const worker = {
         }
         const m = auth.member;
         if (req.method === "GET") {
-          const { party, seq } = await buildPartySheetsFromD1(env);
+          const { party, seq } = await buildPartySheetsFromD1(env, { op: req });
           const mine = party.find((p) => p.slug === m.slug) || { slug: m.slug, name: m.name, fields: {}, updated: null };
           return jsonResp(
             {
@@ -671,7 +672,7 @@ const worker = {
           // Only a vocabulary line is looked up, and only after the vocabulary refused, so the normal write costs no extra read.
           if (problem && VOCAB_LIST[field] && body.value !== undefined && body.value !== null) {
             try {
-              const cur = (await buildPartySheetsFromD1(env, { persist: false })).party.find((p) => p.slug === m.slug);
+              const cur = (await buildPartySheetsFromD1(env, { persist: false, op: req })).party.find((p) => p.slug === m.slug);
               const stored = cur && cur.fields && cur.fields[field];
               if (stored && stored.value !== undefined && JSON.stringify(stored.value) === JSON.stringify(body.value)) problem = null;
             } catch { /* unreadable: the refusal stands */ }
@@ -685,7 +686,7 @@ const worker = {
           const now = new Date().toISOString();
           let saved;
           try {
-            saved = await recordSheetEventInD1(env, url.origin, {
+            saved = await recordSheetEventInD1(env, url.origin, { op: req,
               slug: m.slug,
               name: m.name,
               field,
@@ -863,12 +864,12 @@ const worker = {
         if (problem) return jsonResp({ error: problem }, 400, cors);
         if (body.visible !== undefined && body.visible !== false) return jsonResp({ error: "visible may only be false: the admin never shows a hidden field" }, 400, cors);
         const slug = typeof body.slug === "string" ? body.slug : "";
-        const member = /^[a-z0-9-]{1,32}$/.test(slug) ? (await loadPartyMembers(env)).find((m) => m.slug === slug) : null;
+        const member = /^[a-z0-9-]{1,32}$/.test(slug) ? (await loadPartyMembers(env, req)).find((m) => m.slug === slug) : null;
         if (!member) return jsonResp({ error: "Unknown party member" }, 404, cors);
         const now = new Date().toISOString();
         let saved;
         try {
-          saved = await recordSheetEventInD1(env, url.origin, { slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, visibleGiven: body.visible === false, source: "admin", at: now, keepHidden: true, levelRules: true });
+          saved = await recordSheetEventInD1(env, url.origin, { op: req, slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, visibleGiven: body.visible === false, source: "admin", at: now, keepHidden: true, levelRules: true });
         } catch (e) {
           if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
           throw e;
@@ -1177,7 +1178,7 @@ const worker = {
               } catch {}
             }
             // The party row is already in hand: pass it on so the sheets are reconciled without a second read.
-            const inputs = await loadPublicInputs(env, { partyDoc: stored.party || null });
+            const inputs = await loadPublicInputs(env, { op: req, partyDoc: stored.party || null });
             const now = new Date().toISOString();
             resp = jsonResp(
               webBoardLinksDeep({
@@ -1520,7 +1521,7 @@ const worker = {
               try { partyDocRead = JSON.parse(row.json); } catch {}
             }
           }
-          const inputs = await loadPublicInputs(env, { partyDoc: partyDocRead });
+          const inputs = await loadPublicInputs(env, { op: req, partyDoc: partyDocRead });
           const isPrPreview = isPrPreviewEnv(env);
           const providers = {};
           for (const k of Object.keys(AI_PROVIDER_LABELS)) {
@@ -1617,7 +1618,7 @@ const worker = {
             if (typeof docJson === "string" && path.startsWith("/data/")) {
               try {
                 let pubDoc = publicDataDoc(raw, JSON.parse(docJson), row.updated_at);
-                if (MEMBER_DOC_KEYS.includes(raw)) pubDoc = projectDataDoc(raw, pubDoc, await loadPublicInputs(env, raw === "party" ? { partyDoc: pubDoc } : {}));
+                if (MEMBER_DOC_KEYS.includes(raw)) pubDoc = projectDataDoc(raw, pubDoc, await loadPublicInputs(env, raw === "party" ? { op: req, partyDoc: pubDoc } : { op: req }));
                 docJson = JSON.stringify(pubDoc);
                 // The stored row did not change but what is served did (a member hid or showed a line): the tag of a member document carries a hash of the projected body, so a full and a withheld body never share an ETag.
                 if (MEMBER_DOC_KEYS.includes(raw)) etag = `"${raw}-${row.updated_at || '1'}-p${projectionTag(docJson)}"`;
@@ -1785,7 +1786,7 @@ const worker = {
             if (idx >= 0) rows[idx] = item;
             else rows.push(item);
             try {
-              savedLaunch = await recordSheetEventInD1(env, url.origin, {
+              savedLaunch = await recordSheetEventInD1(env, url.origin, { op: req,
                 slug: member.slug,
                 name: member.name,
                 field: "launch_state",
@@ -1919,6 +1920,7 @@ const worker = {
           ctx.waitUntil(
             answerWithAi({
               env,
+              rosterOp: req,
               origin: url.origin,
               intentId,
               by: askBy,
