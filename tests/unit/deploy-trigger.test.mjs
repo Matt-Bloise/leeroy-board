@@ -103,5 +103,6 @@ test("the migration step has no condition and no continue-on-error", () => {
   assert.equal(step.if, undefined);
   assert.equal(step["continue-on-error"], undefined);
   assert.match(step.run, /d1 migrations apply/);
-  assert.equal(wf.jobs["deploy-production"].if, "github.ref == 'refs/heads/master'");
+  // master only; and (CI budget pre-flight) only when the budget gate says proceed. The condition is still an AND with the master ref, never an OR.
+  assert.equal(wf.jobs["deploy-production"].if, "github.ref == 'refs/heads/master' && needs.budget-gate.outputs.proceed == 'true'");
 });

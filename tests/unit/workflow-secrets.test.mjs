@@ -209,7 +209,7 @@ test("the production deploy runs in the environment production and is not PR-tri
   assert.equal(triggers(w.doc).some((t) => PR_TRIGGERS.includes(t)), false);
   const job = w.doc.jobs["deploy-production"];
   assert.equal(job.environment, "production");
-  assert.equal(job.if, "github.ref == 'refs/heads/master'");
+  assert.equal(job.if, "github.ref == 'refs/heads/master' && needs.budget-gate.outputs.proceed == 'true'"); // master only AND the CI budget pre-flight said proceed
 });
 
 test("the deploy guard message tells where each missing secret lives (token and account id at repository level, admin token in the environment)", () => {
