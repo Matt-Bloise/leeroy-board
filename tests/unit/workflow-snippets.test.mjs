@@ -143,7 +143,7 @@ test("assertPrClosed: refuses an open pull request, a number that is no pull req
   await refuse({ fetchImpl: async () => { throw new Error("offline"); }, pr: 5 }, /could not read/);
   await refuse({ fetchImpl: async () => ({ ok: true, status: 200, json: async () => { throw new Error("x"); } }), pr: 5 }, /not JSON/);
   await refuse({ fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({}) }), pr: 5 }, /not closed/);
-  for (const bad of ["", "abc", "12 13", "12;rm", "-5", "1e3", "0x10", "4.5", "123456789", "pr-451", "../451", "451\n", undefined, null]) {
+  for (const bad of ["", "abc", "12 13", "12;rm", "-5", "1e3", "0x10", "4.5", "123456789", "pr-451", "../451", "451\n", "0451", "0", "00", "+451", " 451", undefined, null]) {
     let called = false;
     await refuse({ fetchImpl: async () => { called = true; return pr("closed")(); }, pr: bad }, /not a pull request number/);
     assert.equal(called, false, `no request is made for ${JSON.stringify(bad)}`);

@@ -15,8 +15,10 @@ import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const API = "https://api.cloudflare.com/client/v4";
+// A canonical positive integer: digits only, no leading zero (0451 would name resources that do not exist and could end in a false "verified"), no sign, no space, at most 8 digits.
+export const CANONICAL_PR = /^[1-9][0-9]{0,7}$/;
 export const NAMES = (pr) => {
-  if (!/^[0-9]{1,8}$/.test(String(pr))) throw new Error(`not a pull request number: ${pr}`);
+  if (!CANONICAL_PR.test(String(pr))) throw new Error(`not a pull request number: ${pr}`);
   return { worker: `leeroy-brain-pr-${pr}`, d1: `leeroy-board-db-pr-${pr}`, branch: `pr-${pr}` };
 };
 export const WORKER_RE = /^leeroy-brain-pr-([0-9]{1,8})$/, D1_RE = /^leeroy-board-db-pr-([0-9]{1,8})$/, BRANCH_RE = /^pr-([0-9]{1,8})$/;
@@ -77,10 +79,12 @@ export async function teardown({ fetchImpl = fetch, token, accountId, pr, projec
   const lines = [];
   const say = (s) => lines.push(s);
   const errors = [];
+  let found = 0; // resources that really existed when this run looked (a 404 or an empty listing is not one)
   const step = async (label, fn) => { try { await fn(); } catch (e) { errors.push(`${label}: ${e.message}`); say(`FAIL ${label}: ${e.message}`); } };
 
   await step(`delete Worker ${n.worker}`, async () => {
     const r = await cf(fetchImpl, token, "DELETE", `/accounts/${accountId}/workers/scripts/${n.worker}?force=true`, { okStatus: [404] });
+    if (r.status !== 404) found++;
     say(r.status === 404 ? `Worker ${n.worker}: already gone (404)` : `Worker ${n.worker}: deleted`);
   });
   await step(`delete D1 database ${n.d1}`, async () => {
@@ -88,6 +92,7 @@ export async function teardown({ fetchImpl = fetch, token, accountId, pr, projec
     if (dbs.length === 0) { say(`D1 ${n.d1}: already gone (not listed)`); return; }
     for (const d of dbs) {
       const r = await cf(fetchImpl, token, "DELETE", `/accounts/${accountId}/d1/database/${d.uuid}`, { okStatus: [404] });
+      if (r.status !== 404) found++;
       say(r.status === 404 ? `D1 ${n.d1}: already gone (404)` : `D1 ${n.d1}: deleted`);
     }
   });
@@ -96,6 +101,7 @@ export async function teardown({ fetchImpl = fetch, token, accountId, pr, projec
     say(`Pages: ${mine.length} preview deployment(s) for ${n.branch}`);
     for (const d of mine) {
       const r = await cf(fetchImpl, token, "DELETE", `/accounts/${accountId}/pages/projects/${project}/deployments/${d.id}?force=true`, { okStatus: [404] });
+      if (r.status !== 404) found++;
       say(`Pages deployment ${d.id}: ${r.status === 404 ? "already gone (404)" : "deleted"}`);
     }
   });
@@ -119,7 +125,15 @@ export async function teardown({ fetchImpl = fetch, token, accountId, pr, projec
   // The verification (a fresh listing of all three) is the authority: a delete call that answered an error but left nothing behind (it did its work before the error) is a warning, not a failed job.
   const ok = remaining.length === 0;
   if (ok && errors.length) lines.push(`warning: ${errors.length} delete call(s) answered an error, but the verification found nothing left: ${errors.join("; ")}`);
-  return { ok, lines, remaining, errors };
+  return { ok, lines, remaining, errors, found };
+}
+
+// The verdict of one teardown run: text for the job summary and the exit code. A manual run (a person typed a number) that found nothing at all is NOT VERIFIED: it looks the same for a
+// preview torn down earlier and for a number that was never the right one, and it must never read as a success. The closed event keeps its old meaning (nothing to do is fine).
+export function resultFor(r, { manual = false } = {}) {
+  if (!r.ok) return { exit: 1, text: `**Result: FAILED. Still there or failed: ${[...r.remaining, ...r.errors].join("; ")}.** Every step is idempotent: re-run this job, or tell the owner (a manual delete is the owner's, never a session's).` };
+  if (manual && r.found === 0) return { exit: 1, text: "**Result: NOT VERIFIED. No Worker, D1 database or Pages preview deployment named for this pull request was found, so nothing was deleted. Either an earlier teardown already finished, or this is not the number that was meant: check the leak report and the number.**" };
+  return { exit: 0, text: "**Result: torn down and verified.**" };
 }
 
 // -> { leaks: [{ kind, name, pr, state }], checked: number, lines } READ-ONLY. prState(pr) -> "open" | "closed" | "unknown".
@@ -138,7 +152,7 @@ export async function leakReport({ fetchImpl = fetch, token, accountId, project 
 // A manual teardown (workflow_dispatch) is allowed only for a pull request that is CLOSED. Refuses a value that is not a plain pull request number, a number that is no pull request (404), an open pull
 // request and any answer it cannot read. -> the number as a string, or throws.
 export async function assertPrClosed({ fetchImpl = fetch, ghToken, repo, pr }) {
-  if (!/^[0-9]{1,8}$/.test(String(pr))) throw new Error(`refused: "${String(pr).slice(0, 40)}" is not a pull request number`);
+  if (!CANONICAL_PR.test(String(pr))) throw new Error(`refused: "${String(pr).slice(0, 40)}" is not a pull request number`);
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(repo))) throw new Error("refused: the repository name is missing or malformed");
   let res;
   try { res = await fetchImpl(`https://api.github.com/repos/${repo}/pulls/${pr}`, { headers: { Authorization: `Bearer ${ghToken}`, Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(30000) }); }
@@ -171,8 +185,9 @@ async function main() {
   }
   if (mode === "teardown" || closedByHand) {
     const r = await teardown({ token, accountId, pr: arg, project });
-    summary([`### Preview teardown, PR ${arg}`, "", ...r.lines.map((l) => `- ${l}`), "", r.ok ? "**Result: torn down and verified.**" : `**Result: FAILED. Still there or failed: ${[...r.remaining, ...r.errors].join("; ")}.** Every step is idempotent: re-run this job, or tell the owner (a manual delete is the owner's, never a session's).`].join("\n"));
-    process.exit(r.ok ? 0 : 1);
+    const v = resultFor(r, { manual: closedByHand });
+    summary([`### Preview teardown, PR ${arg}`, "", ...r.lines.map((l) => `- ${l}`), "", v.text].join("\n"));
+    process.exit(v.exit);
   }
   if (mode === "leaks") {
     const repo = process.env.GITHUB_REPOSITORY, gh = process.env.GH_TOKEN;
