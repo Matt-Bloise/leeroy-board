@@ -61,6 +61,10 @@ on:
       - "tools/tooltips-compliance.mjs"
   workflow_dispatch:
     inputs:
+      budget_override:
+        description: "Only the session that merges, with the account owner's agreement: start this deploy although today's budget of production deploys (.github/cf-budget.json) is used up. Never needed for a normal deploy."
+        type: boolean
+        default: false
       allow_create_database:
         description: "Manual first-time setup only: allow creating an EMPTY D1 database when none named leeroy-board-db exists. Never needed for a normal deploy. See docs/runbooks/rollback.md, Deploy safety."
         type: boolean
@@ -74,8 +78,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Counts today's production deploys through the GitHub API (read-only) and refuses to start another when the daily budget (.github/cf-budget.json, deployingMergesPerDay) is used up. Fails closed: when the
+  # count cannot be made, nothing deploys. The only way past: the label named in that file on a pull request merged into this commit, or the budget_override input of a manual run. A refused deploy leaves
+  # master undeployed until the next UTC day or the override; the next push that deploys contains every earlier commit.
+  budget-gate:
+    name: Cloudflare daily budget pre-flight (deploy)
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Count today's deploys and refuse when the budget is used up
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_BUDGET_OVERRIDE: ${{ inputs.budget_override }}
+        run: node tools/cf-budget-check.mjs deploy
+
   deploy-production:
     name: Deploy Worker, D1 & Static Site to Cloudflare Production
+    needs: budget-gate
     runs-on: ubuntu-latest
     # A manual run may be started from any branch; production only ever deploys from master.
     if: github.ref == 'refs/heads/master'

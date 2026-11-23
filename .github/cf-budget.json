@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "comment": "The daily Cloudflare budget for this repository's CI (UTC day). The account is a friend's, on the free plan: all our tooling together must stay under 2,000 Worker requests a day. tools/cf-budget-check.mjs reads this file in the preview and deploy workflows, counts today's spin-ups and deploys through the GitHub API (read-only) and REFUSES to start the job when the budget is used up. Changing a number here is a decision for the account owner; the override label below is for the session that merges, nobody else.",
+  "spinUpsPerDay": 3,
+  "deployingMergesPerDay": 2,
+  "overrideLabel": "cf-budget-override",
+  "jobs": {
+    "spinUp": "Spin Up Isolated PR Preview (Pages + Worker + D1 + DO)",
+    "deploy": "Deploy Worker, D1 & Static Site to Cloudflare Production"
+  },
+  "workflows": {
+    "spinUp": "pr-preview-cloudflare.yml",
+    "deploy": "deploy-cloudflare.yml"
+  }
+}

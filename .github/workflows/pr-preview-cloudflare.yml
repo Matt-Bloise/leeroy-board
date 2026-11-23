@@ -8,6 +8,8 @@ name: PR Ephemeral Preview Environment (Cloudflare Free Tier)
 # Teardown PROVES deletion (tools/preview-cleanup.mjs): a delete that fails fails the job, all Pages pages are listed, and the job lists Worker, D1 and Pages again and fails if anything named for the PR remains.
 # A teardown run is in its own concurrency group and is never cancelled; a spin-up run never cancels it and it never cancels a spin-up.
 # A PR that changes only docs and data/library gets no preview even with ci-full (tools/docs-only.mjs light path; the visual gate reads the pinned tests/fixtures/library).
+# A budget pre-flight (job budget-gate, tools/cf-budget-check.mjs, budget in .github/cf-budget.json) counts today's spin-ups through the GitHub API and REFUSES to start a spin-up when the daily budget is used up (fail closed;
+# the only override is the label named in that file, for the session that merges).
 # The game-facts smoke runs on a spin-up only when the loader, the lookup, the schema or the smoke changed (tools/smoke-scope.mjs), on a small sample (under 200 rows written, printed in the summary).
 
 on:
@@ -137,9 +139,37 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
+  # Refuses to start the spin-up when today's budget of preview spin-ups (.github/cf-budget.json) is used up. Read-only: it only reads run history from the GitHub API. Fails closed: when the count cannot
+  # be made, the spin-up does not start. The override label is the only way past (see the file); the deploy job needs this job to succeed, so a refusal skips the spin-up and shows red here, with the reason.
+  budget-gate:
+    name: Cloudflare daily budget pre-flight (spin-up)
+    needs: [prep, preview-guard]
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.prep.outputs.docs_only != 'true' && needs.preview-guard.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Count today's spin-ups and refuse when the budget is used up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/cf-budget-check.mjs spinup
+
   deploy-pr-preview:
     name: Spin Up Isolated PR Preview (Pages + Worker + D1 + DO)
-    needs: [prep, preview-guard]
+    needs: [prep, preview-guard, budget-gate]
     # prep runs for same-repo PRs only with the label `ci-full` (and for forks, which never get a preview), so this is the single spin-up condition.
     # Missing preview secrets skip this job (preview-guard), they never fail it.
     if: github.event.pull_request.head.repo.full_name == github.repository && needs.prep.outputs.docs_only != 'true' && needs.preview-guard.outputs.enabled == 'true'
@@ -329,6 +359,10 @@ jobs:
           # A preview must never bind to the PRODUCTION feature-flag app: remove that binding block from wrangler.toml (previews then read the legacy [vars]).
           # The tool fails the step if any such binding is left.
           node ../tools/strip-flagship-binding.mjs wrangler.toml
+
+          # A preview must not be able to call Workers AI either (the account's 10,000 neurons a day; the steward's rule 6): remove the [ai] binding. The Worker code also answers a placeholder in a
+          # preview without reading env.AI (worker/ai-models.js workersAiRun). The tool fails the step if the binding cannot be removed or was not there.
+          node ../tools/strip-ai-binding.mjs wrangler.toml
 
       - name: Say that the preview limit is reached
         if: failure() && steps.d1.outputs.limit_reached == 'true'

@@ -113,18 +113,24 @@ On 2026-11-15 (commit 3e20c396) the Worker stopped caching the member documents:
 
 A page view costs about 5 Worker requests and, with these uncached, about 8 to 10 D1 queries (Lighthouse measured the 5 requests). The request count is unchanged by this; the D1 read count is higher than the cost model's table. 5,000,000 rows read a day is not near.
 
-## Daily budgets (the steward's rules, 2026-11-22; they sum to about 2,000 Worker requests a day)
+## Daily budgets (the steward's rules, revised 2026-11-23; they keep all tooling under 2,000 Worker requests a day)
 
-The Cloudflare account is a friend's, on the free plan, and Cloudflare blocks at a limit instead of billing: the cost of going over is a broken site and a flagged account. These budgets are enforced by the session that merges (VAREN); the meter reads GitHub run history, a proxy that the dashboard overrules.
+The Cloudflare account is a friend's, on the free plan, and Cloudflare blocks at a limit instead of billing: the cost of going over is a broken site and a flagged account. The 2,000 is for ALL our tooling, including what the owner's PC sends (target 600 a day), the daily production probe (165) and the nightly checks (21): about 786 of fixed spend, which leaves room for the discretionary units below.
 
 | Budget | Per UTC day | Why |
 | :--- | ---: | :--- |
-| Preview spin-ups (`ci-full` pushes) | 4 | 4 x 250 requests = 1,000; 4 x 600 rows is small next to 100,000 |
-| Production deploys (merges that deploy) | 3 | 3 x about 15 (health and smoke) plus the daily probe's 165 |
-| Open pull requests that carry a preview | 3 at once | the 10-database cap, with production and up to 3 possible leaks |
-| Hand-dispatched workflows that touch Cloudflare | 0 | each is unplanned spend |
+| Preview spin-ups (`ci-full` pushes, re-runs included) | 3 | 3 x 250 = 750 requests; about 600 D1 rows written each |
+| Deploying merges | 2 | 2 x about 15 (health check and deploy smoke) = 30 requests, plus the Pages and Worker deploy; the old 165-request probe is no longer on the deploy path |
+| Open pull requests that carry a preview | 3 at once | the 10-database cap counts resources, not pull requests; the leak report is the real check |
+| Hand-dispatched workflows that touch Cloudflare | 0 | an exception is a recorded decision by the session that merges |
 
-Stop rule: at 70 percent of any daily budget, no further push or merge that touches Cloudflare until 00:00 UTC. One push per pull request branch (work locally, push once), 5 to 10 tasks per pull request. Nothing is created, deleted or pruned in Cloudflare by hand: teardown is the workflow's job (`tools/preview-cleanup.mjs`, which proves deletion), and the daily **Preview Leak Report** (`preview-leak-report.yml`, read-only) lists previews whose pull request is not open, for the owner to decide.
+Sum at full use: 786 + 750 + 30 = about 1,570, under 2,000 (the steward's own table used the old 165-request probe per deploy, 1,866). Stop rule: when a daily budget is used up, or one more unit would not fit under 2,000, no further push or merge that touches Cloudflare until 00:00 UTC. One push per pull request branch (work locally, push once), 5 to 10 tasks per pull request.
+
+**The pre-flight enforces it.** `.github/cf-budget.json` holds the two numbers (`spinUpsPerDay`, `deployingMergesPerDay`) and the name of the override label. The job `budget-gate` in `pr-preview-cloudflare.yml` (before the spin-up) and in `deploy-cloudflare.yml` (before the production deploy) runs `tools/cf-budget-check.mjs`: it counts today's started spin-up and deploy jobs through the GitHub API (read-only, no Cloudflare call, no secret) and refuses to start when the budget is used up, with the reason in the job summary. **Fail closed:** if the file is unreadable, or the API answers an error or an incomplete list, nothing starts. A refused spin-up leaves the `preview` test job waiting for a preview comment that never comes (it times out red); a refused deploy leaves master undeployed until the next UTC day or the override, and the next deploy contains every earlier commit. The one way past is the label `cf-budget-override` on the pull request (for a deploy: on a pull request merged into the deployed commit) or, for a manual deploy run, the `budget_override` input. It is for the session that merges and the account owner; adding it is a recorded decision. Changing a number in the file is the account owner's decision.
+
+**Previews cannot call Workers AI.** A preview Worker is built from the production `wrangler.toml`, which declares the `[ai]` binding; a preview that could run a model would spend the account's 10,000 Workers AI neurons a day. Two guards: the Worker answers a fixed placeholder in a preview and never reads `env.AI` (`worker/ai-models.js` `workersAiRun`, used by the ask path and by the build parser), and the preview deploy removes the binding from the preview's config (`tools/strip-ai-binding.mjs`, which fails the step if it cannot). Health and bootstrap still list `workers-ai` as the preview's provider, as the API suite expects. Tests make zero AI calls either way.
+
+Nothing is created, deleted or pruned in Cloudflare by hand: teardown is the workflow's job (`tools/preview-cleanup.mjs`, which proves deletion), and the daily **Preview Leak Report** (`preview-leak-report.yml`, read-only) lists previews whose pull request is not open, for the owner to decide.
 
 ## When the quota is hit
 
