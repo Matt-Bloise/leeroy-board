@@ -13,7 +13,7 @@ name: PR Ephemeral Preview Environment (Cloudflare Free Tier)
 # The game-facts smoke runs on a spin-up only when the loader, the lookup, the schema or the smoke changed (tools/smoke-scope.mjs), on a small sample (under 200 rows written, printed in the summary).
 
 on:
-  # Manual: tear down the preview of a pull request that is already CLOSED (a teardown that failed, or one that never ran). master only; see job teardown-closed-pr.
+  # Manual: tear down the preview of a pull request that is already CLOSED (a teardown that failed, or one that never ran). Not to be started until the budget table in docs/runbooks/cloudflare-requests.md records an exception; see job teardown-closed-pr.
   workflow_dispatch:
     inputs:
       pr_number:
@@ -559,8 +559,8 @@ jobs:
   # One job: probe for this PR's preview D1 database first (a few seconds, no checkout, no npm install), exit early when there is none, otherwise tear down
   # the Worker, D1 database and Pages deployments and re-run a waiting PR. Runs on closed and on unlabeled ci-full; it does not look at label history.
   # Manual teardown of ONE closed pull request's preview, started by hand (workflow_dispatch, input pr_number). The tool (tools/preview-cleanup.mjs teardown-closed) refuses a value that is not a number, a
-  # number that is no pull request, and an open pull request; it deletes only the three names derived from that number and then proves they are gone (same code as the closed event). Runs from master only, so
-  # a branch cannot run altered code with the Cloudflare secrets. The number goes in through the environment, never into the script text.
+  # number that is no pull request, and an open pull request; it deletes only the three names derived from that number and then proves they are gone (same code as the closed event). The job runs only from master (its own `if`; a person with write access who starts an edited copy of this
+  # workflow from a branch is outside what this file can prevent, as for every dispatch workflow). The number goes in through the environment, never into the script text.
   teardown-closed-pr:
     name: Tear down a closed PR's preview by number (manual)
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
