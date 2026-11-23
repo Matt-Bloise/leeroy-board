@@ -131,7 +131,7 @@ test("workflow wiring: the preview spin-up and the production deploy cannot star
   assert.ok(preview["budget-gate"].steps.some((s) => /cf-budget-check\.mjs spinup/.test(s.run || "")));
   const deployWf = parse(readFileSync(path.join(ROOT, ".github", "workflows", "deploy-cloudflare.yml"), "utf8"));
   assert.equal(deployWf.jobs["deploy-production"].needs, "budget-gate");
-  assert.deepEqual(deployWf.jobs["budget-gate"].permissions, { contents: "read", "pull-requests": "read", actions: "read" });
+  assert.deepEqual(deployWf.jobs["budget-gate"].permissions, { contents: "read", "pull-requests": "read", actions: "read", issues: "write" }, "issues: write only for the sticky notice");
   assert.ok(deployWf.jobs["budget-gate"].steps.some((s) => /cf-budget-check\.mjs deploy/.test(s.run || "")));
   assert.equal(deployWf.on.workflow_dispatch.inputs.budget_override.default, false, "the manual override is off by default");
   for (const j of [preview["budget-gate"], deployWf.jobs["budget-gate"]]) assert.ok(!JSON.stringify(j).includes("CLOUDFLARE"), "the pre-flight holds no Cloudflare secret and calls no Cloudflare API");

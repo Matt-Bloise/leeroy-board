@@ -59,6 +59,10 @@ on:
       - "tools/stamps.mjs"
       - "tools/terms-watch.mjs"
       - "tools/tooltips-compliance.mjs"
+  # The scheduled run is the catch-up for a deploy that the budget pre-flight refused: it deploys ONLY when the sticky notice "Production is behind master" is open (job budget-gate, step `scope`), and does nothing
+  # (one short job) otherwise. 00:25 UTC is just after the daily budget resets.
+  schedule:
+    - cron: "25 0 * * *"
   workflow_dispatch:
     inputs:
       budget_override:
@@ -86,10 +90,14 @@ jobs:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # issues: write is only for the sticky "Production is behind master" notice (the step below); this job holds no Cloudflare secret.
     permissions:
       contents: read
       pull-requests: read
       actions: read
+      issues: write
+    outputs:
+      proceed: ${{ steps.scope.outputs.proceed }}
     steps:
       - name: Checkout master
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -101,18 +109,61 @@ jobs:
         with:
           node-version: "22"
 
+      # A push or a manual run always goes on to the count below. The scheduled run goes on only when a refused deploy is waiting (the sticky notice is open): that is the catch-up.
+      - name: Is there a refused deploy to catch up (scheduled run only)?
+        id: scope
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = "<!-- production-behind-master -->";
+            const { owner, repo } = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: "open", per_page: 100 });
+            const notice = issues.find((i) => !i.pull_request && i.body && i.body.includes(marker));
+            const scheduled = context.eventName === "schedule";
+            core.setOutput("proceed", scheduled ? String(Boolean(notice)) : "true");
+            if (scheduled && !notice) core.notice("No refused deploy is waiting, so the scheduled catch-up has nothing to deliver.");
+            if (scheduled && notice) core.notice("Production is behind master (issue #" + notice.number + "): the scheduled catch-up deploys now, if the budget allows.");
+
       - name: Count today's deploys and refuse when the budget is used up
+        if: steps.scope.outputs.proceed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOY_BUDGET_OVERRIDE: ${{ inputs.budget_override }}
         run: node tools/cf-budget-check.mjs deploy
 
+      # A refusal (budget used up, or the count could not be made) leaves master ahead of production. Say so where someone will see it: one sticky issue, updated by each refusal and closed by the next deploy
+      # (job clear-behind-notice). The scheduled catch-up at 00:25 UTC delivers it, because a deploy builds the commit it is started on and so contains every earlier commit.
+      - name: Say that production is behind master
+        if: failure() && steps.scope.outputs.proceed == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = "<!-- production-behind-master -->";
+            const { owner, repo } = context.repo;
+            const sha = context.sha.slice(0, 7);
+            const runUrl = context.serverUrl + "/" + owner + "/" + repo + "/actions/runs/" + context.runId;
+            const body = [marker, "### Production is behind master", "",
+              "The deploy of master " + sha + " did **not** run: the daily Cloudflare budget pre-flight refused it, or could not count today's deploys (" + runUrl + "). The merge is on master; production still runs an older commit.", "",
+              "- **What delivers it:** the scheduled catch-up at 00:25 UTC (the first deploy of the next UTC day), or the next merge that deploys: a deploy builds the commit it is started on, so it carries every earlier commit. This issue closes itself when a deploy succeeds.",
+              "- **Sooner:** only the session that merges, with the account owner's agreement, runs the deploy workflow by hand with the budget_override input, or adds the label from .github/cf-budget.json to a pull request merged into master.",
+              "- **Why:** the Cloudflare account is a friend's, on the free plan; see docs/runbooks/cloudflare-requests.md, Daily budgets.", "",
+              "_Last refusal: " + new Date().toISOString() + " (master " + sha + ")._"].join("\n");
+            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: "open", per_page: 100 });
+            const existing = issues.find((i) => !i.pull_request && i.body && i.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body: "Another deploy was refused: master " + sha + " (" + runUrl + ")." });
+            } else {
+              await github.rest.issues.create({ owner, repo, title: "Production is behind master: a deploy was refused by the daily budget", body });
+            }
+            core.summary.addHeading("Production is behind master").addRaw("The deploy was refused; see the issue. The next deploy, or the scheduled catch-up at 00:25 UTC, delivers it.").write();
+
   deploy-production:
     name: Deploy Worker, D1 & Static Site to Cloudflare Production
     needs: budget-gate
     runs-on: ubuntu-latest
-    # A manual run may be started from any branch; production only ever deploys from master.
-    if: github.ref == 'refs/heads/master'
+    # A manual run may be started from any branch; production only ever deploys from master. A scheduled run deploys only to catch up a refused deploy (budget-gate says proceed=false otherwise).
+    if: github.ref == 'refs/heads/master' && needs.budget-gate.outputs.proceed == 'true'
     # Most production secrets live in the GitHub environment `production` (deployment branches: master only); delete their repository-level copies once moved (docs/runbooks/ci-secrets.md).
     # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are repository secrets by design (previews read them): keep those copies. An environment copy, if one exists, wins for this deploy.
     environment: production
@@ -549,6 +600,29 @@ jobs:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           WORKER_URL: https://api.leeroy.party
         run: node tools/sync-discord-commands.mjs --apply
+
+  # Closes the sticky "Production is behind master" issue once a deploy has succeeded. Its own job so that the production deploy job's token needs no write permission on issues.
+  clear-behind-notice:
+    name: Close the production-is-behind notice
+    needs: deploy-production
+    if: github.ref == 'refs/heads/master' && needs.deploy-production.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Close the notice
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = "<!-- production-behind-master -->";
+            const { owner, repo } = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: "open", per_page: 100 });
+            for (const i of issues.filter((x) => !x.pull_request && x.body && x.body.includes(marker))) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: i.number, body: "Deployed master " + context.sha.slice(0, 7) + " (" + context.serverUrl + "/" + owner + "/" + repo + "/actions/runs/" + context.runId + "): production is in step with master as of this run." });
+              await github.rest.issues.update({ owner, repo, issue_number: i.number, state: "closed", state_reason: "completed" });
+            }
 
   # After each production deploy: the light health check in the deploy job above (at most 5 requests, usually 1) plus THIS job, tests/browser/deploy-smoke.mjs: /api/health, /api/bootstrap and
   # /api/state answer 200 with the expected shape, then one page load in Chromium and one in WebKit renders the first screen with the live API without a 5xx. About 15 Worker requests in all.

@@ -85,7 +85,7 @@ export async function preflight({ kind, budget, fetchImpl = fetch, token, repo, 
       fetchImpl, token, repo, runId, day: utcDay(now),
       workflowFile: kind === "spinup" ? budget.workflows.spinUp : budget.workflows.deploy,
       jobName: kind === "spinup" ? budget.jobs.spinUp : budget.jobs.deploy,
-      events: kind === "spinup" ? ["pull_request"] : ["push", "workflow_dispatch"],
+      events: kind === "spinup" ? ["pull_request"] : ["push", "workflow_dispatch", "schedule"],
     });
   } catch (e) {
     lines.push(`COULD NOT COUNT today's ${what}: ${e.message}`);
