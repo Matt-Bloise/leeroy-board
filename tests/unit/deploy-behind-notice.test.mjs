@@ -1,4 +1,4 @@
-// A deploy refused by the budget pre-flight must never leave a fix undelivered silently: a sticky issue says "Production is behind master", a scheduled catch-up delivers it, the next successful
+// A deploy refused by the budget pre-flight must never leave a fix undelivered silently: a sticky issue says "Production is behind master", a nightly catch-up workflow delivers it, the next successful
 // deploy closes the notice. The github-script bodies of deploy-cloudflare.yml are compiled and run here against a fake GitHub client.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -9,6 +9,7 @@ import { parse } from "yaml";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const wf = parse(readFileSync(path.join(ROOT, ".github", "workflows", "deploy-cloudflare.yml"), "utf8"));
+const catchup = parse(readFileSync(path.join(ROOT, ".github", "workflows", "deploy-catchup.yml"), "utf8"));
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const MARKER = "<!-- production-behind-master -->";
 
@@ -30,25 +31,54 @@ const mkCore = () => { const out = {}, notices = []; return { out, notices, setO
 const run = (script, github, core, context) => new AsyncFunction("github", "context", "core", script)(github, context, core);
 const ctx = (eventName, extra = {}) => ({ eventName, repo: { owner: "o", repo: "r" }, sha: "abcdef1234567", runId: 42, serverUrl: "https://github.com", ...extra });
 
-test("the gate has a scope step and a notice step, and the deploy job runs only when the gate says proceed", () => {
+test("the deploy workflow has no schedule: every run of it is a real deploy attempt, and the deploy job needs only master and the gate passing", () => {
+  assert.equal(wf.on.schedule, undefined, "a no-op run of the deploy workflow would clear an earlier failure");
+  assert.deepEqual(Object.keys(wf.on).sort(), ["push", "workflow_dispatch"]);
   assert.equal(wf.jobs["budget-gate"].permissions.issues, "write");
   assert.equal(wf.jobs["deploy-production"].permissions, undefined, "the production deploy job's token gains nothing");
-  assert.ok(wf.jobs["deploy-production"].if.includes("needs.budget-gate.outputs.proceed == 'true'"));
-  assert.ok(wf.jobs["budget-gate"].outputs.proceed);
-  assert.deepEqual(wf.on.schedule, [{ cron: "25 0 * * *" }]);
+  assert.equal(wf.jobs["deploy-production"].if, "github.ref == 'refs/heads/master'");
+  assert.equal(wf.jobs["deploy-production"].needs, "budget-gate", "a failed gate skips the deploy");
+  assert.equal(wf.jobs["budget-gate"].outputs, undefined);
+  assert.equal(JSON.stringify(wf.jobs["budget-gate"]).includes("steps.scope"), false);
   for (const j of ["budget-gate", "clear-behind-notice"]) assert.equal(JSON.stringify(wf.jobs[j]).includes("CLOUDFLARE"), false, `${j} holds no Cloudflare secret`);
 });
 
-test("scheduled run: proceeds only when a notice is open; a push or manual run always proceeds", async () => {
-  const script = scriptOf("budget-gate", /refused deploy to catch up/);
-  const withNotice = fakeGithub([{ number: 7, state: "open", body: `${MARKER}\nx` }]);
-  const c1 = mkCore(); await run(script, withNotice.github, c1, ctx("schedule"));
-  assert.equal(c1.out.proceed, "true");
-  const none = fakeGithub([{ number: 8, state: "open", body: "an unrelated issue" }, { number: 9, state: "closed", body: MARKER }]);
-  const c2 = mkCore(); await run(script, none.github, c2, ctx("schedule"));
-  assert.equal(c2.out.proceed, "false", "nothing to catch up (a closed notice does not count)");
-  assert.match(c2.notices.join(" "), /nothing to deliver/);
-  for (const ev of ["push", "workflow_dispatch"]) { const c = mkCore(); await run(script, none.github, c, ctx(ev)); assert.equal(c.out.proceed, "true", ev); }
+const catchupScript = catchup.jobs["catch-up"].steps[0].with.script;
+test("the catch-up workflow is nightly at 00:25 UTC, master only, holds no Cloudflare secret, and has actions: write only on its one job", () => {
+  assert.deepEqual(catchup.on, { schedule: [{ cron: "25 0 * * *" }] });
+  assert.deepEqual(catchup.permissions, { contents: "read" });
+  assert.deepEqual(catchup.jobs["catch-up"].permissions, { contents: "read", issues: "read", actions: "write" });
+  assert.equal(Object.keys(catchup.jobs).length, 1);
+  assert.match(catchup.jobs["catch-up"].if, /refs\/heads\/master/);
+  assert.equal(JSON.stringify(catchup).includes("CLOUDFLARE"), false);
+  assert.equal(JSON.stringify(catchup).includes("secrets."), false);
+});
+
+function fakeDispatch(issues) {
+  const dispatched = [];
+  const f = fakeGithub(issues);
+  f.github.rest.actions = { createWorkflowDispatch: async (a) => { dispatched.push(a); } };
+  return { ...f, dispatched };
+}
+
+test("catch-up: with the notice open it starts deploy-cloudflare.yml on master; with none open (a closed notice does not count) it dispatches nothing and succeeds", async () => {
+  const open = fakeDispatch([{ number: 7, state: "open", body: `${MARKER}
+x` }]);
+  const c1 = mkCore(); await run(catchupScript, open.github, c1, ctx("schedule"));
+  assert.deepEqual(open.dispatched, [{ owner: "o", repo: "r", workflow_id: "deploy-cloudflare.yml", ref: "master" }]);
+  assert.match(c1.notices.join(" "), /issue #7/);
+  const none = fakeDispatch([{ number: 8, state: "open", body: "an unrelated issue" }, { number: 9, state: "closed", body: MARKER }, { number: 10, state: "open", body: MARKER, pull_request: {} }]);
+  const c2 = mkCore(); await run(catchupScript, none.github, c2, ctx("schedule"));
+  assert.equal(none.dispatched.length, 0);
+  assert.match(c2.notices.join(" "), /nothing to catch up/);
+});
+
+test("the dispatched deploy proceeds: a workflow_dispatch run reaches the budget count and the deploy (no scope step to stop it), and the budget gate still counts that event", () => {
+  const names = wf.jobs["budget-gate"].steps.map((s) => s.name);
+  assert.equal(names.some((n) => /catch up/i.test(n)), false, "the scope step is gone");
+  const count = wf.jobs["budget-gate"].steps.find((s) => /Count today's deploys/.test(s.name));
+  assert.equal(count.if, undefined);
+  assert.match(readFileSync(path.join(ROOT, "tools", "cf-budget-check.mjs"), "utf8"), /"workflow_dispatch"/);
 });
 
 test("a refusal opens one sticky issue that names the sha, the run, what delivers it and what the override is; a second refusal updates it instead of opening another", async () => {
@@ -61,6 +91,7 @@ test("a refusal opens one sticky issue that names the sha, the run, what deliver
   assert.ok(issue.body.includes(MARKER));
   assert.ok(issue.body.includes("abcdef1") && issue.body.includes("/actions/runs/42"));
   assert.match(issue.body, /00:25 UTC/);
+  assert.match(issue.body, /deploy-catchup\.yml/);
   assert.match(issue.body, /budget_override/);
   await run(script, g.github, mkCore(), ctx("push", { sha: "1111111999999", runId: 43 }));
   assert.equal(g.log.created.length, 1, "no second issue");
@@ -82,10 +113,8 @@ test("the next successful deploy closes the notice; with none open it does nothi
   assert.match(wf.jobs["clear-behind-notice"].if, /needs\.deploy-production\.result == 'success'/);
 });
 
-test("the notice step runs only when the gate failed on a run that was meant to deploy, and a scheduled run with nothing to catch up stays silent", () => {
+test("the notice step runs only when the gate failed", () => {
   const step = wf.jobs["budget-gate"].steps.find((s) => /Say that production is behind master/.test(s.name));
-  assert.match(step.if, /failure\(\)/);
-  assert.match(step.if, /steps\.scope\.outputs\.proceed == 'true'/);
-  const count = wf.jobs["budget-gate"].steps.find((s) => /Count today's deploys/.test(s.name));
-  assert.match(count.if, /steps\.scope\.outputs\.proceed == 'true'/);
+  assert.equal(step.if, "failure()");
+  assert.match(step.with.script, /deploy-catchup\.yml/);
 });

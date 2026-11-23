@@ -1,0 +1,43 @@
+name: Deploy catch-up (starts the production deploy when one was refused)
+
+# Nightly at 00:25 UTC, just after the daily Cloudflare budget resets. When the sticky issue "Production is behind master" (opened by the budget pre-flight of deploy-cloudflare.yml) is open, this
+# starts deploy-cloudflare.yml on master through workflow_dispatch; the budget gate there still counts the run and can refuse it. With no such issue open it does nothing and ends success. That success
+# belongs to THIS workflow: deploy-cloudflare.yml has no schedule, so a green run of it always means production was deployed.
+# This workflow holds no Cloudflare secret and deploys nothing itself. Its token: contents read, issues read, actions write (only to dispatch the deploy workflow).
+
+on:
+  schedule:
+    - cron: "25 0 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-catchup
+  cancel-in-progress: false
+
+jobs:
+  catch-up:
+    name: Start the production deploy if a refused one is waiting
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      actions: write
+    steps:
+      - name: Dispatch the deploy when the notice is open
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = "<!-- production-behind-master -->";
+            const { owner, repo } = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: "open", per_page: 100 });
+            const notice = issues.find((i) => !i.pull_request && i.body && i.body.includes(marker));
+            if (!notice) {
+              core.notice("No refused deploy is waiting, so there is nothing to catch up.");
+              return;
+            }
+            await github.rest.actions.createWorkflowDispatch({ owner, repo, workflow_id: "deploy-cloudflare.yml", ref: "master" });
+            core.notice("Production is behind master (issue #" + notice.number + "): started deploy-cloudflare.yml on master. Its budget gate still applies.");
