@@ -178,6 +178,16 @@ Also noted while pricing: the **front end waits on D1 for the member documents**
 5. **For PR 333:** read the `sheet_events` key from a counter row or `MAX(id)` alone, not `COUNT(*)`, and, if the cost matters more than an instant hide, a short edge TTL on `/state` and `/bootstrap`; that gives up the immediate-hide guarantee the PR is built on, so it is the owner's call.
 6. **Add per-user bounds to the Discord vote button and Fix this fact**, and a prefix index or fixed list for the `/tooltip` autocomplete (a full scan per keystroke).
 
+## 9. Changes since this audit (2026-11-23, master after PR 450)
+
+The per-route model above is the audit of 2026-11-15. Three things moved, none of them changes a number in sections 1 to 8 except where said:
+
+1. **Member documents are uncached** (commit 3e20c396, 2026-11-15). `/api/bootstrap`, `/api/state` and the six member documents pay 2 D1 queries (about 8 to 9 rows read) on every call; the model priced them as cached with a 60 s ttl. Per page view: about 5 Worker requests and about 8 to 10 D1 queries. Rows read stay far below the 5,000,000 limit. The request counts in sections 3 and 5 are unaffected; the rows-read columns for these routes are low by the cache hit rate.
+2. **CI spends more than the table in the runbook said.** The `crawl` job (102 anonymous `GET` paths plus the member hide-and-restore writes, about 120 Worker requests) landed after the runbook's table (about 150); a full `ci-full` run is about 250 Worker requests. The api and crawl jobs now print the measured count into the job summary. The production probe no longer runs after every deploy (about 165 requests each, up to 16 deploys a day on 2026-11-22): a light smoke runs after the deploy (about 15) and the full probe once a day.
+3. **D1 limits that CI reaches.** The account allows **10 D1 databases** (each PR preview holds one) and **100,000 rows written a day** across all databases. A preview spin-up writes about 400 rows for the seed, and the game-facts smoke wrote 2,000 to 3,700 more per spin-up (1,651 measured; 29 spin-ups on 2026-11-22 put the day's CI writes at an estimated 58,000 to 107,000 rows, against the 100,000 limit). The smoke now runs only when the loader, lookup, schema or its SQL changed and writes under 200 rows. The row price per insert (2 for a TEXT primary key plus 1 per secondary index) is the rule section 2 states and the smoke's measured writes per fact (2) agree with it; whether a delete counts as a write is not verified, so the smoke's budget assumes it does.
+
+Budgets that follow from this are in `docs/runbooks/cloudflare-requests.md` ("Daily budgets"): 3 preview spin-ups and 2 deploying merges a day and 3 open previews at once, inside 2,000 Worker requests a day for all tooling including the owner's PC. They are enforced by a read-only pre-flight (`.github/cf-budget.json`, `tools/cf-budget-check.mjs`) that refuses to start a spin-up or a deploy when the day's budget is used up. Previews can no longer spend Workers AI neurons: the Worker answers a placeholder in a preview and the preview config has no `[ai]` binding.
+
 ## Appendix A. Full script output (master, `node tools/cost-model.mjs`)
 
 Tree: `.` · mode: master as read · anchors checked: 191, missing: 0

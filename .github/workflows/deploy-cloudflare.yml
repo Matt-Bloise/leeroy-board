@@ -59,8 +59,14 @@ on:
       - "tools/stamps.mjs"
       - "tools/terms-watch.mjs"
       - "tools/tooltips-compliance.mjs"
+  # No schedule here: every run of this workflow is a real deploy attempt (a refusal fails red), so a successful run always means production was deployed. The nightly catch-up of a refused deploy is its own
+  # workflow, deploy-catchup.yml, which starts this one through workflow_dispatch only when the "Production is behind master" notice is open.
   workflow_dispatch:
     inputs:
+      budget_override:
+        description: "Only the session that merges, with the account owner's agreement: start this deploy although today's budget of production deploys (.github/cf-budget.json) is used up. Never needed for a normal deploy."
+        type: boolean
+        default: false
       allow_create_database:
         description: "Manual first-time setup only: allow creating an EMPTY D1 database when none named leeroy-board-db exists. Never needed for a normal deploy. See docs/runbooks/rollback.md, Deploy safety."
         type: boolean
@@ -74,8 +80,67 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Counts today's production deploys through the GitHub API (read-only) and refuses to start another when the daily budget (.github/cf-budget.json, deployingMergesPerDay) is used up. Fails closed: when the
+  # count cannot be made, nothing deploys. The only way past: the label named in that file on a pull request merged into this commit, or the budget_override input of a manual run. A refused deploy leaves
+  # master undeployed until the next UTC day or the override; the next push that deploys contains every earlier commit.
+  budget-gate:
+    name: Cloudflare daily budget pre-flight (deploy)
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # issues: write is only for the sticky "Production is behind master" notice (the step below); this job holds no Cloudflare secret.
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      issues: write
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Count today's deploys and refuse when the budget is used up
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_BUDGET_OVERRIDE: ${{ inputs.budget_override }}
+        run: node tools/cf-budget-check.mjs deploy
+
+      # A refusal (budget used up, or the count could not be made) leaves master ahead of production. Say so where someone will see it: one sticky issue, updated by each refusal and closed by the next deploy
+      # (job clear-behind-notice). The nightly catch-up workflow (deploy-catchup.yml, 00:25 UTC) delivers it, because a deploy builds the commit it is started on and so contains every earlier commit.
+      - name: Say that production is behind master
+        if: failure()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = "<!-- production-behind-master -->";
+            const { owner, repo } = context.repo;
+            const sha = context.sha.slice(0, 7);
+            const runUrl = context.serverUrl + "/" + owner + "/" + repo + "/actions/runs/" + context.runId;
+            const body = [marker, "### Production is behind master", "",
+              "The deploy of master " + sha + " did **not** run: the daily Cloudflare budget pre-flight refused it, or could not count today's deploys (" + runUrl + "). The merge is on master; production still runs an older commit.", "",
+              "- **What delivers it:** the nightly catch-up workflow (deploy-catchup.yml) at 00:25 UTC, which starts this workflow by hand (the first deploy of the next UTC day), or the next merge that deploys: a deploy builds the commit it is started on, so it carries every earlier commit. This issue closes itself when a deploy succeeds.",
+              "- **Sooner:** only the session that merges, with the account owner's agreement, runs the deploy workflow by hand with the budget_override input, or adds the label from .github/cf-budget.json to a pull request merged into master.",
+              "- **Why:** the Cloudflare account is a friend's, on the free plan; see docs/runbooks/cloudflare-requests.md, Daily budgets.", "",
+              "_Last refusal: " + new Date().toISOString() + " (master " + sha + ")._"].join("\n");
+            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: "open", per_page: 100 });
+            const existing = issues.find((i) => !i.pull_request && i.body && i.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body: "Another deploy was refused: master " + sha + " (" + runUrl + ")." });
+            } else {
+              await github.rest.issues.create({ owner, repo, title: "Production is behind master: a deploy was refused by the daily budget", body });
+            }
+            core.summary.addHeading("Production is behind master").addRaw("The deploy was refused; see the issue. The next deploy, or the nightly catch-up workflow at 00:25 UTC, delivers it.").write();
+
   deploy-production:
     name: Deploy Worker, D1 & Static Site to Cloudflare Production
+    needs: budget-gate
     runs-on: ubuntu-latest
     # A manual run may be started from any branch; production only ever deploys from master.
     if: github.ref == 'refs/heads/master'
@@ -516,28 +581,51 @@ jobs:
           WORKER_URL: https://api.leeroy.party
         run: node tools/sync-discord-commands.mjs --apply
 
-  # B53: the production probe (tests/browser/prod-probe.mjs) runs ONCE after each production deploy, as its own job so that it holds no secret (no environment, no
-  # job-level env, GITHUB_TOKEN read-only) and so that a failing probe turns the run red without touching anything that was deployed: nothing here rolls back, redeploys or
-  # edits Cloudflare. It tests what a person sees (console errors, 4xx/5xx, junk text, blank scenes, member count, typed party size) with the real API, in Chromium, WebKit
-  # and Firefox at 390x844 and 1366x768. REQUEST BUDGET: at most 200 Worker requests per run, serial, one retry only of a page load; see the header of the script and
-  # docs/runbooks/cloudflare-requests.md. The only other run is the daily one, .github/workflows/prod-probe-daily.yml.
-  # B62: NON-BLOCKING until the probe has had 3 consecutive clean runs (it has been failing on master with false positives while the deploy itself is fine). Remove
-  # continue-on-error after 3 consecutive clean probe runs (ticket: B53b follow-up). A probe failure still shows as an annotation and a step summary on the run.
-  production-probe:
-    name: Production probe (what a visitor sees; reports only, never rolls back)
+  # Closes the sticky "Production is behind master" issue once a deploy has succeeded. Its own job so that the production deploy job's token needs no write permission on issues.
+  clear-behind-notice:
+    name: Close the production-is-behind notice
+    needs: deploy-production
+    if: github.ref == 'refs/heads/master' && needs.deploy-production.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Close the notice
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = "<!-- production-behind-master -->";
+            const { owner, repo } = context.repo;
+            const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: "open", per_page: 100 });
+            for (const i of issues.filter((x) => !x.pull_request && x.body && x.body.includes(marker))) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: i.number, body: "Deployed master " + context.sha.slice(0, 7) + " (" + context.serverUrl + "/" + owner + "/" + repo + "/actions/runs/" + context.runId + "): production is in step with master as of this run." });
+              await github.rest.issues.update({ owner, repo, issue_number: i.number, state: "closed", state_reason: "completed" });
+            }
+
+  # After each production deploy: the light health check in the deploy job above (at most 5 requests, usually 1) plus THIS job, tests/browser/deploy-smoke.mjs: /api/health, /api/bootstrap and
+  # /api/state answer 200 with the expected shape, then one page load in Chromium and one in WebKit renders the first screen with the live API without a 5xx. About 15 Worker requests in all.
+  # It replaces the full production probe (tests/browser/prod-probe.mjs: three engines, two sizes, every scene, about 165 Worker requests), which ran after EVERY deploy: with the account owner's
+  # 2,000 Worker requests a day and up to 16 deploys a day that was 2,640 requests from the probe alone (the steward's FOOTPRINT.md, RULES.md open item 4). The full probe still runs once a day
+  # (.github/workflows/prod-probe-daily.yml) and is the alarm for what a visitor sees.
+  # This job holds no secret (no environment, no job-level env, GITHUB_TOKEN read-only), reports only and never rolls back, redeploys or edits Cloudflare. NON-BLOCKING (B62): a failure shows as an
+  # annotation and a step summary on the run and does not turn the deploy red; remove continue-on-error after 3 consecutive clean runs.
+  post-deploy-smoke:
+    name: Post-deploy smoke (health and the first screen, about 15 Worker requests; reports only, never rolls back)
     needs: deploy-production
     if: github.ref == 'refs/heads/master'
     continue-on-error: true
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 15
     permissions:
       contents: read
     concurrency:
       group: production-probe
       cancel-in-progress: false
     env:
-      PROBE_REQUIRE_ENGINES: "1"
-      SMOKE_ALLOW_WEBKIT_NO_WEBGL: "1"
+      SMOKE_REQUIRE_ENGINES: "1"
+      PREVIEW_API: https://api.leeroy.party
     steps:
       - name: Checkout master
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -549,31 +637,31 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install test dependencies and the three browsers
+      - name: Install test dependencies and the two browsers
         working-directory: tests
         run: |
           npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium webkit firefox
+          npx playwright install --with-deps chromium webkit
 
       - name: Let the new Pages build reach the edge
         run: sleep 45
 
-      - name: Production probe (at most 200 Worker requests)
+      - name: Deploy smoke (about 15 Worker requests)
         working-directory: tests
         run: |
           set -o pipefail
           RC=0
-          node browser/prod-probe.mjs --url https://leeroy.party/ --budget 200 2>&1 | tee "$RUNNER_TEMP/prod-probe.log" || RC=$?
+          node browser/deploy-smoke.mjs --url https://leeroy.party/ 2>&1 | tee "$RUNNER_TEMP/deploy-smoke.log" || RC=$?
           if [ "$RC" -ne 0 ]; then
-            # B62: the job is non-blocking (continue-on-error), so keep the failure visible: annotation + step summary listing the problems.
-            echo "::error title=Production probe failed (non-blocking)::Probe exited $RC; the deploy is not affected. See the job summary and the production-probe-log artifact."
+            # B62: the job is non-blocking (continue-on-error), so keep the failure visible: annotation + step summary listing the failed checks.
+            echo "::error title=Post-deploy smoke failed (non-blocking)::Smoke exited $RC; the deploy is not affected. See the job summary and the deploy-smoke-log artifact."
             {
-              echo "## Production probe failed (non-blocking)"
+              echo "## Post-deploy smoke failed (non-blocking)"
               echo
-              echo "Exit code $RC. The deploy and its health check are not affected; this job does not block the run (B53b follow-up: remove continue-on-error after 3 consecutive clean runs)."
+              echo "Exit code $RC. The deploy and its health check are not affected; this job does not block the run (B62: remove continue-on-error after 3 consecutive clean runs)."
               echo
               echo '```'
-              grep -E '^(FAIL|Aborting|Worker requests this run)' "$RUNNER_TEMP/prod-probe.log" | head -40 || true
+              grep -E '^(FAIL|WARN)' "$RUNNER_TEMP/deploy-smoke.log" | head -40 || true
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -583,7 +671,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: production-probe-log
-          path: ${{ runner.temp }}/prod-probe.log
+          name: deploy-smoke-log
+          path: ${{ runner.temp }}/deploy-smoke.log
           if-no-files-found: ignore
           retention-days: 14

@@ -1,5 +1,6 @@
 // Proves the game-facts store (migration 0016: game_fact_loads, game_facts and two indexes, no virtual table, no trigger) on a REAL, ephemeral D1: the PR preview database. Node 22, no dependencies.
-//   node tools/d1-facts-smoke.mjs smoke [--db <name>]
+//   node tools/d1-facts-smoke.mjs smoke [--db <name>]        the CI profile: a few dozen fictional facts, under SMALL_ROW_BUDGET (200) rows written in all, cleanup included
+//   node tools/d1-facts-smoke.mjs smoke-full [--db <name>]   the measuring profile (300 facts, 770 rows kept for the export): about 2,000 to 3,700 rows written. NOT run in CI (it spent a quarter of the D1 free daily write limit on every spin-up); run it by hand against a preview database when the loader's write cost changes.
 // Run from infrastructure/ (where wrangler.toml and node_modules are), like the neighbouring workflow steps. The database name is $D1_DATABASE_NAME unless --db is given.
 // NEVER touches production: refuseUnlessPreviewDb() accepts only leeroy-board-db-pr-<number> and refuses the production name leeroy-board-db (and anything else) before any wrangler call.
 // What it does, in order (any failed assertion exits 1; everything written is fictional and under load ids that start with 'smoke-', and is deleted again, also on failure):
@@ -28,6 +29,15 @@ export const REAL_CLIENT_FACTS = 22520, REAL_CLIENT_SUFFIXED = 794, REAL_CLIENT_
 export const REAL_BEFORE_CLIENT_FACTS = 18752, REAL_BEFORE_CLIENT_SUFFIXED = 754, REAL_BEFORE_CLIENT_CALLS = 96;
 export const DEFAULT_RUN_BUDGET = 60000; // tools/facts-load.mjs DEFAULT_ROW_BUDGET
 const NOW = "2026-01-01T00:00:00.000Z";
+
+// The sample sizes. FULL is the original measurement (the constants below, which tests/unit/d1-facts-smoke.test.mjs pins). SMALL is what CI runs on every spin-up that needs the smoke: the same
+// statements, the same assertions (lookups, writes per fact from D1's own meta, finish and retire, rank rows, plain export, restore drill), on a few dozen rows, so the run writes under
+// SMALL_ROW_BUDGET rows even if D1 counts every delete as two (2,000 to 3,700 before). The small loads still go in several batches (batch 4 against 50: 10 facts are three calls, so the batching loop and the
+// multi-statement call are exercised), but never a call of 50 statements: a limit that bites only at that size is the one thing the full profile shows and this does not (run smoke-full by hand when the loader's batching changes). The projections to the real client load use the per-row costs measured here, which do not depend on the sample size.
+export const SMALL_ROW_BUDGET = 200; // the target: over it the step prints a warning
+export const SMALL_ROW_HARD_LIMIT = 400; // twice the target: over it the step FAILS (a runaway, or D1 counting far more than the estimate)
+export const FULL = Object.freeze({ name: "full", facts: 300, suffixed: 30, kinds: Object.freeze({ spell_cooldown: 200, spell_cast_time: 100 }), batch: 50, probe: [200, 260], keep: [[0, 100], [200, 250]], fresh: 20, rankSpells: 60, rankRanks: 5, rowBudget: null, hardRowLimit: null });
+export const SMALL = Object.freeze({ name: "small", facts: 10, suffixed: 2, kinds: Object.freeze({ spell_cooldown: 6, spell_cast_time: 4 }), batch: 4, probe: [6, 10], keep: [[0, 3], [6, 8]], fresh: 2, rankSpells: 1, rankRanks: 5, rowBudget: SMALL_ROW_BUDGET, hardRowLimit: SMALL_ROW_HARD_LIMIT });
 
 // -> the name, or throws. The only accepted shape is the per-PR ephemeral database.
 export function refuseUnlessPreviewDb(name) {
@@ -139,11 +149,11 @@ export const MEASURE_FACTS = 300, MEASURE_SUFFIXED = 30, MEASURE_BATCH = 50;
 export const MEASURE_KINDS = Object.freeze({ spell_cooldown: 200, spell_cast_time: 100 });
 const WORDS = ["Amber", "Brisk", "Cinder", "Dusk", "Ember", "Frost", "Gale", "Hollow", "Iron", "Jade"];
 // n fictional facts: 200 spell_cooldown and 100 spell_cast_time, the last MEASURE_SUFFIXED of the cooldowns with a rank suffix. Built through validateRow, the loader's own validation.
-export function measureRows(prefix, from = 0, to = MEASURE_FACTS) {
+export function measureRows(prefix, from = 0, to = MEASURE_FACTS, profile = FULL) {
   const out = [];
   for (let i = from; i < to; i++) {
-    const kind = i < MEASURE_KINDS.spell_cooldown ? "spell_cooldown" : "spell_cast_time";
-    const suffixed = i >= MEASURE_KINDS.spell_cooldown - MEASURE_SUFFIXED && i < MEASURE_KINDS.spell_cooldown;
+    const kind = i < profile.kinds.spell_cooldown ? "spell_cooldown" : "spell_cast_time";
+    const suffixed = i >= profile.kinds.spell_cooldown - profile.suffixed && i < profile.kinds.spell_cooldown;
     const subject = `Test ${prefix} ${WORDS[i % 10]} ${WORDS[Math.floor(i / 10) % 10]} ${i}${suffixed ? " Rank 3" : ""}`;
     const v = validateRow({ id: `${kind === "spell_cooldown" ? "spellcooldowns" : "spellmisc"}:${prefix}${i}`, kind, subject, claim: `${subject} has a cooldown of ${i + 1} seconds.`, value: String(i + 1), unit: "seconds", source_table: kind === "spell_cooldown" ? "spellcooldowns" : "spellmisc", row_id: `${prefix}${i}`, build: "9.9.9.1", verdict: "holds", source_class: "client-db2", note: "" }, "client");
     if (!v.row) throw new Error(`bad measure row ${i}: ${v.error}`);
@@ -154,17 +164,38 @@ export function measureRows(prefix, from = 0, to = MEASURE_FACTS) {
 // RANK_FACTS fictional rank rows: RANK_SPELLS names with ranks 1..RANK_RANKS each, spell_level, with the note the loader writes ('rank=<n>;class=Test Mage'), ids keyed by a table row id. Built through validateRow.
 export const RANK_SPELLS = 60, RANK_RANKS = 5, RANK_FACTS = RANK_SPELLS * RANK_RANKS;
 export const RANK_LOAD = "smoke-load-m3";
-export function rankRows() {
+export function rankRows(profile = FULL) {
   const out = [];
-  for (let n = 0; n < RANK_SPELLS; n++) {
+  for (let n = 0; n < profile.rankSpells; n++) {
     const name = `Test Rankbolt ${WORDS[n % 10]} ${WORDS[Math.floor(n / 10) % 10]} ${n}`;
-    for (let k = 1; k <= RANK_RANKS; k++) {
+    for (let k = 1; k <= profile.rankRanks; k++) {
       const v = validateRow({ id: `spelllevels:R${n}x${k}`, kind: "spell_level", subject: name, claim: `${name} (Rank ${k}) requires level ${k * 4}.`, value: String(k * 4), unit: "level", source_table: "spelllevels", row_id: `R${n}x${k}`, build: "9.9.9.1", verdict: "holds", source_class: "client-db2", note: `rank=${k};class=Test Mage` }, "client");
       if (!v.row) throw new Error(`bad rank row ${n}/${k}: ${v.error}`);
       out.push(v.row);
     }
   }
   return out;
+}
+// Pure: an UPPER estimate of the rows one run of the profile writes, counting every delete as a write at the insert price (D1 delete accounting is not verified, so this is the worst case): the lookup
+// rows and their cleanup, the two measured loads and the rank load, the probe and its deletion, the kv_state rows, the finishes and the final cleanup of everything that is still in the table.
+// tests/unit/d1-facts-smoke.test.mjs holds SMALL under SMALL_ROW_BUDGET with it; the real run counts meta.rows_written and fails when it exceeds the budget.
+export function estimateRowsWritten(profile) {
+  const rows = (n, suffixed = 0) => n * WRITES_PER_FACT + suffixed * WRITES_PER_SUFFIXED_FACT;
+  const loadRow = 2; // a game_fact_loads row: text primary key + its row
+  const part1 = (10 - 2) * WRITES_PER_FACT + 2 * loadRow; // INSERT_SQL: 8 facts, 2 load rows
+  const part1Cleanup = part1; // deleted again before part 2
+  const probe = rows(profile.probe[1] - profile.probe[0]);
+  const keep = profile.keep.reduce((n, [a, b]) => n + (b - a), 0);
+  const loadB = rows(keep + profile.fresh);
+  const rank = rows(profile.rankSpells * profile.rankRanks);
+  const kv = 2 + 1 + 1; // smoke_facts_state insert, two updates
+  const calls = 2; // the counters updates
+  const finishes = 3 + (profile.facts * WRITES_PER_RETIRED_FACT); // three finish statements, and the retired rows of load A
+  const opens = 3 * loadRow + loadRow; // m1, m2, ranks, and the probe load
+  const loadA = rows(profile.facts, profile.suffixed);
+  const writes = part1 + part1Cleanup + opens + loadA + probe + probe + loadRow + loadB + rank + kv + calls + finishes;
+  const finalCleanup = rows(profile.facts + keep + profile.fresh + profile.rankSpells * profile.rankRanks) + 3 * loadRow + 2; // what is still in the table when the run ends
+  return writes + finalCleanup;
 }
 export const countKinds = (rows) => rows.reduce((m, r) => (m[r.kind] = (m[r.kind] || 0) + 1, m), {});
 
@@ -206,14 +237,20 @@ function wrangler(args, { allowFail = false } = {}) {
   return { status: r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
 }
 // One or several statements through --command (a remote --file is an import and returns no rows or meta).
-const command = (db, sql) => parseWranglerJson(wrangler(["d1", "execute", db, "--remote", "--json", "--command", sql]).stdout);
+// Every statement result carries meta.rows_written: the run adds them all up (lookups, measurements, cleanup), so the job summary states what the smoke really wrote.
+let rowsWrittenTotal = 0;
+const command = (db, sql) => {
+  const res = parseWranglerJson(wrangler(["d1", "execute", db, "--remote", "--json", "--command", sql]).stdout);
+  for (const r of res) if (r && r.meta && typeof r.meta.rows_written === "number" && Number.isFinite(r.meta.rows_written)) rowsWrittenTotal += r.meta.rows_written;
+  return res;
+};
 const summary = (text) => { process.stdout.write(text + "\n"); if (process.env.GITHUB_STEP_SUMMARY) { try { appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + "\n"); } catch { /* summary is best effort */ } } };
 
 // Loads `rows` like the loader does: the UPSERT statement of the Worker, MEASURE_BATCH at a time. -> total rows_written, and rows_written of the rows with a base name.
-function upsertAll(db, loadId, rows) {
+function upsertAll(db, loadId, rows, batch = MEASURE_BATCH) {
   let written = 0;
-  for (let i = 0; i < rows.length; i += MEASURE_BATCH) {
-    const stmts = rows.slice(i, i + MEASURE_BATCH).map((r) => inlineBinds(UPSERT, upsertBinds(r, loadId, NOW)));
+  for (let i = 0; i < rows.length; i += batch) {
+    const stmts = rows.slice(i, i + batch).map((r) => inlineBinds(UPSERT, upsertBinds(r, loadId, NOW)));
     written += sumMeta(command(db, stmts.join(";\n")), "rows_written");
   }
   return written;
@@ -225,8 +262,10 @@ const finishOn = (db, loadId, declared, total) => {
 };
 const openLoad = (db, id) => sumMeta(command(db, loadRow(id, "open", null)), "rows_written");
 
-export async function runSmoke(db) {
+export async function runSmoke(db, { profile = SMALL } = {}) {
   refuseUnlessPreviewDb(db);
+  const P = profile;
+  rowsWrittenTotal = 0;
   const tmp = mkdtempSync(path.join(tmpdir(), "d1-smoke-"));
   const out = [];
   let ok = true;
@@ -248,32 +287,32 @@ export async function runSmoke(db) {
     // ---- 2. rows written
     command(db, CLEANUP_SQL);
     const m1 = "smoke-load-m1", m2 = "smoke-load-m2";
-    const rowsA = measureRows("A");
+    const rowsA = measureRows("A", 0, P.facts, P);
     const beginWrites = openLoad(db, m1);
-    const wA = upsertAll(db, m1, rowsA);
+    const wA = upsertAll(db, m1, rowsA, P.batch);
     const suffixed = rowsA.filter((r) => r.subject_base);
     // per fact: a separate small load of plain-named rows, so the suffix cost is measured apart
     const probeId = "smoke-load-m0";
     openLoad(db, probeId);
-    const plainProbe = measureRows("P", 200, 260); // spell_cast_time rows, no suffix
-    const wPlain = upsertAll(db, probeId, plainProbe);
+    const plainProbe = measureRows("P", P.probe[0], P.probe[1], P); // spell_cast_time rows, no suffix
+    const wPlain = upsertAll(db, probeId, plainProbe, P.batch);
     command(db, "DELETE FROM game_facts WHERE load_id = 'smoke-load-m0';\nDELETE FROM game_fact_loads WHERE id = 'smoke-load-m0';"); // the probe rows must not be retired by the finish below
     const kvW = sumMeta(command(db, `INSERT INTO kv_state (key, json, updated_at) VALUES ('smoke_facts_state', '{"last_ts":1,"hits":[1]}', 'x');\nUPDATE kv_state SET json = '{"last_ts":2,"hits":[1,2]}', updated_at = 'y' WHERE key = 'smoke_facts_state' AND json = '{"last_ts":1,"hits":[1]}';`), "rows_written");
     const kvUpdateW = sumMeta(command(db, `UPDATE kv_state SET json = '{"last_ts":3,"hits":[1,2,3]}', updated_at = 'z' WHERE key = 'smoke_facts_state' AND json = '{"last_ts":2,"hits":[1,2]}';`), "rows_written");
     const countsW = sumMeta(command(db, `UPDATE game_fact_loads SET counts_json = '{"kinds":{},"added":300,"changed":0}' WHERE id = ${q(m1)} AND status = 'open';`), "rows_written");
-    const finA = finishOn(db, m1, MEASURE_KINDS, MEASURE_FACTS);
+    const finA = finishOn(db, m1, P.kinds, P.facts);
     // second load: re-sends 150 of the 300 (the first 100 cooldowns and the first 50 cast times), plus 20 new ones; finish retires ALL 300 older rows (150 replaced, 150 gone)
     openLoad(db, m2);
-    const keep = [...measureRows("A", 0, 100), ...measureRows("A", 200, 250)];
-    const fresh = measureRows("B", 0, 20);
-    upsertAll(db, m2, [...keep, ...fresh]);
+    const keep = P.keep.flatMap(([from, to]) => measureRows("A", from, to, P));
+    const fresh = measureRows("B", 0, P.fresh, P);
+    upsertAll(db, m2, [...keep, ...fresh], P.batch);
     const declared2 = countKinds([...keep, ...fresh]);
     const finB = finishOn(db, m2, declared2, keep.length + fresh.length);
     const retired = rowsOf(command(db, "SELECT COUNT(*) AS c FROM game_facts WHERE load_id = 'smoke-load-m1' AND superseded = 1;"), 0)[0].c;
     // ranks: a few hundred synthetic rank rows (the shape deriveRankRows writes), their writes per row from D1's own meta, then the Worker's lookup on the real D1
-    const rk = rankRows();
+    const rk = rankRows(P);
     openLoad(db, RANK_LOAD);
-    const wRank = upsertAll(db, RANK_LOAD, rk);
+    const wRank = upsertAll(db, RANK_LOAD, rk, P.batch);
     finishOn(db, RANK_LOAD, { spell_level: rk.length }, rk.length);
     const rl = await lookupGameFacts({ DB: remoteDb((sql) => command(db, sql)) }, "What level is Test Rankbolt Amber Amber 0 rank 4?", { limit: 10 });
     const rlAll = await lookupGameFacts({ DB: remoteDb((sql) => command(db, sql)) }, "when do I get Test Rankbolt Amber Amber 0", { limit: 10 });
@@ -297,7 +336,7 @@ export async function runSmoke(db) {
       `| begin (insert of the load row) | ${beginWrites} |`,
       `| finish with nothing to retire (rows written / rows read) | ${finA.written} / ${finA.read} |`,
       `| finish retiring ${retired} rows (rows written / rows read) | ${finB.written} / ${finB.read} |`,
-      `| **writes per rank row** (${rk.length} synthetic rows, ${RANK_SPELLS} names x ${RANK_RANKS} ranks, rank and class in the note: ${wRank} rows) | **${r2(measured.perRankRow)}** |`,
+      `| **writes per rank row** (${rk.length} synthetic rows, ${P.rankSpells} names x ${P.rankRanks} ranks, rank and class in the note: ${wRank} rows) | **${r2(measured.perRankRow)}** |`,
       `| writes per retired fact | ${r2(measured.perRetired)} |`,
       `| kv_state insert + update in one call (not used for the constants) | ${kvW} |`,
       "", "| projection from the measured numbers | rows written | of the D1 Free limit (100,000 a day) |", "| --- | --- | --- |",
@@ -323,7 +362,7 @@ export async function runSmoke(db) {
       `| plain \`wrangler d1 export --remote\` on the preview D1 | ${exportOk ? `ok (${dumpText.length} bytes)` : `FAILED: ${firstLine(ex.stderr || ex.stdout)}`} |`,
       `| dump applied to an in-memory SQLite (informational) | ${dumpApplies} |`,
       `| restore drill, in process on schema.sql | ${drill.status === 0 ? "passed" : `FAILED (exit ${drill.status})`} |`, "");
-    add(checkMeasurements(measured, { retired: MEASURE_FACTS, exportOk, exportError: exportOk ? "" : firstLine(ex.stderr || ex.stdout), dumpHasRows, rankLookupOk, drillOk: drill.status === 0 }));
+    add(checkMeasurements(measured, { retired: P.facts, exportOk, exportError: exportOk ? "" : firstLine(ex.stderr || ex.stdout), dumpHasRows, rankLookupOk, drillOk: drill.status === 0 }));
   } catch (e) {
     ok = false;
     out.push(`- FAIL smoke could not complete: ${firstLine(e.message)}`);
@@ -331,7 +370,10 @@ export async function runSmoke(db) {
     try { command(db, CLEANUP_SQL); } catch { /* the preview database is deleted with the PR anyway */ }
     rmSync(tmp, { recursive: true, force: true });
   }
-  summary(["### Game facts on the real preview D1 (migration 0016, no virtual table)", "", `Database: \`${db}\``, "", ...out].join("\n"));
+  const budgetOk = P.rowBudget === null || rowsWrittenTotal <= P.rowBudget;
+  if (!budgetOk) console.log(`::warning title=Smoke wrote more rows than its budget::${rowsWrittenTotal} rows written, budget ${P.rowBudget}`);
+  if (P.hardRowLimit !== null && rowsWrittenTotal > P.hardRowLimit) ok = false;
+  summary(["### Game facts on the real preview D1 (migration 0016, no virtual table)", "", `Database: \`${db}\``, "", `**Rows written by this smoke run (every statement, cleanup included): ${rowsWrittenTotal}** (profile ${P.name}${P.rowBudget === null ? ", no budget" : `, budget ${P.rowBudget}: ${budgetOk ? "within" : rowsWrittenTotal > P.hardRowLimit ? `EXCEEDED the hard limit ${P.hardRowLimit}, the step fails` : "over the budget (warning)"}`}; D1 free limit 100,000 a day for the whole account)`, "", ...out].join("\n"));
   return ok;
 }
 
@@ -340,6 +382,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const i = rest.indexOf("--db");
   const db = i >= 0 ? rest[i + 1] : process.env.D1_DATABASE_NAME;
   try { refuseUnlessPreviewDb(db); } catch (e) { console.error(e.message); process.exit(2); }
-  if (mode === "smoke") process.exit((await runSmoke(db)) ? 0 : 1);
-  else { console.error("usage: node tools/d1-facts-smoke.mjs smoke [--db <name>]"); process.exit(2); }
+  if (mode === "smoke") process.exit((await runSmoke(db, { profile: SMALL })) ? 0 : 1);
+  else if (mode === "smoke-full") process.exit((await runSmoke(db, { profile: FULL })) ? 0 : 1);
+  else { console.error("usage: node tools/d1-facts-smoke.mjs smoke|smoke-full [--db <name>]"); process.exit(2); }
 }

@@ -4,6 +4,7 @@
 // Result: { ok: true, fields, confidence } or { ok: false, error: { code, message } }. Never throws.
 
 import { sha256Hex } from "./crypto.js";
+import { isPrPreviewEnv, workersAiRun } from "./ai-models.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, overCap, dailyCap } from "./budget.js";
 
 export const FIELD_NAMES = ["class", "race", "role", "spec", "professions", "ruleset", "faction"];
@@ -107,6 +108,7 @@ export function gate(parsed) {
 
 export async function parseBuild(text, env) {
   try {
+    if (isPrPreviewEnv(env)) return fail("ai_unavailable", "Workers AI is switched off in PR previews."); // a preview never calls a model (ai-models.js workersAiRun)
     if (!env || !env.AI || typeof env.AI.run !== "function") return fail("ai_unavailable", "Workers AI binding is not configured.");
     const clean = stripDiscord(text).slice(0, MAX_INPUT_CHARS);
     if (!clean) return fail("empty_input", "Nothing to parse.");
@@ -136,7 +138,7 @@ export async function parseBuild(text, env) {
     });
     let result;
     try {
-      result = await Promise.race([env.AI.run(model, inputs, { signal: ctl.signal }), timeout]);
+      result = await Promise.race([workersAiRun(env, model, inputs, { signal: ctl.signal }), timeout]);
     } finally {
       clearTimeout(timer);
     }

@@ -4,7 +4,13 @@ name: PR Ephemeral Preview Environment (Cloudflare Free Tier)
 #   opened / synchronize / reopened / labeled ci-full, with the label present -> prep, then deploy (spin up or refresh the preview)
 #   closed, or unlabeled ci-full                                           -> teardown (one job; exits early when no preview D1 exists), frees a D1 slot
 # A PR without the label costs nothing here: every job is skipped. Label events other than ci-full skip every job and never cancel a running spin-up.
-# Teardown never depends on label history: it looks for the D1 database of this PR number.
+# Teardown never depends on label history: it looks for the D1 database (or the Worker) of this PR number.
+# Teardown PROVES deletion (tools/preview-cleanup.mjs): a delete that fails fails the job, all Pages pages are listed, and the job lists Worker, D1 and Pages again and fails if anything named for the PR remains.
+# A teardown run is in its own concurrency group and is never cancelled; a spin-up run never cancels it and it never cancels a spin-up.
+# A PR that changes only docs and data/library gets no preview even with ci-full (tools/docs-only.mjs light path; the visual gate reads the pinned tests/fixtures/library).
+# A budget pre-flight (job budget-gate, tools/cf-budget-check.mjs, budget in .github/cf-budget.json) counts today's spin-ups through the GitHub API and REFUSES to start a spin-up when the daily budget is used up (fail closed;
+# the only override is the label named in that file, for the session that merges).
+# The game-facts smoke runs on a spin-up only when the loader, the lookup, the schema or the smoke changed (tools/smoke-scope.mjs), on a small sample (under 200 rows written, printed in the summary).
 
 on:
   pull_request:
@@ -16,9 +22,12 @@ on:
       - labeled
       - unlabeled
 
+# Two groups per PR: `teardown` (closed, or unlabeled ci-full) and `spinup` (everything else). A teardown run is never cancelled (cancel-in-progress false for it, and no spin-up run can reach its
+# group), so a push or a label right after the close cannot stop a delete half way; teardown runs of one PR queue behind each other. Within `spinup` the old rule stands: a real event cancels the older
+# run, an unrelated label event (security, visual, ...) does not.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: ${{ !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci-full') }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ (github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full')) && 'teardown' || 'spinup' }}
+  cancel-in-progress: ${{ !(github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full') || ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci-full')) }}
 
 permissions:
   contents: read
@@ -32,12 +41,13 @@ jobs:
     name: Fork policy and classify
     if: >-
       (github.event.pull_request.head.repo.full_name != github.repository && contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)) ||
-      (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci-full') &&
+      (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.state == 'open' && contains(github.event.pull_request.labels.*.name, 'ci-full') &&
        (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) || (github.event.action == 'labeled' && github.event.label.name == 'ci-full')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      smoke_needed: ${{ steps.classify.outputs.smoke_needed }}
     steps:
       - name: Enforce the fork PR policy
         env:
@@ -80,6 +90,8 @@ jobs:
           # File names are attacker-controlled: prefix every line so none can start a workflow command (::...) in the log.
           sed 's/^/| /' "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
+          # The game-facts smoke writes rows to the real preview D1: it runs only when the loader, lookup, schema, a migration, the smoke or this workflow changed. An empty answer runs it.
+          echo "smoke_needed=$(node tools/smoke-scope.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
       - name: Say that tests run without a preview
         if: steps.classify.outputs.docs_only == 'true'
@@ -88,8 +100,8 @@ jobs:
           script: |
             const marker = "<!-- cloudflare-pr-preview-skipped -->";
             const prNumber = context.payload.pull_request.number;
-            const body = [marker, "### Cloudflare PR preview skipped (docs only)", "",
-              "This PR changes only `docs/**`, root `*.md` files or `.github/ISSUE_TEMPLATE/**`, so no preview environment (and no D1 database) was created. Preview Tests run only the unit and stamps suites."].join("\n");
+            const body = [marker, "### Cloudflare PR preview skipped (docs or library data only)", "",
+              "This PR changes only documentation (`docs/**`, root `*.md` files, `.github/ISSUE_TEMPLATE/**`), library data (`data/library/*.json`, which the visual gate reads from a pinned copy) or files no preview run exercises, so no preview environment (and no D1 database) was created, even with `ci-full`. Preview Tests run the unit and stamps suites, and the visual baselines when a site file changed."].join("\n");
             const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, per_page: 100 });
             const existing = comments.find(c => c.body && c.body.includes(marker));
             if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
@@ -127,9 +139,37 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
+  # Refuses to start the spin-up when today's budget of preview spin-ups (.github/cf-budget.json) is used up. Read-only: it only reads run history from the GitHub API. Fails closed: when the count cannot
+  # be made, the spin-up does not start. The override label is the only way past (see the file); the deploy job needs this job to succeed, so a refusal skips the spin-up and shows red here, with the reason.
+  budget-gate:
+    name: Cloudflare daily budget pre-flight (spin-up)
+    needs: [prep, preview-guard]
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.prep.outputs.docs_only != 'true' && needs.preview-guard.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Count today's spin-ups and refuse when the budget is used up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/cf-budget-check.mjs spinup
+
   deploy-pr-preview:
     name: Spin Up Isolated PR Preview (Pages + Worker + D1 + DO)
-    needs: [prep, preview-guard]
+    needs: [prep, preview-guard, budget-gate]
     # prep runs for same-repo PRs only with the label `ci-full` (and for forks, which never get a preview), so this is the single spin-up condition.
     # Missing preview secrets skip this job (preview-guard), they never fail it.
     if: github.event.pull_request.head.repo.full_name == github.repository && needs.prep.outputs.docs_only != 'true' && needs.preview-guard.outputs.enabled == 'true'
@@ -300,6 +340,10 @@ jobs:
             toml = toml.replace(/routes\s*=\s*\[[\s\S]*?\]\r?\n?/, "");
             toml = toml.replace(/\[triggers\][\s\S]*?crons\s*=\s*\[[^\]]*\]\r?\n?/, "");
             toml = toml.replace(/AI_PROVIDER\s*=\s*".*"/, `AI_PROVIDER = "workers-ai"`);
+            // Observability (100 percent log sampling) is for production only: a preview Worker logs nothing. Fails the step if the block is not in the expected shape, so a layout change cannot silently turn it back on.
+            const obs = toml.replace(/\[observability\]\s*\r?\nenabled\s*=\s*true\s*\r?\nhead_sampling_rate\s*=\s*1\s*\r?\n/, "[observability]\nenabled = false\n");
+            if (obs === toml || !/\[observability\]\s*\nenabled = false/.test(obs)) { console.error("::error::wrangler.toml [observability] is not in the expected shape; the preview cannot turn log sampling off."); process.exit(1); }
+            toml = obs;
             const prOrigin = `https://${process.env.PAGES_BRANCH}.${process.env.PAGES_PROJECT_NAME}.pages.dev`;
             toml = toml.replace(/ALLOWED_ORIGINS\s*=\s*"([^"]*)"/, (m, orig) => `ALLOWED_ORIGINS = "${orig},${prOrigin}"`);
             toml = toml.replace(/BOARD_PUBLIC_URL\s*=\s*".*"/, `BOARD_PUBLIC_URL = "${prOrigin}"`);
@@ -315,6 +359,10 @@ jobs:
           # A preview must never bind to the PRODUCTION feature-flag app: remove that binding block from wrangler.toml (previews then read the legacy [vars]).
           # The tool fails the step if any such binding is left.
           node ../tools/strip-flagship-binding.mjs wrangler.toml
+
+          # A preview must not be able to call Workers AI either (the account's 10,000 neurons a day; the steward's rule 6): remove the [ai] binding. The Worker code also answers a placeholder in a
+          # preview without reading env.AI (worker/ai-models.js workersAiRun). The tool fails the step if the binding cannot be removed or was not there.
+          node ../tools/strip-ai-binding.mjs wrangler.toml
 
       - name: Say that the preview limit is reached
         if: failure() && steps.d1.outputs.limit_reached == 'true'
@@ -353,9 +401,17 @@ jobs:
             D1_DATABASE_NAME="$D1_DATABASE_NAME" node ./scripts/seed-d1.mjs --remote
           fi
 
+      - name: Game-facts smoke skipped (nothing it exercises changed)
+        if: needs.prep.outputs.smoke_needed == 'false'
+        run: |
+          echo "::notice title=Game-facts smoke skipped::No changed file is the game-facts loader, lookup, schema, a migration, the smoke or this workflow (tools/smoke-scope.mjs). It would have written about 180 D1 rows (3,700 before the small profile)."
+          echo "### Game facts smoke skipped" >> "$GITHUB_STEP_SUMMARY"
+          echo "No changed file is the loader, lookup, schema, a migration, the smoke or this workflow, so the smoke did not run and wrote 0 D1 rows." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Prove the game_facts store on the real preview D1 (lookups, rows written, plain export)
+        if: needs.prep.outputs.smoke_needed != 'false'
         # PREVIEW DATABASE ONLY: tools/d1-facts-smoke.mjs refuses any name that is not leeroy-board-db-pr-<number> (the production name leeroy-board-db included) before it calls wrangler.
-        # It inserts fictional rows, runs the Worker's own lookup against the real D1, loads a few hundred fictional facts with the loader's own statements and reads meta.rows_written, then runs a plain
+        # It inserts fictional rows, runs the Worker's own lookup against the real D1, loads a few dozen fictional facts (the small profile: under 200 rows written in all, printed in the summary) with the loader's own statements and reads meta.rows_written, then runs a plain
         # `wrangler d1 export --remote` and the restore drill. A failed assertion, including a failed export, FAILS this step. Results go to the job summary.
         working-directory: infrastructure
         run: node ../tools/d1-facts-smoke.mjs smoke
@@ -461,9 +517,9 @@ jobs:
               `| **Frontend (Cloudflare Pages)** | [${previewUrl}](${previewUrl}) | 🟢 Live (\`${sha}\`) |`,
               `| **API & WebSockets (Worker + DO)** | \`${workerName}\` on the account's workers.dev host (host not printed here) | 🟢 Isolated \`BoardRoom\` |`,
               `| **Database (Cloudflare D1)** | \`${dbName}\` | 🟢 Seeded & Isolated |`,
-              `| **AI Model (Zero Keys)** | Cloudflare Workers AI (\`@cf/meta/llama-3.3-70b-instruct-fp8-fast\`) | 🟢 Free Tier (No External Keys) |`,
+              `| **AI Model** | None: Workers AI is switched off in previews (placeholder answers, no model is called) | 🟢 No keys, no AI spend |`,
               "",
-              "_This environment is 100% isolated from production, has **zero external AI API keys injected**, uses only the free native Cloudflare Workers AI model, and will be **automatically torn down** when this PR is merged, closed or loses the `ci-full` label._"
+              "_This environment is 100% isolated from production, has **zero external AI API keys injected**, cannot call Workers AI (it answers a placeholder), and will be **automatically torn down** when this PR is merged, closed or loses the `ci-full` label._"
             ].join("\n");
 
             const { data: comments } = await github.rest.issues.listComments({
@@ -515,8 +571,28 @@ jobs:
       PAGES_BRANCH: pr-${{ github.event.pull_request.number }}
 
     steps:
-      - name: Look for this PR's preview D1 database
+      # A spin-up of this PR that is still running is in the other concurrency group (so that nothing can cancel a teardown). Stop it first and wait for it to end, so it cannot create the Worker, the D1
+      # database or the Pages deployment after this job has deleted and verified them. What it already created is then torn down below. Cancelling needs actions: write (granted to this job).
+      - name: Stop this PR's spin-up runs that are still running
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          RUNS() { gh api "repos/$GITHUB_REPOSITORY/actions/workflows/pr-preview-cloudflare.yml/runs?status=$1&per_page=100" --jq ".workflow_runs[] | select(.id != $GITHUB_RUN_ID and ((.pull_requests // []) | map(.number) | index($PR_NUMBER))) | .id" 2>/dev/null || true; }
+          IDS=$( { RUNS in_progress; RUNS queued; } | sort -u )
+          if [ -z "$IDS" ]; then echo "No other run of the preview workflow for PR $PR_NUMBER is running."; exit 0; fi
+          for ID in $IDS; do echo "Cancelling run $ID (a spin-up of PR $PR_NUMBER still running)"; gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$ID/cancel" >/dev/null 2>&1 || true; done
+          for I in $(seq 1 24); do
+            LEFT=$( { RUNS in_progress; RUNS queued; } | sort -u | wc -l | tr -d ' ')
+            [ "$LEFT" = "0" ] && { echo "The spin-up run(s) ended."; exit 0; }
+            echo "Waiting for $LEFT cancelled run(s) to end ($I/24)"; sleep 10
+          done
+          echo "::warning::A spin-up run of PR $PR_NUMBER had not ended after 4 minutes; tearing down anyway. The daily leak report shows anything it creates afterwards."
+
+      - name: Look for this PR's preview resources
         id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -u
           TOKEN=$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '\r\n ')
@@ -527,20 +603,28 @@ jobs:
             ANSWER=no
             echo "::notice title=Teardown skipped::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so there is no preview to tear down. See docs/runbooks/ci-secrets.md."
           else
-            RES=$(curl -sS --max-time 30 "https://api.cloudflare.com/client/v4/accounts/$ACC/d1/database?name=$D1_DATABASE_NAME&per_page=100" -H "Authorization: Bearer $TOKEN" || true)
-            ANSWER=$(node -e '
+            D1=$(curl -sS --max-time 30 "https://api.cloudflare.com/client/v4/accounts/$ACC/d1/database?name=$D1_DATABASE_NAME&per_page=100" -H "Authorization: Bearer $TOKEN" || true)
+            WK=$(curl -sS --max-time 30 "https://api.cloudflare.com/client/v4/accounts/$ACC/workers/scripts" -H "Authorization: Bearer $TOKEN" || true)
+            ANSWER=$(D1_JSON="$D1" WK_JSON="$WK" node -e '
               try {
-                const j = JSON.parse(process.argv[1]);
-                if (j.success === true && Array.isArray(j.result)) process.stdout.write(j.result.some((d) => d.name === process.env.D1_DATABASE_NAME) ? "yes" : "no");
-                else process.stdout.write("unknown");
+                const d = JSON.parse(process.env.D1_JSON), w = JSON.parse(process.env.WK_JSON);
+                if (d.success !== true || !Array.isArray(d.result) || w.success !== true || !Array.isArray(w.result)) { process.stdout.write("unknown"); return; }
+                const any = d.result.some((x) => x.name === process.env.D1_DATABASE_NAME) || w.result.some((x) => x.id === process.env.WORKER_NAME);
+                process.stdout.write(any ? "yes" : "no");
               } catch (e) { process.stdout.write("unknown"); }
-            ' "$RES")
+            ')
           fi
-          echo "Probe answer for $D1_DATABASE_NAME: $ANSWER"
-          # Only a clear "no" ends the job early. "unknown" (missing secrets, API error) falls through to the full teardown, which is idempotent.
+          # A PR that ever had a preview carries the sticky preview comment: its Pages deployments have no cheap probe, so such a PR always gets the full (idempotent) teardown, which lists and verifies all three.
+          if [ "$ANSWER" = "no" ] && [ -n "$TOKEN" ]; then
+            OUT=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --jq '[.[] | select(.body | contains("<!-- cloudflare-pr-preview -->"))] | length' 2>/dev/null) || OUT=""
+            if [ -z "$OUT" ]; then HAD=unknown; else HAD=$(echo "$OUT" | awk '{s+=$1} END{print s+0}'); fi
+            if [ "$HAD" != "0" ]; then ANSWER=yes; echo "PR $PR_NUMBER has (or may have) had a preview: running the full teardown to verify all three resources are gone."; fi
+          fi
+          echo "Probe answer for PR $PR_NUMBER (D1 $D1_DATABASE_NAME or Worker $WORKER_NAME): $ANSWER"
+          # Only a clear "no" ends the job early. "unknown" (API error) falls through to the full teardown, which is idempotent. Pages-only leftovers are the leak report's job.
           if [ "$ANSWER" = "no" ]; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "No preview D1 database for PR $PR_NUMBER: nothing to tear down."
+            echo "No preview D1 database or Worker for PR $PR_NUMBER: nothing to tear down."
           else
             echo "exists=true" >> "$GITHUB_OUTPUT"
           fi
@@ -557,50 +641,11 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install Wrangler CLI
+      # Deletes the Worker (with its Durable Object), the D1 database and every Pages preview deployment of branch pr-<n>, then lists all three again (all pages) and FAILS if anything named for
+      # this PR remains. A delete that fails fails this step (no echo-and-continue). Idempotent: a re-run of the job finishes what a failed run left. It never touches a name that is not derived from the PR number.
+      - name: Delete the preview Worker, D1 database and Pages deployments, and verify they are gone
         if: steps.probe.outputs.exists == 'true'
-        working-directory: infrastructure
-        run: npm ci --no-audit --no-fund
-
-      - name: Delete Ephemeral Cloudflare Worker & Durable Object (`leeroy-brain-pr-*`)
-        if: steps.probe.outputs.exists == 'true'
-        working-directory: infrastructure
-        run: |
-          echo "Deleting ephemeral Worker '$WORKER_NAME'..."
-          npx wrangler delete --name "$WORKER_NAME" --force || echo "Worker '$WORKER_NAME' already deleted or not found."
-
-      - name: Delete Ephemeral Cloudflare D1 Database (`leeroy-board-db-pr-*`)
-        if: steps.probe.outputs.exists == 'true'
-        working-directory: infrastructure
-        run: |
-          echo "Deleting ephemeral D1 database '$D1_DATABASE_NAME'..."
-          npx wrangler d1 delete "$D1_DATABASE_NAME" --skip-confirmation || echo "D1 '$D1_DATABASE_NAME' already deleted or not found."
-
-      - name: Delete Cloudflare Pages Preview Deployments for `pr-*`
-        if: steps.probe.outputs.exists == 'true'
-        run: |
-          node -e '
-            (async () => {
-              const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-              const token = process.env.CLOUDFLARE_API_TOKEN;
-              const project = process.env.PAGES_PROJECT_NAME;
-              const branch = process.env.PAGES_BRANCH;
-              if (!accountId || !token) return;
-
-              const base = `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${project}/deployments`;
-              const headers = { Authorization: `Bearer ${token}` };
-              const res = await fetch(base, { headers });
-              if (!res.ok) return;
-              const data = await res.json();
-              const matches = (data.result || []).filter(
-                d => d.environment === "preview" && d.deployment_trigger?.metadata?.branch === branch
-              );
-              for (const d of matches) {
-                console.log(`Deleting Pages preview deployment ${d.id} (branch=${branch})...`);
-                await fetch(`${base}/${d.id}?force=true`, { method: "DELETE", headers });
-              }
-            })().catch(e => console.warn("Pages cleanup warning:", e));
-          '
+        run: node tools/preview-cleanup.mjs teardown "$PR_NUMBER"
 
       - name: Update Sticky PR Comment to Confirm Teardown
         if: steps.probe.outputs.exists == 'true'
@@ -637,7 +682,8 @@ jobs:
 
       # Was the separate job `retry-waiting-previews`: a slot was just freed, so re-run the failed jobs of one PR that hit the D1 limit.
       - name: Re-run failed preview and test jobs of a PR that hit the limit
-        if: steps.probe.outputs.exists == 'true'
+        # Not tied to the tool's result: the D1 slot is freed as soon as the database is deleted, and a PR waiting for one should not wait for a Pages listing to verify.
+        if: ${{ !cancelled() && steps.probe.outputs.exists == 'true' }}
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |

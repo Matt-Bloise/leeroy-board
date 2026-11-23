@@ -195,6 +195,15 @@ export function webBoardLinksDeep(value) {
   return value;
 }
 
+// The one door to the Workers AI binding. A PR preview NEVER calls it: previews carry the binding in wrangler.toml for production parity, but a preview that could run a model spends the account's
+// 10,000 neurons a day (the steward's RULES.md rule 6: "previews must not be able to call Workers AI"). In a preview this returns a fixed placeholder and does not read env.AI at all, and the preview
+// deploy also strips the [ai] binding (tools/strip-ai-binding.mjs), so a bug here would still find no binding. Production and every non-preview env call the binding as before.
+export const PREVIEW_AI_PLACEHOLDER = "Workers AI is switched off in PR previews, so this is a placeholder answer. No model was called.";
+export function workersAiRun(env, model, inputs, options) {
+  if (isPrPreviewEnv(env)) return Promise.resolve({ response: PREVIEW_AI_PLACEHOLDER, usage: { prompt_tokens: 0, completion_tokens: 0 } });
+  return env.AI.run(model, inputs, options);
+}
+
 export function isPrPreviewEnv(env) {
   if (!env) return false;
   return (
@@ -208,7 +217,7 @@ export function isPrPreviewEnv(env) {
 export function isProviderConfigured(env, provider) {
   if (isPrPreviewEnv(env)) {
     // In ephemeral PR preview environments, strictly enforce free zero-key AI models
-    return provider === "workers-ai" && Boolean(env.AI && typeof env.AI.run === "function");
+    return provider === "workers-ai"; // the placeholder answers (workersAiRun): no binding is needed, and the preview has none
   }
 
   switch (provider) {
@@ -317,7 +326,7 @@ async function runWorkersAiWithTimeout(env, model, inputs, options, ms = AI_TIME
     else signal.addEventListener("abort", onAbort, { once: true });
   });
   try {
-    const call = env.AI.run(model, inputs, { ...(options || {}), signal });
+    const call = workersAiRun(env, model, inputs, { ...(options || {}), signal });
     call.catch?.(() => {}); // a late rejection after the race is settled must not be unhandled
     return await Promise.race([call, aborted]);
   } catch (err) {
@@ -666,7 +675,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
 }
 
 async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, strictDeadline = false }) {
-  if (!env.AI || typeof env.AI.run !== "function") {
+  if (!isPrPreviewEnv(env) && (!env.AI || typeof env.AI.run !== "function")) {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
   const model = modelOverride || env.WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
