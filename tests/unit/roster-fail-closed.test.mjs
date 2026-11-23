@@ -1,6 +1,7 @@
 // ADR 0002 F2 and F4, the two pre-flip gates from the attack review of step 2. Fictional names only; built-in names are read from the code at the moment of use, never typed here.
-//   F2: with the interlock open, a flag that cannot be asked (timeout, throw, rejection, a non-boolean answer) or a flag-on roster that cannot be resolved (row absent, unreadable, invalid,
+//   F2: with the interlock open, a flag that cannot be asked (timeout, throw, rejection, a non-boolean answer) or a flag-on roster that cannot be resolved (row unreadable, invalid,
 //       or colliding with a built-in member) is CLOSED: nobody is a member, nobody is the default admin, no outside model call is made. A definite false is the flag-off behaviour, unchanged.
+//       A row that is DEFINITELY absent (the D1 read succeeded and found none) is NOT closed: the built-ins answer until ADR step 6 removes them; at that step absent becomes closed too.
 //   F4: a row member cannot reuse a built-in person's slug, display name, alias or first name under another slug, at write time (PUT) and at read time (the row is then closed).
 // Run: node --test tests/unit/roster-fail-closed.test.mjs
 import test from "node:test";

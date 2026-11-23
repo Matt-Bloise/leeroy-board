@@ -90,7 +90,7 @@ export function builtInPeople(partyMembers, rosterData, firstNamesFor = null) {
 }
 
 // The keys a word can be matched under by the tokeniser: its skeleton, with doubled letters collapsed, and with look-alike digits read as letters (both readings of "1"). A row word
-// collides with a built-in word when any of these keys is shared, so "Sannta", "S4nta" or "5anta" cannot sit beside "Santa" (the tokeniser would give them one token).
+// collides with a built-in word when any of these keys is shared, so "Lummia", "Lum1a" or "1umia" cannot sit beside "Lumia" (the tokeniser would give them one token).
 const keysOf = (w) => {
   const sk = skeleton(String(w));
   if (!sk) return [];
