@@ -315,6 +315,9 @@ jobs:
         env:
           PREVIEW_PAGES: ${{ needs.preview.outputs.pages }}
           PREVIEW_ADMIN_BASE: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
+          # Counts the requests each test process sends to the preview Worker (tests/helpers/count-requests.mjs); summed into the job summary below. Sends nothing itself.
+          WORKER_REQUEST_LOG: ${{ runner.temp }}/worker-requests.log
+          NODE_OPTIONS: --import=./helpers/count-requests.mjs
         run: |
           set -o pipefail
           # The preview Worker holds a per-PR token derived from the preview-only secret (see pr-preview-cloudflare.yml), never a production one.
@@ -329,6 +332,10 @@ jobs:
           # A crawl that was cancelled earlier can leave the preview's admin member hidden. Put it back BEFORE any test reads the preview (writes nothing when no planted marker is present).
           npm run test:recover 2>&1 | tee "$RUNNER_TEMP/api.log"
           npm run test:api 2>&1 | tee -a "$RUNNER_TEMP/api.log"
+
+      - name: Worker requests sent by the api job (job summary)
+        if: always()
+        run: node tools/request-summary.mjs "$RUNNER_TEMP/worker-requests.log" api
 
       - name: Scrub the account subdomain from the files about to be uploaded
         if: always()
@@ -723,6 +730,8 @@ jobs:
         env:
           PREVIEW_ADMIN_BASE: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
           CRAWL_REPORT: ${{ runner.temp }}/preview-crawl.json
+          WORKER_REQUEST_LOG: ${{ runner.temp }}/worker-requests.log
+          NODE_OPTIONS: --import=./helpers/count-requests.mjs
         run: |
           set -o pipefail
           if [ -z "$PREVIEW_ADMIN_BASE" ]; then
@@ -734,6 +743,10 @@ jobs:
           export BOARD_ADMIN_TOKEN
           unset PREVIEW_ADMIN_BASE
           npm run test:crawl 2>&1 | tee "$RUNNER_TEMP/crawl.log"
+
+      - name: Worker requests sent by the crawl job (job summary)
+        if: always()
+        run: node tools/request-summary.mjs "$RUNNER_TEMP/worker-requests.log" crawl
 
       - name: Scrub the account subdomain from the files about to be uploaded
         if: always()

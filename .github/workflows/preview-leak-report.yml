@@ -1,0 +1,45 @@
+name: Preview Leak Report
+
+# READ-ONLY. Once a day it lists the preview Workers (leeroy-brain-pr-<n>), D1 databases (leeroy-board-db-pr-<n>) and Pages preview branches (pr-<n>) of the Cloudflare account and writes the ones whose
+# pull request is not open to the job summary (tools/preview-cleanup.mjs leaks). It calls the Cloudflare API with GET only, so it costs no Worker request and writes no D1 row; it deletes nothing.
+# Deleting a leaked preview is the account owner's decision (the steward's RULES.md, rule 5): nothing in this workflow, and no script it runs, deletes anything.
+# Why: a preview that survives its pull request holds one of the account's 10 D1 databases (docs/runbooks/preview-d1-limit.md) and its Worker one of 100 scripts. Stale databases for PR 117, 124 and 144 were found by hand
+# on 2026-11-09; this report finds them without anyone looking.
+# Manual run: Actions > Preview Leak Report > Run workflow (read-only too; the steward's rule is that nothing that touches Cloudflare is dispatched by hand without VAREN's word).
+
+on:
+  schedule:
+    - cron: "40 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: preview-leak-report
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Report previews without an open pull request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PAGES_PROJECT_NAME: leeroy-board
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Pinned action SHAs: checkout 11bd71901bbe5b1630ceea73d27597364c9af683 v4.2.2, setup-node 39370e3970a6d050c480ffad4ff0ed4d3fdee5af v4.1.0
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: List leaked previews (read-only)
+        run: node tools/preview-cleanup.mjs leaks

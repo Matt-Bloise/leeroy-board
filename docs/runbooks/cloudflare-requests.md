@@ -4,7 +4,8 @@
 
 - Workers Free allows **100,000 requests per UTC day for the whole account**, all Workers together (production `leeroy-brain`, every per-PR preview Worker, even ones deleted afterwards). The counter resets at **00:00 UTC**. When it is reached, every Worker answers with an error until the reset, production included.
 - On 2 November 2026 the account reached 100,424 by 23:11 UTC. Production itself is about 15,600 a day; the rest was CI.
-- **Law (owner, back-end architect):** all CI together stays **under 2,000 Worker requests a day**. Budget per full (`ci-full`) run: **about 250 or fewer**, at most about 6 full runs a day.
+- **Law (owner, back-end architect):** all CI together stays **under 2,000 Worker requests a day**. Budget per full (`ci-full`) run: **about 250 or fewer**; see "Daily budgets" below for how many full runs and deploys a day that allows.
+- The same account has other free-plan limits that CI can reach (read 2026-11-22 from the vendor pages, not from the dashboard): **10 D1 databases** (every PR preview holds one; production holds one), **100 Worker scripts** (every preview Worker is one), **100,000 D1 rows written a day** and **5,000,000 rows read a day** across all databases (previews included), 5 Cron Triggers (we use 2) and 1,200 Cloudflare API calls per 5 minutes. A write limit that is reached makes every D1 write fail until 00:00 UTC, production included.
 
 ## Where requests come from
 
@@ -18,9 +19,14 @@ A request is counted when it reaches a Worker: every `/api/...` call of a page, 
 | `browser` job: `deploy-smoke.mjs` (live: health, bootstrap, state, one page per engine) | about 15 (9 measured with Chromium; WebKit adds about 6, not measurable here) |
 | `browser` job: every other suite, and the `layout` job (layout sweep) | 0 (answered from `tests/fixtures/api-snapshot`) |
 | `preview` job waiting for the preview (`/api/health` poll, usually 1 to 3) | about 3 |
-| **Total per full run** | **about 140 to 150** |
+| `crawl` job: the anonymous crawl, 102 `GET` paths (66 x 200, 22 x 401, 12 x 404, 2 x 426 in the run of 2026-11-22), plus the writes that hide and restore the preview admin member's 9 sheet lines | about 120 |
+| **Total per full run** | **about 250** (1 + about 5 + 117 + 15 + about 120; an estimate until the counter below has printed a few) |
 
-At 6 full runs a day that is about 900 a day, under the 2,000 law. Each extra run costs about 150. Nightly production checks: `degraded-modes` (all 144 checks) now answers from the fixtures, 0 Worker requests (it was 181 measured locally); the ZAP baseline crawls Pages HTML only and was not measured (cannot be measured locally).
+The first version of this table (about 150) was written before the `crawl` job existed; the full-run total is about 250, and that is the figure the budget below uses. **The api and crawl jobs now measure their own requests:** `tests/helpers/count-requests.mjs` (loaded with `NODE_OPTIONS=--import`) counts every request a test process sends to the preview Worker and `tools/request-summary.mjs` prints the sum into each job's summary ("Worker requests sent by the api job (measured)"), so the estimate becomes a reading. It sends nothing and counts only fetches to the preview origin; the browser suites answer from fixtures and send none, and `deploy-smoke` (about 15) is not in the counter.
+
+What else a full run costs on the account, apart from Worker requests: one Worker deploy, three secret writes and one Pages deployment per spin-up; a D1 database created and deleted; and **D1 rows written**. The seed writes about 400 rows once per PR (derived: 10 `kv_state` rows at 2, 21 library blobs at 2, 71 pages at 3, 34 sources at 3, 24 chunk updates). The game-facts smoke used to add **2,000 to 3,700 rows per spin-up** (1,651 measured in the run of 2026-11-22); it now runs only when the loader, lookup, schema or its SQL changed, on a small sample of under 200 rows, and prints the rows it wrote. A spin-up with the smoke therefore costs about 600 rows in all, and without it about 400. Nightly production checks: `degraded-modes` (all 144 checks) now answers from the fixtures, 0 Worker requests (it was 181 measured locally); the ZAP baseline crawls Pages HTML only and was not measured (cannot be measured locally).
+
+**After each production deploy (changed 2026-11-23).** The deploy job's light health check (`/api/health`, at most 5 requests, usually 1) plus the `post-deploy-smoke` job (`tests/browser/deploy-smoke.mjs` against production: health, bootstrap, state and one page load in Chromium and WebKit, about 15 requests; non-blocking, reports only). The full production probe below used to run after every deploy as well, about 165 requests each: with up to 16 deploys on 2026-11-22 that was about 2,640 requests from the probe alone. It now runs once a day (`prod-probe-daily.yml`) and nowhere else.
 
 **Production probe (B53).** `tests/browser/prod-probe.mjs` is the one CI check that deliberately spends Worker requests on production, to test what a visitor sees. Budget: **at most 200 per run**, enforced in the script (every `/api` request and every `/api/live` socket is counted before it is sent, so a reconnecting socket cannot overspend; over budget the rest are refused and the run fails), serial, one retry of a page load only. Measured: about 157 with three engines and two viewports (53 for Chromium alone, local fixture). It runs once after each production deploy (`production-probe` job in `deploy-cloudflare.yml`) and once a day (`prod-probe-daily.yml`, 08:40 UTC) and nowhere else (not per push, not in `ci-full`, not in `run.mjs`). Worst case: at about 10 deploys a day that is 11 runs, at most 2,200 requests a day (about 2 percent of the 100,000), and 50 deploys a day would still be 10,000 (10 percent). The measured count is printed on every run and in the job summary. It is separate from, and in addition to, the CI law above: if the day's count is high, look here after ZAP.
 
@@ -91,8 +97,34 @@ The first row is the best case. The second is the worst case a single eviction c
 
 1. Iterate and test locally: `tools/local-browser.sh <suite>` (starts a static server and `wrangler dev --local` with a throwaway D1, counts Worker requests, stops both by PID).
 2. Bundle 5 to 10 related tasks per pull request.
-3. Add `ci-full` only when the PR is final: one full run is about 150 Worker requests; every push after it re-runs everything.
+3. Add `ci-full` only when the change needs the real preview Worker: one full run is about 250 Worker requests, a preview spin-up and its D1 rows; every push after it re-runs everything. A PR that changes only docs and `data/library` gets no preview even with the label. The Worker starts locally again (`node tests/local/dev-start.mjs`, `wrangler dev --local` through `worker/entry.js`), so try a change there before pushing.
 4. Use the preview only as a smoke test of the integrated result.
+
+## Endpoints that have been uncached since 2026-11-15
+
+On 2026-11-15 (commit 3e20c396) the Worker stopped caching the member documents: `getCachedResponse` and `setCachedResponse` return early for `memberPath`, so these pay their D1 queries on every call (read from the code on 2026-11-22; the earlier cost model priced them as cached):
+
+| Route | D1 queries | Rows read | Rows written |
+| :--- | ---: | ---: | ---: |
+| `GET /api/bootstrap` | 2 | about 9 | 0 |
+| `GET /api/state` | 2 | about 8 | 0 |
+| `GET /api/data/<party, decide, tonight, guided-atlas, client, launch>` | 2 | about 2 | 0 |
+| `GET /api/votes` (cached 10 s, polled every 60 s, so each poll is a miss) | 5 with 3 votes | 19 | 0 |
+
+A page view costs about 5 Worker requests and, with these uncached, about 8 to 10 D1 queries (Lighthouse measured the 5 requests). The request count is unchanged by this; the D1 read count is higher than the cost model's table. 5,000,000 rows read a day is not near.
+
+## Daily budgets (the steward's rules, 2026-11-22; they sum to about 2,000 Worker requests a day)
+
+The Cloudflare account is a friend's, on the free plan, and Cloudflare blocks at a limit instead of billing: the cost of going over is a broken site and a flagged account. These budgets are enforced by the session that merges (VAREN); the meter reads GitHub run history, a proxy that the dashboard overrules.
+
+| Budget | Per UTC day | Why |
+| :--- | ---: | :--- |
+| Preview spin-ups (`ci-full` pushes) | 4 | 4 x 250 requests = 1,000; 4 x 600 rows is small next to 100,000 |
+| Production deploys (merges that deploy) | 3 | 3 x about 15 (health and smoke) plus the daily probe's 165 |
+| Open pull requests that carry a preview | 3 at once | the 10-database cap, with production and up to 3 possible leaks |
+| Hand-dispatched workflows that touch Cloudflare | 0 | each is unplanned spend |
+
+Stop rule: at 70 percent of any daily budget, no further push or merge that touches Cloudflare until 00:00 UTC. One push per pull request branch (work locally, push once), 5 to 10 tasks per pull request. Nothing is created, deleted or pruned in Cloudflare by hand: teardown is the workflow's job (`tools/preview-cleanup.mjs`, which proves deletion), and the daily **Preview Leak Report** (`preview-leak-report.yml`, read-only) lists previews whose pull request is not open, for the owner to decide.
 
 ## When the quota is hit
 
