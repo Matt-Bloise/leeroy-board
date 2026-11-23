@@ -32,11 +32,12 @@ const NOW = "2026-01-01T00:00:00.000Z";
 
 // The sample sizes. FULL is the original measurement (the constants below, which tests/unit/d1-facts-smoke.test.mjs pins). SMALL is what CI runs on every spin-up that needs the smoke: the same
 // statements, the same assertions (lookups, writes per fact from D1's own meta, finish and retire, rank rows, plain export, restore drill), on a few dozen rows, so the run writes under
-// SMALL_ROW_BUDGET rows even if D1 counts every delete as two (2,000 to 3,700 before). The projections to the real client load use the per-row costs measured here, which do not depend on the sample size.
+// SMALL_ROW_BUDGET rows even if D1 counts every delete as two (2,000 to 3,700 before). The small loads still go in several batches (batch 4 against 50: 10 facts are three calls, so the batching loop and the
+// multi-statement call are exercised), but never a call of 50 statements: a limit that bites only at that size is the one thing the full profile shows and this does not (run smoke-full by hand when the loader's batching changes). The projections to the real client load use the per-row costs measured here, which do not depend on the sample size.
 export const SMALL_ROW_BUDGET = 200; // the target: over it the step prints a warning
 export const SMALL_ROW_HARD_LIMIT = 400; // twice the target: over it the step FAILS (a runaway, or D1 counting far more than the estimate)
 export const FULL = Object.freeze({ name: "full", facts: 300, suffixed: 30, kinds: Object.freeze({ spell_cooldown: 200, spell_cast_time: 100 }), batch: 50, probe: [200, 260], keep: [[0, 100], [200, 250]], fresh: 20, rankSpells: 60, rankRanks: 5, rowBudget: null, hardRowLimit: null });
-export const SMALL = Object.freeze({ name: "small", facts: 10, suffixed: 2, kinds: Object.freeze({ spell_cooldown: 6, spell_cast_time: 4 }), batch: 50, probe: [6, 10], keep: [[0, 3], [6, 8]], fresh: 2, rankSpells: 1, rankRanks: 5, rowBudget: SMALL_ROW_BUDGET, hardRowLimit: SMALL_ROW_HARD_LIMIT });
+export const SMALL = Object.freeze({ name: "small", facts: 10, suffixed: 2, kinds: Object.freeze({ spell_cooldown: 6, spell_cast_time: 4 }), batch: 4, probe: [6, 10], keep: [[0, 3], [6, 8]], fresh: 2, rankSpells: 1, rankRanks: 5, rowBudget: SMALL_ROW_BUDGET, hardRowLimit: SMALL_ROW_HARD_LIMIT });
 
 // -> the name, or throws. The only accepted shape is the per-PR ephemeral database.
 export function refuseUnlessPreviewDb(name) {

@@ -27,7 +27,7 @@ on:
 # run, an unrelated label event (security, visual, ...) does not.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ (github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full')) && 'teardown' || 'spinup' }}
-  cancel-in-progress: ${{ !(github.event.action == 'closed' || ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci-full')) }}
+  cancel-in-progress: ${{ !(github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full') || ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci-full')) }}
 
 permissions:
   contents: read
@@ -41,7 +41,7 @@ jobs:
     name: Fork policy and classify
     if: >-
       (github.event.pull_request.head.repo.full_name != github.repository && contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)) ||
-      (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci-full') &&
+      (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.state == 'open' && contains(github.event.pull_request.labels.*.name, 'ci-full') &&
        (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) || (github.event.action == 'labeled' && github.event.label.name == 'ci-full')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -571,8 +571,28 @@ jobs:
       PAGES_BRANCH: pr-${{ github.event.pull_request.number }}
 
     steps:
+      # A spin-up of this PR that is still running is in the other concurrency group (so that nothing can cancel a teardown). Stop it first and wait for it to end, so it cannot create the Worker, the D1
+      # database or the Pages deployment after this job has deleted and verified them. What it already created is then torn down below. Cancelling needs actions: write (granted to this job).
+      - name: Stop this PR's spin-up runs that are still running
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          RUNS() { gh api "repos/$GITHUB_REPOSITORY/actions/workflows/pr-preview-cloudflare.yml/runs?status=$1&per_page=100" --jq ".workflow_runs[] | select(.id != $GITHUB_RUN_ID and ((.pull_requests // []) | map(.number) | index($PR_NUMBER))) | .id" 2>/dev/null || true; }
+          IDS=$( { RUNS in_progress; RUNS queued; } | sort -u )
+          if [ -z "$IDS" ]; then echo "No other run of the preview workflow for PR $PR_NUMBER is running."; exit 0; fi
+          for ID in $IDS; do echo "Cancelling run $ID (a spin-up of PR $PR_NUMBER still running)"; gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$ID/cancel" >/dev/null 2>&1 || true; done
+          for I in $(seq 1 24); do
+            LEFT=$( { RUNS in_progress; RUNS queued; } | sort -u | wc -l | tr -d ' ')
+            [ "$LEFT" = "0" ] && { echo "The spin-up run(s) ended."; exit 0; }
+            echo "Waiting for $LEFT cancelled run(s) to end ($I/24)"; sleep 10
+          done
+          echo "::warning::A spin-up run of PR $PR_NUMBER had not ended after 4 minutes; tearing down anyway. The daily leak report shows anything it creates afterwards."
+
       - name: Look for this PR's preview resources
         id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -u
           TOKEN=$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '\r\n ')
@@ -593,6 +613,12 @@ jobs:
                 process.stdout.write(any ? "yes" : "no");
               } catch (e) { process.stdout.write("unknown"); }
             ')
+          fi
+          # A PR that ever had a preview carries the sticky preview comment: its Pages deployments have no cheap probe, so such a PR always gets the full (idempotent) teardown, which lists and verifies all three.
+          if [ "$ANSWER" = "no" ] && [ -n "$TOKEN" ]; then
+            OUT=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --jq '[.[] | select(.body | contains("<!-- cloudflare-pr-preview -->"))] | length' 2>/dev/null) || OUT=""
+            if [ -z "$OUT" ]; then HAD=unknown; else HAD=$(echo "$OUT" | awk '{s+=$1} END{print s+0}'); fi
+            if [ "$HAD" != "0" ]; then ANSWER=yes; echo "PR $PR_NUMBER has (or may have) had a preview: running the full teardown to verify all three resources are gone."; fi
           fi
           echo "Probe answer for PR $PR_NUMBER (D1 $D1_DATABASE_NAME or Worker $WORKER_NAME): $ANSWER"
           # Only a clear "no" ends the job early. "unknown" (API error) falls through to the full teardown, which is idempotent. Pages-only leftovers are the leak report's job.
@@ -656,7 +682,8 @@ jobs:
 
       # Was the separate job `retry-waiting-previews`: a slot was just freed, so re-run the failed jobs of one PR that hit the D1 limit.
       - name: Re-run failed preview and test jobs of a PR that hit the limit
-        if: steps.probe.outputs.exists == 'true'
+        # Not tied to the tool's result: the D1 slot is freed as soon as the database is deleted, and a PR waiting for one should not wait for a Pages listing to verify.
+        if: ${{ !cancelled() && steps.probe.outputs.exists == 'true' }}
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |

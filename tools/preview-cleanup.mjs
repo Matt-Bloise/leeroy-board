@@ -28,7 +28,7 @@ export class CfError extends Error {
 // One call. Throws CfError on a network failure, on a body that is not JSON, and (unless the status is in `okStatus`) on anything but a 2xx with success true.
 export async function cf(fetchImpl, token, method, pathAndQuery, { okStatus = [] } = {}) {
   let res;
-  try { res = await fetchImpl(`${API}${pathAndQuery}`, { method, headers: { Authorization: `Bearer ${token}` } }); }
+  try { res = await fetchImpl(`${API}${pathAndQuery}`, { method, headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) }); }
   catch (e) { throw new CfError(`${method} ${pathAndQuery.split("?")[0]}: network error: ${e.message}`, 0); }
   let body = null;
   try { body = await res.json(); } catch { /* handled below */ }
@@ -43,7 +43,7 @@ export async function cf(fetchImpl, token, method, pathAndQuery, { okStatus = []
 // Every item of a list endpoint, all pages. Fails when the listing cannot be completed: a page that adds nothing new while the total says more, or more than MAX_PAGES pages.
 export async function listAll(fetchImpl, token, pathBase, query = "", key = (x) => x.id || x.uuid || x.name) {
   const seen = new Map();
-  let total = null;
+  let total = null, stuck = false, finished = false;
   for (let page = 1; page <= MAX_PAGES; page++) {
     const { body } = await cf(fetchImpl, token, "GET", `${pathBase}?${query}${query ? "&" : ""}page=${page}&per_page=25`);
     const items = Array.isArray(body.result) ? body.result : [];
@@ -52,12 +52,13 @@ export async function listAll(fetchImpl, token, pathBase, query = "", key = (x) 
     let added = 0;
     for (const it of items) { const k = key(it); if (k !== undefined && !seen.has(k)) { seen.set(k, it); added++; } }
     const totalPages = typeof info.total_pages === "number" ? info.total_pages : null;
-    if (items.length === 0 || added === 0) break;
-    if (totalPages !== null && page >= totalPages) break;
-    if (totalPages === null && total !== null && seen.size >= total) break;
-    if (totalPages === null && total === null && items.length < 25) break;
+    if (items.length === 0) { finished = true; break; } // an empty page: the end
+    if (added === 0) { stuck = true; break; } // the same items again: the endpoint does not honour the page parameter
+    if (totalPages !== null && page >= totalPages) { finished = true; break; }
+    if (totalPages === null && total !== null && seen.size >= total) { finished = true; break; }
+    if (items.length < 25) { finished = true; break; } // a short page is the last one, whatever the total counts (a filter such as env=preview can return fewer than total_count)
   }
-  if (total !== null && seen.size < total) throw new CfError(`${pathBase}: the listing is incomplete (${seen.size} of ${total} items read)`, 0);
+  if (stuck || !finished) throw new CfError(`${pathBase}: the listing is incomplete (${seen.size}${total !== null ? ` of ${total}` : ""} items read, the pages did not advance or did not end)`, 0);
   return [...seen.values()];
 }
 
@@ -114,7 +115,9 @@ export async function teardown({ fetchImpl = fetch, token, accountId, pr, projec
     }
     if (a < attempts) await sleep(waitMs);
   }
-  const ok = errors.length === 0 && remaining.length === 0;
+  // The verification (a fresh listing of all three) is the authority: a delete call that answered an error but left nothing behind (it did its work before the error) is a warning, not a failed job.
+  const ok = remaining.length === 0;
+  if (ok && errors.length) lines.push(`warning: ${errors.length} delete call(s) answered an error, but the verification found nothing left: ${errors.join("; ")}`);
   return { ok, lines, remaining, errors };
 }
 
@@ -135,7 +138,8 @@ const summary = (text) => { process.stdout.write(text + "\n"); if (process.env.G
 
 async function main() {
   const [mode, arg] = process.argv.slice(2);
-  const token = String(process.env.CLOUDFLARE_API_TOKEN || "").replace(/[\r\n ]/g, ""), accountId = String(process.env.CLOUDFLARE_ACCOUNT_ID || "").replace(/[\r\n ]/g, "");
+  const clean = (v) => String(v || "").replace(/[\r\n "']/g, ""); // the deploy strips quotes from the secrets too
+  const token = clean(process.env.CLOUDFLARE_API_TOKEN), accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
   const project = process.env.PAGES_PROJECT_NAME || "leeroy-board";
   if (!token || !accountId) {
     console.log("::notice title=Cloudflare cleanup skipped::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so this workflow could not have created a preview. See docs/runbooks/ci-secrets.md.");
@@ -143,7 +147,7 @@ async function main() {
   }
   if (mode === "teardown") {
     const r = await teardown({ token, accountId, pr: arg, project });
-    summary([`### Preview teardown, PR ${arg}`, "", ...r.lines.map((l) => `- ${l}`), "", r.ok ? "**Result: torn down and verified.**" : `**Result: FAILED. Still there or failed: ${[...r.errors, ...r.remaining].join("; ")}.** Every step is idempotent: re-run this job, or tell the owner (a manual delete is the owner's, never a session's).`].join("\n"));
+    summary([`### Preview teardown, PR ${arg}`, "", ...r.lines.map((l) => `- ${l}`), "", r.ok ? "**Result: torn down and verified.**" : `**Result: FAILED. Still there or failed: ${[...r.remaining, ...r.errors].join("; ")}.** Every step is idempotent: re-run this job, or tell the owner (a manual delete is the owner's, never a session's).`].join("\n"));
     process.exit(r.ok ? 0 : 1);
   }
   if (mode === "leaks") {
