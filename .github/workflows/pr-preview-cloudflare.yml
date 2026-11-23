@@ -526,7 +526,7 @@ jobs:
               `| **Database (Cloudflare D1)** | \`${dbName}\` | 🟢 Seeded & Isolated |`,
               `| **AI Model** | None: Workers AI is switched off in previews (placeholder answers, no model is called) | 🟢 No keys, no AI spend |`,
               "",
-              "_This environment is 100% isolated from production, has **zero external AI API keys injected**, cannot call Workers AI (it answers a placeholder), and will be **automatically torn down** when this PR is merged, closed or loses the `ci-full` label._"
+              "_Own Worker, D1 database and Pages deployment, separate from production: no production data or secrets, no external AI API keys, and it cannot call Workers AI (it answers a placeholder). It shares the account's Free-plan limits. It is torn down, and the deletion checked, when this PR is merged, closed or loses the `ci-full` label._"
             ].join("\n");
 
             const { data: comments } = await github.rest.issues.listComments({
