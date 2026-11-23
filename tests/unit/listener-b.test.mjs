@@ -650,3 +650,20 @@ test("when the link cannot be written the turn is not created at all (fail close
   assert.equal(count(DB, "SELECT count(*) c FROM ask_turns"), 0);
   assert.equal(decisions(DB)[0], "store-failed"); assert.equal(posts.length, 0);
 });
+
+test("ROSTER_FROM_D1 closed (flag service down, interlock open): an untagged question is NOT sent to the classifier, and is filed as an ignore with reason roster-closed", async () => {
+  const { setStep2ReadyForTests } = await import("../../infrastructure/worker/roster-source.js");
+  const DB = schemaDb(); seed(DB);
+  setStep2ReadyForTests(true);
+  try {
+    const down = mkEnv(DB, { FLAGS: { getBooleanValue: async () => { throw new Error("flag service down"); } } });
+    const d = await run(down, ev({ content: "what is the cooldown on Divine Shield" }), "dry");
+    assert.equal(classify.length, 0, "nothing reached the classifier");
+    assert.equal(anth.length, 0);
+    assert.deepEqual(decisions(DB), ["u:ignore:roster-closed"], String(d));
+    // control: the flag answers false (a definite flag-off) and the classifier is reached exactly as before
+    const off = mkEnv(DB, { FLAGS: { getBooleanValue: async () => false } });
+    await run(off, ev({ content: "what is the cooldown on Divine Shield" }), "dry");
+    assert.equal(classify.length, 1);
+  } finally { setStep2ReadyForTests(null); }
+});

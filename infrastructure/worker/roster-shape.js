@@ -4,7 +4,7 @@
 //
 // The row is private (config.js PRIVATE_EXACT) and written by PUT /api/config/party_roster with the admin token. It is the only place real names live once
 // the migration in docs/adr/0002-member-roster-from-d1.md is finished. This file holds the shape, never a name.
-import { skeleton } from "./privacy/skeleton.js";
+import { skeleton, collapse, leet } from "./privacy/skeleton.js";
 
 const SLUG = /^[a-z0-9-]{1,32}$/;
 const MAX_MEMBERS = 50;
@@ -64,6 +64,60 @@ export function validateRosterConfig(v) {
     for (const a of m.first_names || []) { e = badNameWord(a, "first name") || claim(a, idx, "first name"); if (e) return e; }
   }
   if (typeof v.default_admin !== "string" || !slugs.has(v.default_admin)) return "default_admin must be the slug of one of the members";
+  return null;
+}
+
+// ---- the built-in members as people (ADR 0002 F4) -------------------------------------------------------------------------------------------------------
+// The row validator above only compares row members with each other. A row member may CHANGE a built-in member (same slug) but must not reuse a built-in person's slug,
+// display name, alias or first name under another slug: two list entries for one name, and a redaction key owned by two people. builtInPeople turns the built-in lists into
+// [{ id, words: string[] }] (id: the built-in slug), joining a roster entry to a sheet member by the skeleton of the display name and the name. firstNamesFor(rosterEntry, index)
+// is the runtime first-name source (privacy/roster-config.js), or null. Pure; never mutates.
+export function builtInPeople(partyMembers, rosterData, firstNamesFor = null) {
+  const people = [];
+  const byKey = new Map();
+  for (const p of partyMembers || []) {
+    const person = { id: String(p.slug), name: String(p.name), words: [String(p.slug), String(p.name)] };
+    people.push(person);
+    byKey.set(skeleton(String(p.name)), person);
+  }
+  (rosterData || []).forEach((r, i) => {
+    let person = byKey.get(skeleton(String(r.display)));
+    if (!person) { person = { id: skeleton(String(r.display)), name: String(r.display), words: [String(r.display)] }; people.push(person); byKey.set(person.id, person); }
+    person.words.push(String(r.display), ...(r.aliases || []).map(String));
+    if (typeof firstNamesFor === "function") { try { person.words.push(...(firstNamesFor(r, i) || []).map(String)); } catch { /* a broken source adds nothing */ } }
+  });
+  return people;
+}
+
+// The keys a word can be matched under by the tokeniser: its skeleton, with doubled letters collapsed, and with look-alike digits read as letters (both readings of "1"). A row word
+// collides with a built-in word when any of these keys is shared, so "Sannta", "S4nta" or "5anta" cannot sit beside "Santa" (the tokeniser would give them one token).
+const keysOf = (w) => {
+  const sk = skeleton(String(w));
+  if (!sk) return [];
+  return [...new Set([sk, collapse(sk), collapse(leet(sk, "i")), collapse(leet(sk, "l"))])];
+};
+
+// -> an error string naming the row member and the word (never the built-in person), or null. A word is a slug, name, alias or first name of a row member. Two refusals:
+//   - the word shares a key (keysOf) with a word of a built-in person whose id is not that row member's slug;
+//   - the row member has a built-in's slug but a different name: a built-in may be changed under its own slug (build, aliases, first names) but not RENAMED, because the redaction layer
+//     would then hold the old built-in name and the new name as two people sharing the slug key (privacy: duplicate name key), and every tokenised research ask would go degraded.
+export function builtInCollision(cfg, people) {
+  if (!cfg || !Array.isArray(cfg.members) || !Array.isArray(people)) return null;
+  const owner = new Map(); // key -> Set of built-in ids that own it
+  for (const p of people) for (const w of p.words) for (const k of keysOf(w)) { if (!owner.has(k)) owner.set(k, new Set()); owner.get(k).add(p.id); }
+  for (const m of cfg.members) {
+    if (!m || typeof m !== "object") continue;
+    const own = people.find((p) => p.id === m.slug);
+    if (own && typeof m.name === "string" && skeleton(m.name) !== skeleton(own.name)) return `member "${String(m.slug).slice(0, 32)}": a built-in member can be changed under its own slug but not renamed`;
+    const words = [["slug", m.slug], ["name", m.name], ...(Array.isArray(m.aliases) ? m.aliases : []).map((a) => ["alias", a]), ...(Array.isArray(m.first_names) ? m.first_names : []).map((a) => ["first name", a])];
+    for (const [what, w] of words) {
+      if (typeof w !== "string") continue;
+      for (const k of keysOf(w)) {
+        const ids = owner.get(k);
+        if (ids && [...ids].some((id) => id !== m.slug)) return `member "${String(m.slug).slice(0, 32)}": ${what} "${w.slice(0, 60)}" belongs to a built-in member under another slug; a row may change a built-in member only under that member's own slug`;
+      }
+    }
+  }
   return null;
 }
 

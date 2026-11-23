@@ -211,6 +211,7 @@ const strings = (v, out = []) => {
 // Called by buildAnswerInputs in research mode, BEFORE the prompt blocks are rendered. Returns the sheets to render (free-text fields that fail the guard removed),
 // the member list for the name map, and `mandatory`: raw strings that must pass the guard before Claude is called. Never throws: { failed: true } means skip Claude.
 export function researchParty(sheets, stateMap, { real = false, env = null, roster = null } = {}) {
+  if (roster && roster.closed === true) return { failed: true, closed: true, sheets: Array.isArray(sheets) ? sheets : [], mandatory: [], dropped: 0 }; // ROSTER_FROM_D1 on and the roster cannot be resolved: no redaction roster, so no Claude call (ai-models.js)
   try {
     const list = Array.isArray(sheets) ? sheets : [];
     const members = researchMembersFor(list, roster ? roster.privacyMembers : null); // roster: this operation's D1 snapshot (roster-source.js) or null; unioned with the built-ins

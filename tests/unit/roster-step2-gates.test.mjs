@@ -150,14 +150,14 @@ test("G4 no lockout: a built-in member the row omits keeps the member match, and
   reset();
 });
 
-test("G5 a row without a usable default admin is refused on write and on read, and the built-in admin answers", async () => {
+test("G5 a row without a usable default admin is refused on write and on read, and the roster is closed (F2)", async () => {
   reset();
   for (const bad of [{ ...ROW_OBJ, default_admin: "nobody" }, { ...ROW_OBJ, default_admin: undefined }, { ...ROW_OBJ, default_admin: ["cask-wren"] }, { ...ROW_OBJ, members: [] }]) {
     assert.equal(typeof validateConfigValue("party_roster", bad), "string", "refused at PUT time");
     invalidateConfigCache();
     const env = await envOf({ flagValues: [true], kv: { party_roster: JSON.stringify(bad) } });
-    assert.equal(await rosterSnapshot(env, {}), null, "ignored at read time");
-    assert.equal(JSON.parse((await me(env, "admin")).body).slug, PARTY_MEMBERS[3].slug, "the built-in default admin answers");
+    assert.equal((await rosterSnapshot(env, {})).closed, true, "an invalid row at read time closes the roster");
+    assert.equal((await me(env, "admin")).status, 401, "nobody is the default admin, and the built-in admin does not answer");
   }
   // a row that does not list the built-in admin but names another one is fine: the built-in member keeps their member match (G4), the admin is the configured one
   assert.equal(validateConfigValue("party_roster", ROW_OBJ), null);

@@ -10,6 +10,28 @@
 export const FLAG_TIMEOUT_MS = 100;
 export const legacyOn = (env, key) => String((env && env[key]) || "").trim().toLowerCase() === "on";
 
+// The same question as flagOn, but the answer says whether it WAS an answer: "on", "off" (a definite false, or no binding and the legacy variable not "on"), or "unknown" (the
+// binding threw, rejected, timed out or answered something that is not a boolean). flagOn folds "unknown" into false; a caller that must fail closed when it cannot ask (the roster
+// gate, ADR 0002 F2) uses this. flagOn itself is unchanged.
+export async function flagState(env, key, evalContext) {
+  const b = env && env.FLAGS;
+  if (b && typeof b.getBooleanValue === "function") {
+    let timer;
+    try {
+      const ask = evalContext === undefined ? b.getBooleanValue(key, false) : b.getBooleanValue(key, false, evalContext);
+      const late = new Promise((resolve) => { timer = setTimeout(() => resolve("late"), FLAG_TIMEOUT_MS); });
+      const v = await Promise.race([Promise.resolve(ask).then((x) => ({ v: x }), () => "failed"), late]);
+      if (v === "late" || v === "failed") return "unknown";
+      return v.v === true ? "on" : v.v === false ? "off" : "unknown";
+    } catch {
+      return "unknown";
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return legacyOn(env, key) ? "on" : "off";
+}
+
 export async function flagOn(env, key, evalContext) {
   const b = env && env.FLAGS;
   if (b && typeof b.getBooleanValue === "function") {

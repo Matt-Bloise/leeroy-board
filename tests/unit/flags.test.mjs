@@ -57,7 +57,7 @@ test("every flag key the Worker reads through flagOn is listed in the runbook, s
   const dir = path.join(ROOT, "infrastructure/worker");
   const keys = new Set();
   for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "flags.js" && n !== "moments.js")) {
-    for (const m of fs.readFileSync(path.join(dir, f), "utf8").matchAll(/\bflagOn\(\s*env\s*,\s*"([^"]+)"/g)) keys.add(m[1]);
+    for (const m of fs.readFileSync(path.join(dir, f), "utf8").matchAll(/\b(?:flagOn|flagState)\(\s*env\s*,\s*"([^"]+)"/g)) keys.add(m[1]); // flagState: the strict reader of the roster gate (flags.js), same key rule
   }
   assert.deepEqual([...keys].sort(), ["CARD_IMAGES", "D1_FEED", "INTEREST_NUDGES", "ROSTER_FROM_D1"]);
   // B51: the deploy creates missing Flagship flags from ONE committed list (infrastructure/flagship-flags.txt): every key the Worker reads must be in it

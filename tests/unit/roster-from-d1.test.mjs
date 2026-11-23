@@ -119,7 +119,6 @@ const OFF_VARIANTS = [
   ['flag "off" and a party_roster row present', { flag: "off", kv: { party_roster: ROW } }],
   ["unset and a party_roster row present", { kv: { party_roster: ROW } }],
   ["Flagship says false while the legacy var says on", { flag: "on", flags: { value: false }, kv: { party_roster: ROW } }],
-  ["Flagship says a non-boolean", { flag: "on", flags: { value: "true" }, kv: { party_roster: ROW } }],
 ];
 
 test("flag off: admin token, member key, anonymous, party members and roster are identical whatever D1 holds, and equal to the built-in lists", async () => {
@@ -194,24 +193,37 @@ test("flag on, party document adds a person: merged after the D1 roster and the 
   reset();
 });
 
-test("flag on but the row is absent, unreadable or invalid: fall back to today's behaviour (built-in roster, array-position admin)", async () => {
-  for (const kv of [{}, { party_roster: "{not json" }, { party_roster: JSON.stringify({ ...FICTION, default_admin: "nobody" }) }, { party_roster: JSON.stringify({ members: [] }) }]) {
+test("flag on and the row DEFINITELY absent: the built-ins answer, as with the flag off (ADR 0002 step 1; absent becomes closed only at step 3)", async () => {
+  reset();
+  const env = await envOf({ flag: "on", kv: {} });
+  assert.equal(await rosterSnapshot(env), null);
+  assert.deepEqual(JSON.parse((await me(env, "admin")).body).slug, PARTY_MEMBERS[3].slug);
+  assert.deepEqual(await loadPartyMembers(env), PARTY_MEMBERS);
+  assert.deepEqual((await privacyOf(env)).map((m) => m.display), ROSTER_DATA.map((r) => r.display), "redaction keeps covering the built-in names");
+  reset();
+});
+
+test("flag on but the row is unreadable or invalid: the roster is CLOSED (ADR 0002 F2): nobody is a member or the admin, never the built-ins", async () => {
+  for (const [kv, reason] of [[{ party_roster: "{not json" }, "row-unreadable"], [{ party_roster: JSON.stringify({ ...FICTION, default_admin: "nobody" }) }, "row-invalid"], [{ party_roster: JSON.stringify({ members: [] }) }, "row-invalid"]]) {
     reset();
     const env = await envOf({ flag: "on", kv });
-    assert.equal(await rosterSnapshot(env), null);
-    assert.deepEqual(JSON.parse((await me(env, "admin")).body).slug, PARTY_MEMBERS[3].slug);
-    assert.deepEqual(await loadPartyMembers(env), PARTY_MEMBERS);
-    assert.deepEqual((await privacyOf(env)).map((m) => m.display), ROSTER_DATA.map((r) => r.display), "redaction keeps covering the built-in names");
+    const snap = await rosterSnapshot(env);
+    assert.equal(snap.closed, true);
+    assert.equal(snap.reason, reason);
+    assert.equal((await me(env, "admin")).status, 401, "the admin token is no member");
+    assert.deepEqual(await loadPartyMembers(env), []);
+    assert.deepEqual(await loadRoster(env), []);
   }
   reset();
 });
 
-test("flag on: a DB error while reading the roster is not an outage; the built-ins answer", async () => {
+test("flag on: a DB error while reading the roster closes it (the old built-in fall-back is gone for the flag-on path)", async () => {
   reset();
   const env = await envOf({ flag: "on" });
   env.DB = { prepare: () => { throw new Error("d1 down"); } };
-  assert.equal(await rosterSnapshot(env), null);
-  assert.deepEqual(await loadPartyMembers(env), PARTY_MEMBERS);
+  const snap = await rosterSnapshot(env);
+  assert.equal(snap.closed, true);
+  assert.deepEqual(await loadPartyMembers(env), []);
   reset();
 });
 
@@ -492,11 +504,11 @@ test("interlock source guard: only roster-source.js names setStep2ReadyForTests 
 test("interlock pin: resolve() checks the constant-backed step2Ready() before the flag, and nothing else (env, KV, D1) can open it", () => {
   const src = fs.readFileSync(path.join(ROOT, "infrastructure/worker/roster-source.js"), "utf8");
   const code = codeOnly(src);
-  const start = code.indexOf("async function resolve(env) {");
+  const start = code.indexOf("async function decide(env) {");
   const end = code.indexOf("const read = await loadConfigKeyStrict", start);
   assert.ok(start >= 0 && end > start);
   const head = code.slice(start, end).replace(/\/\/.*$/gm, "").replace(/\s+/g, " ").trim();
-  assert.equal(head, 'async function resolve(env) { try { if (!step2Ready()) return null; if (!(await flagOn(env, "ROSTER_FROM_D1"))) return null;');
+  assert.equal(head, 'async function decide(env) { try { if (!step2Ready()) return out(null, "built-in", "interlock closed (the flag is not read)"); const state = await flagState(env, "ROSTER_FROM_D1"); if (state === "off") return out(null, "built-in", "flag off"); if (state !== "on") return out(closed("flag-unknown"), "closed", "flag-unknown");');
   // the only code lines that name the constant: its declaration and the one reader; the only setter is the test hook.
   const refs = code.split("\n").filter((l) => /ROSTER_STEP2_READY/.test(l)).map((l) => l.trim());
   assert.deepEqual(refs, [
