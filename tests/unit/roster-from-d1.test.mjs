@@ -174,7 +174,7 @@ test("flag on: the admin token resolves to the CONFIGURED default admin, not arr
   reset();
 });
 
-test("flag on: a signed-in member matches the D1 roster; the loaders list the row first and then every built-in the row omits (no lockout until step 3)", async () => {
+test("flag on: a signed-in member matches the D1 roster; the loaders list the row first and then every built-in the row omits (no lockout until step 6)", async () => {
   reset();
   const env = await envOf({ flag: "on", kv: { party_roster: ROW }, memberSlug: "brindle-moth" });
   const m = await me(env, "member");
@@ -193,7 +193,7 @@ test("flag on, party document adds a person: merged after the D1 roster and the 
   reset();
 });
 
-test("flag on and the row DEFINITELY absent: the built-ins answer, as with the flag off (ADR 0002 step 1; absent becomes closed only at step 3)", async () => {
+test("flag on and the row DEFINITELY absent: the built-ins answer, as with the flag off (ADR 0002 step 1; absent becomes closed only at step 6)", async () => {
   reset();
   const env = await envOf({ flag: "on", kv: {} });
   assert.equal(await rosterSnapshot(env), null);

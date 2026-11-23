@@ -380,3 +380,11 @@ test("the roster source is for the admin token only: a request without it gets t
   assert.equal("rosterSource" in r.json, false);
   reset();
 });
+
+test("the roster comments name the right ADR step: the built-ins are removed at step 6, step 3 writes the real row", () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+  for (const f of ["infrastructure/worker/roster-source.js", "infrastructure/worker/roster-shape.js"]) {
+    const src = fs.readFileSync(path.join(root, f), "utf8");
+    assert.doesNotMatch(src, /step 3 (removes|gate)|until step 3 removes/, `${f} says step 3 where the ADR says step 6`);
+  }
+});

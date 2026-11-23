@@ -1,12 +1,12 @@
 // Where the roster comes from when the flag ROSTER_FROM_D1 is on (ADR 0002). Flag off: nothing here reads D1 and every caller keeps its built-in list.
 // Flag on and a valid kv_state 'party_roster' row: the roster, the default admin and the redaction names come from that row, UNIONED with the built-ins (a built-in
 // member the row omits keeps the member match, and the redaction roster always covers the built-ins: see withBuiltIns in roster-shape.js and researchMembers in
-// privacy/roster-config.js). Flag off (a definite false), the interlock closed, or a flag-on row that is DEFINITELY absent (the D1 read succeeded and found none; ADR 0002 step 1, until step 3 removes the built-ins): null, so every caller uses the built-in lists exactly as with the flag off. Never throws.
+// privacy/roster-config.js). Flag off (a definite false), the interlock closed, or a flag-on row that is DEFINITELY absent (the D1 read succeeded and found none; ADR 0002 step 1, until step 6 removes the built-ins): null, so every caller uses the built-in lists exactly as with the flag off. Never throws.
 //
 // FAIL CLOSED (ADR 0002 F2, a pre-flip gate). With the interlock open, if the flag cannot be asked (timeout, throw, rejection, a non-boolean answer), or the flag is on and the
 // row is unreadable, invalid or collides with a built-in member (F4), the snapshot is the CLOSED marker { closed: true, reason, ...empty lists }, never null. null means
-// "the truth is known and it is the built-ins" (flag off, or flag on with the D1 read succeeding and finding NO row: step 1 behaviour until step 3 removes the built-ins, where absent becomes
-// closed: ADR 0002 step 3 gate); closed means "the roster is unknown: act as nobody". What closed means for a request (every consumer checks `.closed` first):
+// "the truth is known and it is the built-ins" (flag off, or flag on with the D1 read succeeding and finding NO row: step 1 behaviour until step 6 removes the built-ins, where absent becomes
+// closed: ADR 0002 step 6 gate); closed means "the roster is unknown: act as nobody". What closed means for a request (every consumer checks `.closed` first):
 //   - member auth (index.js resolveMemberAuth): no member, not even a signed-in one, and no default admin: the member routes answer their unauthorised response. The admin-only
 //     routes (adminGate: PUT /api/config/party_roster included) read the admin token only and keep working, so an operator can repair the row;
 //   - party-source loadPartyMembers and loadRoster: the empty list (also when the D1 read itself fails), never the built-ins;
@@ -57,7 +57,7 @@ async function decide(env) {
     if (state === "off") return out(null, "built-in", "flag off");
     if (state !== "on") return out(closed("flag-unknown"), "closed", "flag-unknown");
     const read = await loadConfigKeyStrict(env, "party_roster");
-    if (read.status === "absent") return out(null, "built-in", "row absent"); // the D1 read SUCCEEDED and found no row: until step 3 removes the built-ins this is today's behaviour (nothing about identity or privacy is unknown)
+    if (read.status === "absent") return out(null, "built-in", "row absent"); // the D1 read SUCCEEDED and found no row: until step 6 removes the built-ins this is today's behaviour (nothing about identity or privacy is unknown)
     if (read.status !== "ok") return out(closed("row-unreadable"), "closed", "row-unreadable");
     if (validateRosterConfig(read.value) !== null) return out(closed("row-invalid"), "closed", "row-invalid");
     if (builtInCollision(read.value, builtInPeople(PARTY_MEMBERS, ROSTER_DATA, getFirstNameSource())) !== null) return out(closed("row-collides-with-built-in"), "closed", "row-collides-with-built-in");
