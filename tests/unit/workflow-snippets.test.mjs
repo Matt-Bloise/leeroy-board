@@ -125,6 +125,32 @@ test("the teardown probe, run for real: yes when the D1 database or the Worker e
   }
 });
 
+// A job stays off on a workflow_dispatch (github.event.pull_request and github.event.action are empty there) when its own `if` reads one of them and has no status function that overrides a skipped need,
+// or when it needs only jobs that stay off by the same rule and its own `if` has no status function.
+export function gatedOnPullRequest(jobs, name, seen = new Set()) {
+  if (seen.has(name)) return false;
+  const def = jobs[name], cond = String(def.if || "");
+  if (/\b(always|failure|cancelled|success)\s*\(/.test(cond)) return false;
+  if (/github\.event\.pull_request|github\.event\.action/.test(cond)) return true;
+  const needs = [].concat(def.needs || []);
+  return needs.length > 0 && needs.every((n) => jobs[n] && gatedOnPullRequest(jobs, n, new Set([...seen, name])));
+}
+
+test("gatedOnPullRequest rejects what the old check let through: a job that needs any job, an if with always(), a job with no if", () => {
+  const jobs = {
+    base: { if: "github.event.pull_request.head.repo.full_name == github.repository" },
+    open: { },
+    dep: { needs: "open" },
+    ok: { needs: ["base"] },
+    forced: { needs: ["base"], if: "always() && needs.base.result == 'success'" },
+  };
+  assert.equal(gatedOnPullRequest(jobs, "base"), true);
+  assert.equal(gatedOnPullRequest(jobs, "ok"), true);
+  assert.equal(gatedOnPullRequest(jobs, "open"), false);
+  assert.equal(gatedOnPullRequest(jobs, "dep"), false);
+  assert.equal(gatedOnPullRequest(jobs, "forced"), false);
+});
+
 // ---- the manual teardown of a closed pull request
 const pr = (state, status = 200) => async (url) => ({ ok: status >= 200 && status < 300, status, json: async () => ({ state }), url });
 const refuse = async (opts, re) => assert.rejects(() => assertPrClosed({ ghToken: "t", repo: "o/r", ...opts }), re);
@@ -174,12 +200,7 @@ test("the dispatch job: manual input, master only, number via the environment, r
   assert.ok(runs.some((r) => /preview-cleanup\.mjs teardown-closed "\$PR_NUMBER"/.test(r)));
   assert.equal(job.permissions["pull-requests"], "read", "the dispatch job cannot write to pull requests");
   assert.equal(job.permissions.contents, "read");
-  for (const [name, def] of Object.entries(w.jobs)) {
-    if (name === "teardown-closed-pr") continue;
-    const text = String(def.if || "") + " " + String(def.needs || "");
-    assert.ok(/github\.event\.pull_request|github\.event\.action/.test(String(def.if || "")) || def.needs, `job ${name} cannot start on a workflow_dispatch`);
-    assert.ok(text.length > 1, name);
-  }
+  for (const name of Object.keys(w.jobs)) if (name !== "teardown-closed-pr") assert.ok(gatedOnPullRequest(w.jobs, name), `job ${name} cannot be shown to stay off on a workflow_dispatch`);
   assert.match(w.concurrency.group, /workflow_dispatch/);
   assert.match(w.concurrency["cancel-in-progress"], /workflow_dispatch/);
 });
