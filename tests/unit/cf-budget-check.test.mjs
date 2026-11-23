@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { parse } from "yaml";
-import { validateBudget, countToday, preflight, overrideLabels, utcDay } from "../../tools/cf-budget-check.mjs";
+import { validateBudget, countToday, preflight, overrideLabels, utcDay, jobDidWork } from "../../tools/cf-budget-check.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const budget = validateBudget(JSON.parse(readFileSync(path.join(ROOT, ".github", "cf-budget.json"), "utf8")));
@@ -35,7 +35,7 @@ function fakeGh({ runs = {}, prsOfCommit = [], fail = null, perPage = 100, jobsS
   };
   return { fetchImpl, calls };
 }
-const job = (name, conclusion = "success", started = true) => ({ name, conclusion, started_at: started ? "2026-11-23T01:00:00Z" : null });
+const job = (name, conclusion = "success", started = true, steps) => ({ name, conclusion, status: "completed", started_at: started ? "2026-11-23T01:00:00Z" : null, ...(steps ? { steps: steps.map((c) => ({ conclusion: c })) } : {}) });
 const run = (id, jobs, event = "pull_request", at = "2026-11-23T01:00:00Z") => ({ id, event, created_at: at, jobs });
 const base = { token: "t", repo: "o/r", runId: "999", now: NOW };
 
@@ -89,7 +89,6 @@ test("a deploy counts push and manual runs; the label can be on a pull request m
 test("FAIL CLOSED: an API error, an incomplete jobs list, a malformed answer or a network error refuses, and only the label lets it through", async () => {
   const cases = [
     fakeGh({ fail: (p) => /\/runs$/.test(p) }),
-    fakeGh({ runs: { "pr-preview-cloudflare.yml": [run(1, [job(SPIN)])] }, jobsShort: true }),
     { fetchImpl: async () => { throw new Error("socket hang up"); } },
     { fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ nonsense: true }) }) },
     { fetchImpl: async () => ({ ok: true, status: 200, json: async () => { throw new Error("not json"); } }) },
@@ -144,4 +143,61 @@ test("a runs list that the API cuts short (fewer runs readable than total_count)
     return { ok: true, status: 200, json: async () => ({ total_count: 1, jobs: [job("x")] }) };
   };
   await assert.rejects(countToday({ ...base, fetchImpl, day: utcDay(NOW), workflowFile: budget.workflows.spinUp, jobName: SPIN, events: ["pull_request"] }), /cut short|capped/);
+});
+
+// The real history of UTC 2026-11-23 as GitHub returned it (the job lists of the runs that matter), plus a started-then-failed run. 2 of 3 is the truth; the gate once said 3.
+const REAL = {
+  teardownOnly: run(45087359183, [job("Tear Down Ephemeral PR Environment", "success", true, ["success", "success", "skipped", "success"]), job("Fork policy and classify", "skipped", true), job(SPIN, "skipped", true)]),
+  realSuccess1: run(45094433395, [job("Fork policy and classify", "success", true, ["success"]), job(SPIN, "success", true, ["success", "success", "skipped", "success"])]),
+  cancelledBeforeFirstStep: run(45094433420, [job("Fork policy and classify", "cancelled", true, []), job(SPIN, "cancelled", true, [])]),
+  realSuccess2: run(45096702412, [job("Fork policy and classify", "success", true, ["success"]), job(SPIN, "success", true, ["success", "success", "skipped", "success"])]),
+  refusedAtGate: run(45096972399, [job("Cloudflare daily budget pre-flight (spin-up)", "failure", true, ["success", "failure", "skipped"]), job(SPIN, "skipped", true)]),
+  startedThenFailed: run(45097000001, [job(SPIN, "failure", true, ["success", "failure", "skipped"])]),
+};
+const countSpin = (runs, extra = {}) => countToday({ ...base, runId: "999", fetchImpl: fakeGh({ runs: { "pr-preview-cloudflare.yml": runs } }).fetchImpl, day: utcDay(NOW), workflowFile: budget.workflows.spinUp, jobName: SPIN, events: ["pull_request"], ...extra });
+
+test("today's real history counts 2 of 3: a teardown-only run, a duplicate cancelled before its first step and a run refused at the gate count zero", async () => {
+  const history = [REAL.teardownOnly, REAL.realSuccess1, REAL.cancelledBeforeFirstStep, REAL.realSuccess2];
+  assert.equal(await countSpin(history), 2);
+  const r = await preflight({ ...base, kind: "spinup", budget, fetchImpl: fakeGh({ runs: { "pr-preview-cloudflare.yml": [...history, REAL.refusedAtGate] } }).fetchImpl, eventName: "pull_request", readEvent: () => ({ pull_request: { labels: [] } }) });
+  assert.equal(r.ok, true, "the next spin-up goes through by itself, no label");
+  assert.match(r.lines.join("\n"), /: 2 of 3/);
+});
+
+test("each kind of run on its own: teardown-only 0, real success 1, cancelled before the first step 0, refused at the gate 0, started then failed 1", async () => {
+  assert.equal(await countSpin([REAL.teardownOnly]), 0);
+  assert.equal(await countSpin([REAL.realSuccess1]), 1);
+  assert.equal(await countSpin([REAL.cancelledBeforeFirstStep]), 0);
+  assert.equal(await countSpin([REAL.refusedAtGate]), 0);
+  assert.equal(await countSpin([REAL.startedThenFailed]), 1, "it spent the deploy");
+  const cancelledMidway = run(45097000002, [job(SPIN, "cancelled", true, ["success", "success", "cancelled"])]);
+  assert.equal(await countSpin([cancelledMidway]), 1, "started real work, then cancelled: counts");
+  const stillRunning = run(45097000003, [{ name: SPIN, status: "in_progress", conclusion: null, started_at: "2026-11-23T02:00:00Z", steps: [{ conclusion: "success" }, { conclusion: null }] }]);
+  assert.equal(await countSpin([stillRunning]), 1, "a spin-up running right now counts");
+  assert.equal(jobDidWork({ name: SPIN, status: "queued", conclusion: null }), true, "waiting to run counts (it will spend)");
+});
+
+test("the deploy count is as honest: a deploy counts when the deploy job did work; refused at the gate (job skipped) or cancelled before its first step does not", async () => {
+  const deploys = [
+    run(1, [job("Cloudflare daily budget pre-flight (deploy)", "success", true, ["success"]), job(DEPLOY, "success", true, ["success", "success", "success"])], "push"),
+    run(2, [job("Cloudflare daily budget pre-flight (deploy)", "failure", true, ["success", "failure"]), job(DEPLOY, "skipped", true)], "push"),
+    run(3, [job(DEPLOY, "cancelled", true, [])], "push"),
+    run(4, [job(DEPLOY, "failure", true, ["success", "failure"])], "workflow_dispatch"),
+  ];
+  const gh = fakeGh({ runs: { "deploy-cloudflare.yml": deploys } });
+  const n = await countToday({ ...base, fetchImpl: gh.fetchImpl, day: utcDay(NOW), workflowFile: budget.workflows.deploy, jobName: DEPLOY, events: ["push", "workflow_dispatch"] });
+  assert.equal(n, 2, "the real deploy and the one that started and failed");
+});
+
+test("a run whose jobs cannot be read is counted (fail closed) and named in the log", async () => {
+  const gh = fakeGh({ runs: { "pr-preview-cloudflare.yml": [REAL.realSuccess1, run(777, [job(SPIN)])] }, fail: (p) => /runs\/777\/jobs$/.test(p) });
+  const notes = [];
+  assert.equal(await countToday({ ...base, fetchImpl: gh.fetchImpl, day: utcDay(NOW), workflowFile: budget.workflows.spinUp, jobName: SPIN, events: ["pull_request"], notes }), 2);
+  assert.match(notes.join(" "), /run 777.*could not be read.*counted/);
+  const short = fakeGh({ runs: { "pr-preview-cloudflare.yml": [run(888, [job(SPIN)])] }, jobsShort: true });
+  const n2 = [];
+  assert.equal(await countToday({ ...base, fetchImpl: short.fetchImpl, day: utcDay(NOW), workflowFile: budget.workflows.spinUp, jobName: SPIN, events: ["pull_request"], notes: n2 }), 1);
+  assert.match(n2.join(" "), /run 888/);
+  const r = await preflight({ ...base, kind: "spinup", budget, fetchImpl: gh.fetchImpl, eventName: "pull_request", readEvent: () => ({ pull_request: { labels: [] } }) });
+  assert.match(r.lines.join("\n"), /run 777/, "the preflight log names the run");
 });

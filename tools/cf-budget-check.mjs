@@ -4,8 +4,8 @@
 // env: GH_TOKEN, GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_EVENT_NAME, GITHUB_EVENT_PATH, GITHUB_SHA; DEPLOY_BUDGET_OVERRIDE=true (the workflow_dispatch input of the deploy workflow).
 //
 // The budget is the repo-tracked file .github/cf-budget.json (spinUpsPerDay, deployingMergesPerDay, the names of the two jobs and workflows it counts, the override label). Counts are for the UTC day:
-// the runs of the named workflow created today (GitHub API, read-only, no Cloudflare call), minus this run, that have a started job of the named kind. A job that was skipped does not count; a job that
-// started and failed or was cancelled does (it spent the Worker deploy, the secrets and the D1 rows). Re-runs count: each is a run attempt of its own run, and the run counts once per attempt's job.
+// the runs of the named workflow created today (GitHub API, read-only, no Cloudflare call), minus this run, whose job of the named kind did work (jobDidWork). A skipped job does not count, nor a job cancelled
+// before its first step (a superseded duplicate); a job that started and then failed or was cancelled does (it spent the Worker deploy, the secrets and the D1 rows). Re-runs count: each is a run attempt of its own run, and the run counts once per attempt's job.
 //
 // FAIL CLOSED: if the file cannot be read or is malformed, or the API cannot be read completely, or the count cannot be made, the job does not start. The one way past is the override label
 // (default `cf-budget-override`) on the pull request (for a deploy: on a pull request merged into the commit being deployed, or the `budget_override` input of a manual run). The label is for the
@@ -34,8 +34,20 @@ async function gh(fetchImpl, token, pathAndQuery) {
   try { return await res.json(); } catch { throw new Error(`GitHub API ${pathAndQuery.split("?")[0]}: the answer was not JSON`); }
 }
 
-// -> number of today's runs (other than runId) of `workflowFile` that have a started job named `jobName`. Reads every page of runs and every run's jobs; throws if any read fails or is cut short.
-export async function countToday({ fetchImpl = fetch, token, repo, workflowFile, jobName, events, runId, day }) {
+// Did this job do real work (spend the Worker deploy, the secrets, the D1 rows)? A skipped job did not. A job still waiting or running will. A finished job did when at least one of its steps ran to a
+// conclusion other than skipped or cancelled: a job cancelled before its first step (a duplicate superseded by a newer push) has no steps at all and did nothing; one that started and then failed or was
+// cancelled mid-way has a finished step and counts. When the answer does not say (no steps list), it counts: fail closed.
+export function jobDidWork(j) {
+  if (j.conclusion === "skipped") return false;
+  if (j.status && j.status !== "completed") return true;
+  if (!Array.isArray(j.steps)) return Boolean(j.started_at);
+  if (j.steps.length === 0) return j.conclusion !== "cancelled" && j.conclusion !== "skipped" && Boolean(j.started_at);
+  return j.steps.some((s) => s.conclusion !== "skipped" && s.conclusion !== "cancelled");
+}
+
+// -> number of today's runs (other than runId) of `workflowFile` that have a job named `jobName` that did work (jobDidWork). Reads every page of runs; throws if the runs list cannot be read or is cut short.
+// A run whose jobs cannot be read completely is COUNTED (fail closed) and named in `notes`, so the log says which run.
+export async function countToday({ fetchImpl = fetch, token, repo, workflowFile, jobName, events, runId, day, notes = [] }) {
   const runs = [];
   let total = 0;
   for (let page = 1; page <= 30; page++) {
@@ -50,9 +62,11 @@ export async function countToday({ fetchImpl = fetch, token, repo, workflowFile,
   const fromToday = runs.filter((r) => String(r.created_at || "").slice(0, 10) >= day && String(r.id) !== String(runId) && (!events || events.includes(r.event)));
   let n = 0;
   for (const r of fromToday) {
-    const jobs = await gh(fetchImpl, token, `/repos/${repo}/actions/runs/${r.id}/jobs?filter=all&per_page=100`);
-    if (!Array.isArray(jobs.jobs) || typeof jobs.total_count !== "number" || jobs.jobs.length < jobs.total_count) throw new Error(`GitHub API: the jobs of run ${r.id} could not be read completely`);
-    if (jobs.jobs.some((j) => j.name === jobName && j.conclusion !== "skipped" && j.started_at)) n++;
+    let jobs;
+    try { jobs = await gh(fetchImpl, token, `/repos/${repo}/actions/runs/${r.id}/jobs?filter=all&per_page=100`); }
+    catch (e) { notes.push(`run ${r.id}: its jobs could not be read (${e.message}); counted as a ${jobName} (fail closed)`); n++; continue; }
+    if (!Array.isArray(jobs.jobs) || typeof jobs.total_count !== "number" || jobs.jobs.length < jobs.total_count) { notes.push(`run ${r.id}: its jobs could not be read completely; counted as a ${jobName} (fail closed)`); n++; continue; }
+    if (jobs.jobs.some((j) => j.name === jobName && jobDidWork(j))) n++;
   }
   return n;
 }
@@ -80,9 +94,10 @@ export async function preflight({ kind, budget, fetchImpl = fetch, token, repo, 
   let labels = [];
   try { labels = await overrideLabels({ fetchImpl, token, repo, eventName, eventPath, sha, readEvent }); } catch (e) { lines.push(`could not read the labels (${e.message}); the override is not available`); }
   const hasOverride = manualOverride || labels.includes(budget.overrideLabel);
+  const notes = [];
   try {
     used = await countToday({
-      fetchImpl, token, repo, runId, day: utcDay(now),
+      notes, fetchImpl, token, repo, runId, day: utcDay(now),
       workflowFile: kind === "spinup" ? budget.workflows.spinUp : budget.workflows.deploy,
       jobName: kind === "spinup" ? budget.jobs.spinUp : budget.jobs.deploy,
       events: kind === "spinup" ? ["pull_request"] : ["push", "workflow_dispatch", "schedule"],
@@ -93,6 +108,7 @@ export async function preflight({ kind, budget, fetchImpl = fetch, token, repo, 
     lines.push(`Refusing to start (fail closed): without a count the budget cannot be checked.`);
     return { ok: false, lines, used, limit, overridden: false };
   }
+  lines.push(...notes);
   lines.push(`${what} today (UTC ${utcDay(now)}), other than this run: ${used} of ${limit}`);
   if (used < limit) return { ok: true, lines, used, limit, overridden: false };
   if (hasOverride) { lines.push(`Budget used up, but ${manualOverride ? "the budget_override input is set" : `the label ${budget.overrideLabel} is on this change`}: going ahead (a recorded decision of the session that merges).`); return { ok: true, lines, used, limit, overridden: true }; }
