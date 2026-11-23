@@ -21,7 +21,7 @@ const PR_TRIGGERS = ["pull_request", "pull_request_target", "pull_request_review
 // account owner (previews share the production Cloudflare token; there is no CLOUDFLARE_PREVIEW_API_TOKEN). BOARD_ADMIN_TOKEN and every other production secret stay forbidden.
 const PR_ALLOWED = new Set(["GITHUB_TOKEN", "CLOUDFLARE_API_TOKEN", "BOARD_PREVIEW_ADMIN_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]);
 const TOKEN_JOBS = {
-  "pr-preview-cloudflare.yml": { "preview-guard": 1, "deploy-pr-preview": 1, "teardown-pr-preview": 1 },
+  "pr-preview-cloudflare.yml": { "preview-guard": 1, "deploy-pr-preview": 1, "teardown-pr-preview": 1, "teardown-closed-pr": 1 },
   "preview-tests.yml": { "preview-secrets": 1 },
 };
 const TOKEN_RE = /(?<![\w.\/-])secrets\.CLOUDFLARE_API_TOKEN\b/g;

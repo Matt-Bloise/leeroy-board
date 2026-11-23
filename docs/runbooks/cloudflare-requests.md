@@ -140,6 +140,12 @@ Sum at full use: 786 + 750 + 30 = about 1,570, under 2,000 (the steward's own ta
 
 Nothing is created, deleted or pruned in Cloudflare by hand: teardown is the workflow's job (`tools/preview-cleanup.mjs`, which proves deletion), and the daily **Preview Leak Report** (`preview-leak-report.yml`, read-only) lists previews whose pull request is not open, for the owner to decide.
 
+## Tearing down a closed PR's preview by hand
+
+When a teardown failed or never ran, start the preview workflow by hand on master (Actions, PR Ephemeral Preview Environment, Run workflow, input `pr_number`). The job `teardown-closed-pr` first requires the pull request to exist and be closed: it refuses a value that is not a plain number, a number that is no pull request, and an open pull request. It then deletes only the Worker, D1 database and Pages deployments named for that number and proves they are gone (the same `tools/preview-cleanup.mjs` code as the closed event). Do not use it for a preview whose pull request number is not yours to clear; the leak report lists those and the account owner decides.
+
+Every inline snippet in every workflow (shell blocks, `node -e` bodies, github-script bodies) is parsed with the real tool by `tests/unit/workflow-snippets.test.mjs`, so a syntax error in a snippet fails the unit job instead of failing a run on master.
+
 ## When the quota is hit
 
 Production answers errors until 00:00 UTC. Do not push or relabel PRs until the reset. Check the Cloudflare dashboard (Workers & Pages, Overview) for the per-Worker split and find the Worker that is not `leeroy-brain`.

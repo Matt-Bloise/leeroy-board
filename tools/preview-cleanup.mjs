@@ -1,5 +1,6 @@
 // Preview environment cleanup through the Cloudflare API, with proof. Node 22, no dependencies, fetch injected for the tests.
 //   node tools/preview-cleanup.mjs teardown <pr-number>   delete this PR's Worker, D1 database and Pages preview deployments, then VERIFY by listing that nothing remains; exit 1 if anything does
+//   node tools/preview-cleanup.mjs teardown-closed <n>   the same, for the manual run: first requires the pull request to exist and be CLOSED (assertPrClosed), refuses otherwise, and a missing token is an error
 //   node tools/preview-cleanup.mjs leaks                  READ-ONLY: list the preview Workers, D1 databases and Pages preview deployments named for a PR number whose PR is closed; deletes nothing
 // env: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, PAGES_PROJECT_NAME (default leeroy-board); leaks also GH_TOKEN and GITHUB_REPOSITORY.
 //
@@ -134,6 +135,22 @@ export async function leakReport({ fetchImpl = fetch, token, accountId, project 
   return { leaks, checked: found.length };
 }
 
+// A manual teardown (workflow_dispatch) is allowed only for a pull request that is CLOSED. Refuses a value that is not a plain pull request number, a number that is no pull request (404), an open pull
+// request and any answer it cannot read. -> the number as a string, or throws.
+export async function assertPrClosed({ fetchImpl = fetch, ghToken, repo, pr }) {
+  if (!/^[0-9]{1,8}$/.test(String(pr))) throw new Error(`refused: "${String(pr).slice(0, 40)}" is not a pull request number`);
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(repo))) throw new Error("refused: the repository name is missing or malformed");
+  let res;
+  try { res = await fetchImpl(`https://api.github.com/repos/${repo}/pulls/${pr}`, { headers: { Authorization: `Bearer ${ghToken}`, Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(30000) }); }
+  catch (e) { throw new Error(`refused: could not read pull request ${pr} (${e.message})`); }
+  if (res.status === 404) throw new Error(`refused: ${pr} is not a pull request of ${repo}`);
+  if (!res.ok) throw new Error(`refused: reading pull request ${pr} answered ${res.status}`);
+  let j;
+  try { j = await res.json(); } catch { throw new Error(`refused: the answer for pull request ${pr} is not JSON`); }
+  if (j.state !== "closed") throw new Error(`refused: pull request ${pr} is ${j.state === "open" ? "open (its own events tear its preview down when it closes)" : "not closed"}`);
+  return String(pr);
+}
+
 const summary = (text) => { process.stdout.write(text + "\n"); if (process.env.GITHUB_STEP_SUMMARY) { try { appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + "\n"); } catch { /* best effort */ } } };
 
 async function main() {
@@ -141,11 +158,18 @@ async function main() {
   const clean = (v) => String(v || "").replace(/[\r\n "']/g, ""); // the deploy strips quotes from the secrets too
   const token = clean(process.env.CLOUDFLARE_API_TOKEN), accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
   const project = process.env.PAGES_PROJECT_NAME || "leeroy-board";
+  let closedByHand = false;
+  if (mode === "teardown-closed") {
+    // The manual route: checks first (a refusal is an error, never a quiet pass), then the same teardown as the closed event.
+    await assertPrClosed({ ghToken: process.env.GH_TOKEN, repo: process.env.GITHUB_REPOSITORY, pr: arg });
+    if (!token || !accountId) { console.error("::error::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing: nothing could be torn down"); process.exit(1); }
+    closedByHand = true;
+  }
   if (!token || !accountId) {
     console.log("::notice title=Cloudflare cleanup skipped::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so this workflow could not have created a preview. See docs/runbooks/ci-secrets.md.");
     process.exit(0);
   }
-  if (mode === "teardown") {
+  if (mode === "teardown" || closedByHand) {
     const r = await teardown({ token, accountId, pr: arg, project });
     summary([`### Preview teardown, PR ${arg}`, "", ...r.lines.map((l) => `- ${l}`), "", r.ok ? "**Result: torn down and verified.**" : `**Result: FAILED. Still there or failed: ${[...r.remaining, ...r.errors].join("; ")}.** Every step is idempotent: re-run this job, or tell the owner (a manual delete is the owner's, never a session's).`].join("\n"));
     process.exit(r.ok ? 0 : 1);
@@ -167,7 +191,7 @@ async function main() {
     if (r.leaks.length) console.log(`::warning title=Preview resources without an open pull request::${r.leaks.length} leaked preview resource(s); see the job summary.`);
     process.exit(0);
   }
-  console.error("usage: node tools/preview-cleanup.mjs teardown <pr-number> | leaks");
+  console.error("usage: node tools/preview-cleanup.mjs teardown <pr-number> | teardown-closed <pr-number> | leaks");
   process.exit(2);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -13,6 +13,13 @@ name: PR Ephemeral Preview Environment (Cloudflare Free Tier)
 # The game-facts smoke runs on a spin-up only when the loader, the lookup, the schema or the smoke changed (tools/smoke-scope.mjs), on a small sample (under 200 rows written, printed in the summary).
 
 on:
+  # Manual: tear down the preview of a pull request that is already CLOSED (a teardown that failed, or one that never ran). master only; see job teardown-closed-pr.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Number of a CLOSED pull request whose preview Worker, D1 database and Pages deployments to delete (only names derived from this number)"
+        required: true
+        type: string
   pull_request:
     types:
       - opened
@@ -26,8 +33,8 @@ on:
 # group), so a push or a label right after the close cannot stop a delete half way; teardown runs of one PR queue behind each other. Within `spinup` the old rule stands: a real event cancels the older
 # run, an unrelated label event (security, visual, ...) does not.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ (github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full')) && 'teardown' || 'spinup' }}
-  cancel-in-progress: ${{ !(github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full') || ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci-full')) }}
+  group: ${{ github.event_name == 'workflow_dispatch' && format('{0}-manual-{1}', github.workflow, inputs.pr_number) || format('{0}-{1}-{2}', github.workflow, github.event.pull_request.number, (github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full')) && 'teardown' || 'spinup') }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && !(github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full') || ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci-full')) }}
 
 permissions:
   contents: read
@@ -551,6 +558,37 @@ jobs:
 
   # One job: probe for this PR's preview D1 database first (a few seconds, no checkout, no npm install), exit early when there is none, otherwise tear down
   # the Worker, D1 database and Pages deployments and re-run a waiting PR. Runs on closed and on unlabeled ci-full; it does not look at label history.
+  # Manual teardown of ONE closed pull request's preview, started by hand (workflow_dispatch, input pr_number). The tool (tools/preview-cleanup.mjs teardown-closed) refuses a value that is not a number, a
+  # number that is no pull request, and an open pull request; it deletes only the three names derived from that number and then proves they are gone (same code as the closed event). Runs from master only, so
+  # a branch cannot run altered code with the Cloudflare secrets. The number goes in through the environment, never into the script text.
+  teardown-closed-pr:
+    name: Tear down a closed PR's preview by number (manual)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PAGES_PROJECT_NAME: leeroy-board
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ inputs.pr_number }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Check the pull request is closed, delete its preview and verify it is gone
+        run: node tools/preview-cleanup.mjs teardown-closed "$PR_NUMBER"
+
   teardown-pr-preview:
     name: Tear Down Ephemeral PR Environment (closed or ci-full removed)
     if: github.event.pull_request.head.repo.full_name == github.repository && (github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full'))
@@ -608,7 +646,7 @@ jobs:
             ANSWER=$(D1_JSON="$D1" WK_JSON="$WK" node -e '
               try {
                 const d = JSON.parse(process.env.D1_JSON), w = JSON.parse(process.env.WK_JSON);
-                if (d.success !== true || !Array.isArray(d.result) || w.success !== true || !Array.isArray(w.result)) { process.stdout.write("unknown"); return; }
+                if (d.success !== true || !Array.isArray(d.result) || w.success !== true || !Array.isArray(w.result)) { process.stdout.write("unknown"); process.exit(0); }
                 const any = d.result.some((x) => x.name === process.env.D1_DATABASE_NAME) || w.result.some((x) => x.id === process.env.WORKER_NAME);
                 process.stdout.write(any ? "yes" : "no");
               } catch (e) { process.stdout.write("unknown"); }
