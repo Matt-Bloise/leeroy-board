@@ -100,6 +100,14 @@ The first row is the best case. The second is the worst case a single eviction c
 3. Add `ci-full` only when the change needs the real preview Worker: one full run is about 250 Worker requests, a preview spin-up and its D1 rows; every push after it re-runs everything. A PR that changes only docs and `data/library` gets no preview even with the label. The Worker starts locally again (`node tests/local/dev-start.mjs`, `wrangler dev --local` through `worker/entry.js`), so try a change there before pushing.
 4. Use the preview only as a smoke test of the integrated result.
 
+## What the dashboard showed (read-only, 2026-11-23)
+
+The account owner's dashboard, read on the evening of 2026-11-23 through his sign-in, shows the account on **Workers Free** with **13,210 Worker invocations in the last 24 hours**. Three facts matter for changes:
+
+- **CPU time is close to its limit.** The P90 CPU time per request is **9 ms against the Free plan's 10 ms limit**. No change may add CPU time to a hot path (every request that reaches `fetch`, the ask path, the member documents) without a measurement first: `tools/bench-ask-cpu.mjs` and `tools/measure-research-cpu.mjs` exist for the ask path, and `docs/audits/cost-model.md` section 1 holds the per-route CPU estimates. A request over 10 ms fails with error 1102.
+- **D1 holds 4 databases of the 10 allowed:** production and three leaked previews, `leeroy-board-db-pr-117`, `-pr-124` and `-pr-144`, created on 2 and 3 November. The daily Preview Leak Report (`preview-leak-report.yml`) should list exactly these three on its first run; if it lists others, or not these, the report or the names are wrong. Nobody deletes them until the account owner and the owner say so.
+- The 13,210 invocations a day is the production and CI total as Cloudflare counts it. The 100,000 limit is far away, but the 2,000 a day for all tooling is the owner's rule, not Cloudflare's.
+
 ## Endpoints that have been uncached since 2026-11-15
 
 On 2026-11-15 (commit 3e20c396) the Worker stopped caching the member documents: `getCachedResponse` and `setCachedResponse` return early for `memberPath`, so these pay their D1 queries on every call (read from the code on 2026-11-22; the earlier cost model priced them as cached):
