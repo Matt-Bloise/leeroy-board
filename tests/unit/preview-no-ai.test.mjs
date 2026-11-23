@@ -7,7 +7,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { stripAi, hasAi } from "../../tools/strip-ai-binding.mjs";
-import { workersAiRun, PREVIEW_AI_PLACEHOLDER, isProviderConfigured, isPrPreviewEnv } from "../../infrastructure/worker/ai-models.js";
+import { workersAiRun, PREVIEW_AI_PLACEHOLDER, isProviderConfigured, isPrPreviewEnv, resolveAiProvider } from "../../infrastructure/worker/ai-models.js";
 import { parseBuild } from "../../infrastructure/worker/build-parse.js";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -71,6 +71,24 @@ test("outside a preview the binding is called exactly as before", async () => {
   assert.deepEqual(calls, [["@cf/x", { a: 1 }, { signal: 1 }]]);
   assert.equal(isProviderConfigured(env, "workers-ai"), true);
   assert.equal(isProviderConfigured({}, "workers-ai"), false, "production without a binding is not configured, as before");
+});
+
+test("the three availability cases: production with the binding, production without it (unavailable, no throw), a preview without it (placeholder)", async () => {
+  const withBinding = { AI: { run: async () => ({ response: "real" }) } };
+  assert.equal(isProviderConfigured(withBinding, "workers-ai"), true, "production with the binding");
+  assert.equal(isProviderConfigured({}, "workers-ai"), false, "production without the binding is unavailable");
+  assert.equal(isProviderConfigured({ AI: {} }, "workers-ai"), false, "a binding without run is unavailable");
+  assert.doesNotThrow(() => isProviderConfigured({}, "workers-ai"), "asking never throws");
+  const preview = { IS_PR_PREVIEW: "true" };
+  assert.equal(isProviderConfigured(preview, "workers-ai"), true, "a preview without the binding answers the placeholder");
+  assert.equal((await workersAiRun(preview, "@cf/x", {}, {})).response, PREVIEW_AI_PLACEHOLDER);
+});
+
+test("outside a preview with no binding workersAiRun fails exactly as master's direct env.AI.run did: a synchronous TypeError, and callers guard before it", () => {
+  assert.throws(() => workersAiRun({}, "@cf/x", {}, {}), TypeError);
+  assert.throws(() => ({}).AI.run("@cf/x", {}, {}), TypeError, "master's call site threw the same error");
+  const src = readFileSync(path.join(ROOT, "infrastructure", "worker", "ai-models.js"), "utf8");
+  assert.match(src, /if \(!isPrPreviewEnv\(env\) && \(!env\.AI \|\| typeof env\.AI\.run !== "function"\)\) \{\s*throw new Error\("Cloudflare Workers AI binding/);
 });
 
 test("the only call of env.AI.run in the Worker is the one in workersAiRun", () => {

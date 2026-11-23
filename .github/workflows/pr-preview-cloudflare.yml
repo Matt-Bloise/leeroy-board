@@ -517,9 +517,9 @@ jobs:
               `| **Frontend (Cloudflare Pages)** | [${previewUrl}](${previewUrl}) | 🟢 Live (\`${sha}\`) |`,
               `| **API & WebSockets (Worker + DO)** | \`${workerName}\` on the account's workers.dev host (host not printed here) | 🟢 Isolated \`BoardRoom\` |`,
               `| **Database (Cloudflare D1)** | \`${dbName}\` | 🟢 Seeded & Isolated |`,
-              `| **AI Model (Zero Keys)** | Cloudflare Workers AI (\`@cf/meta/llama-3.3-70b-instruct-fp8-fast\`) | 🟢 Free Tier (No External Keys) |`,
+              `| **AI Model** | None: Workers AI is switched off in previews (placeholder answers, no model is called) | 🟢 No keys, no AI spend |`,
               "",
-              "_This environment is 100% isolated from production, has **zero external AI API keys injected**, uses only the free native Cloudflare Workers AI model, and will be **automatically torn down** when this PR is merged, closed or loses the `ci-full` label._"
+              "_This environment is 100% isolated from production, has **zero external AI API keys injected**, cannot call Workers AI (it answers a placeholder), and will be **automatically torn down** when this PR is merged, closed or loses the `ci-full` label._"
             ].join("\n");
 
             const { data: comments } = await github.rest.issues.listComments({
