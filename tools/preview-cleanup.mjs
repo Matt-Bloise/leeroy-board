@@ -49,7 +49,8 @@ export async function listAll(fetchImpl, token, pathBase, query = "", key = (x) 
   let total = null, stuck = false, finished = false;
   for (let page = 1; page <= MAX_PAGES; page++) {
     const { body } = await cf(fetchImpl, token, "GET", `${pathBase}?${query}${query ? "&" : ""}page=${page}&per_page=25`);
-    const items = Array.isArray(body.result) ? body.result : [];
+    if (!body || body.success !== true || !Array.isArray(body.result)) throw new CfError(`${pathBase}: the answer has no result list (an unreadable listing is never an empty one)`, 0);
+    const items = body.result;
     const info = body.result_info || {};
     if (typeof info.total_count === "number") total = info.total_count;
     let added = 0;
@@ -68,7 +69,8 @@ export async function listAll(fetchImpl, token, pathBase, query = "", key = (x) 
 export const listD1 = (f, t, acc) => listAll(f, t, `/accounts/${acc}/d1/database`, "", (d) => d.uuid || d.name);
 export const listWorkers = async (f, t, acc) => {
   const { body } = await cf(f, t, "GET", `/accounts/${acc}/workers/scripts`);
-  return Array.isArray(body.result) ? body.result : [];
+  if (!body || body.success !== true || !Array.isArray(body.result)) throw new CfError(`/accounts/${acc}/workers/scripts: the answer has no result list (an unreadable listing is never an empty one)`, 0);
+  return body.result;
 };
 export const listPreviewDeployments = (f, t, acc, project) => listAll(f, t, `/accounts/${acc}/pages/projects/${project}/deployments`, "env=preview");
 const branchOf = (d) => (d && d.deployment_trigger && d.deployment_trigger.metadata && d.deployment_trigger.metadata.branch) || "";

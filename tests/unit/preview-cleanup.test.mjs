@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { teardown, leakReport, listAll, NAMES, CfError, resultFor } from "../../tools/preview-cleanup.mjs";
+import { teardown, leakReport, listAll, listWorkers, NAMES, CfError, resultFor } from "../../tools/preview-cleanup.mjs";
 
 // A fake account: Workers, D1 databases and Pages preview deployments, with the paging the real list endpoints do (25 per page). Options inject faults.
 function fakeCf({ workers = [], dbs = [], deployments = [], faults = {} } = {}) {
@@ -186,4 +186,20 @@ test("resultFor: the manual route never says verified when nothing was found to 
   assert.equal(resultFor(none, { manual: false }).exit, 0, "the closed event keeps its old meaning: nothing to do is fine");
   assert.equal(resultFor(failed, { manual: true }).exit, 1);
   assert.match(resultFor(failed, { manual: true }).text, /FAILED/);
+});
+
+test("a listing whose answer has no result array is an error, never an empty list (so never 'verified')", async () => {
+  const answer = (body) => async () => ({ status: 200, ok: true, json: async () => body });
+  for (const body of [{ success: true }, { success: true, result: null }, { success: true, result: {} }, { success: true, result: "x" }]) {
+    await assert.rejects(() => listAll(answer(body), "t", "/accounts/acc/d1/database"), /result/, JSON.stringify(body));
+    await assert.rejects(() => listWorkers(answer(body), "t", "acc"), /result/, JSON.stringify(body));
+  }
+  await assert.rejects(() => listAll(answer({ success: false, result: [] }), "t", "/x"), CfError);
+  assert.deepEqual(await listWorkers(answer({ success: true, result: [] }), "t", "acc"), []);
+  // and a teardown run whose verification listing has no result is not ok
+  const f = fakeCf({});
+  const bare = async (url, o = {}) => (o.method || "GET") === "GET" && /workers\/scripts$/.test(url) ? { status: 200, ok: true, json: async () => ({ success: true }) } : f.fetchImpl(url, o);
+  const r = await run({ fetchImpl: bare });
+  assert.equal(r.ok, false);
+  assert.ok(r.remaining.some((x) => /could not verify/.test(x)));
 });
