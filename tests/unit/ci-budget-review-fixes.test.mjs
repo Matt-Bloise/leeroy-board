@@ -15,16 +15,15 @@ const wf = parse(wfText);
 const json = (status, body) => ({ status, ok: status < 300, json: async () => body });
 
 // Evaluates the cancel-in-progress expression of the workflow for one pull_request event (the expression only uses ==, !=, &&, || and !).
-function cancelFor(action, label) {
-  const expr = wf.concurrency["cancel-in-progress"].replace(/^\$\{\{\s*|\s*\}\}$/g, "");
-  const js = expr.replace(/github\.event\.action/g, JSON.stringify(action)).replace(/github\.event\.label\.name/g, JSON.stringify(label || ""));
-  return Function(`"use strict"; return (${js});`)();
-}
-function groupFor(action, label) {
-  const expr = wf.concurrency.group.replace(/^\$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \}\}-\$\{\{\s*|\s*\}\}$/g, "");
-  const js = expr.replace(/github\.event\.action/g, JSON.stringify(action)).replace(/github\.event\.label\.name/g, JSON.stringify(label || ""));
-  return Function(`"use strict"; return (${js});`)();
-}
+// Both expressions are evaluated for one pull_request event with a small stand-in for the GitHub context (the expressions only use ==, !=, &&, ||, ! and format).
+const fmt = (s, ...v) => s.replace(/\{(\d)\}/g, (_, i) => v[Number(i)]);
+const evalExpr = (src, action, label, eventName = "pull_request") => {
+  const expr = src.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
+  const github = { workflow: "WF", event_name: eventName, event: { action, label: { name: label || "" }, pull_request: { number: 7 } } };
+  return Function("github", "inputs", "format", `"use strict"; return (${expr});`)(github, { pr_number: "7" }, fmt);
+};
+const cancelFor = (action, label) => evalExpr(wf.concurrency["cancel-in-progress"], action, label);
+const groupFor = (action, label) => String(evalExpr(wf.concurrency.group, action, label)).replace(/^WF-7-/, "");
 
 test("A1/A2: every teardown event is in the teardown group and is never cancelled; spin-up events keep their rule", () => {
   for (const [action, label, group, cancel] of [
@@ -49,6 +48,11 @@ test("A1: the teardown stops this PR's running spin-up first, and a closed PR ca
   assert.ok(steps[0].run.includes("GITHUB_RUN_ID"), "it never cancels itself");
   assert.equal(wf.jobs["teardown-pr-preview"].permissions.actions, "write");
   assert.ok(wf.jobs.prep.if.includes("github.event.pull_request.state == 'open'"), "no spin-up for a PR that is not open");
+});
+
+test("a manual run has its own group per PR number and is never cancelled", () => {
+  assert.equal(evalExpr(wf.concurrency.group, undefined, undefined, "workflow_dispatch"), "WF-manual-7");
+  assert.equal(evalExpr(wf.concurrency["cancel-in-progress"], undefined, undefined, "workflow_dispatch"), false);
 });
 
 test("A3: a PR that ever had a preview always gets the full teardown, even when D1 and the Worker are gone", () => {

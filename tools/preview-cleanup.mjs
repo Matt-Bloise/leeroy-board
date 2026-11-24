@@ -1,5 +1,6 @@
 // Preview environment cleanup through the Cloudflare API, with proof. Node 22, no dependencies, fetch injected for the tests.
 //   node tools/preview-cleanup.mjs teardown <pr-number>   delete this PR's Worker, D1 database and Pages preview deployments, then VERIFY by listing that nothing remains; exit 1 if anything does
+//   node tools/preview-cleanup.mjs teardown-closed <n>   the same, for the manual run: first requires the pull request to exist and be CLOSED (assertPrClosed), refuses otherwise, and a missing token is an error
 //   node tools/preview-cleanup.mjs leaks                  READ-ONLY: list the preview Workers, D1 databases and Pages preview deployments named for a PR number whose PR is closed; deletes nothing
 // env: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, PAGES_PROJECT_NAME (default leeroy-board); leaks also GH_TOKEN and GITHUB_REPOSITORY.
 //
@@ -14,8 +15,10 @@ import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const API = "https://api.cloudflare.com/client/v4";
+// A canonical positive integer: digits only, no leading zero (0451 would name resources that do not exist and could end in a false "verified"), no sign, no space, at most 8 digits.
+export const CANONICAL_PR = /^[1-9][0-9]{0,7}$/;
 export const NAMES = (pr) => {
-  if (!/^[0-9]{1,8}$/.test(String(pr))) throw new Error(`not a pull request number: ${pr}`);
+  if (!CANONICAL_PR.test(String(pr))) throw new Error(`not a pull request number: ${pr}`);
   return { worker: `leeroy-brain-pr-${pr}`, d1: `leeroy-board-db-pr-${pr}`, branch: `pr-${pr}` };
 };
 export const WORKER_RE = /^leeroy-brain-pr-([0-9]{1,8})$/, D1_RE = /^leeroy-board-db-pr-([0-9]{1,8})$/, BRANCH_RE = /^pr-([0-9]{1,8})$/;
@@ -46,7 +49,8 @@ export async function listAll(fetchImpl, token, pathBase, query = "", key = (x) 
   let total = null, stuck = false, finished = false;
   for (let page = 1; page <= MAX_PAGES; page++) {
     const { body } = await cf(fetchImpl, token, "GET", `${pathBase}?${query}${query ? "&" : ""}page=${page}&per_page=25`);
-    const items = Array.isArray(body.result) ? body.result : [];
+    if (!body || body.success !== true || !Array.isArray(body.result)) throw new CfError(`${pathBase}: the answer has no result list (an unreadable listing is never an empty one)`, 0);
+    const items = body.result;
     const info = body.result_info || {};
     if (typeof info.total_count === "number") total = info.total_count;
     let added = 0;
@@ -65,7 +69,8 @@ export async function listAll(fetchImpl, token, pathBase, query = "", key = (x) 
 export const listD1 = (f, t, acc) => listAll(f, t, `/accounts/${acc}/d1/database`, "", (d) => d.uuid || d.name);
 export const listWorkers = async (f, t, acc) => {
   const { body } = await cf(f, t, "GET", `/accounts/${acc}/workers/scripts`);
-  return Array.isArray(body.result) ? body.result : [];
+  if (!body || body.success !== true || !Array.isArray(body.result)) throw new CfError(`/accounts/${acc}/workers/scripts: the answer has no result list (an unreadable listing is never an empty one)`, 0);
+  return body.result;
 };
 export const listPreviewDeployments = (f, t, acc, project) => listAll(f, t, `/accounts/${acc}/pages/projects/${project}/deployments`, "env=preview");
 const branchOf = (d) => (d && d.deployment_trigger && d.deployment_trigger.metadata && d.deployment_trigger.metadata.branch) || "";
@@ -76,10 +81,12 @@ export async function teardown({ fetchImpl = fetch, token, accountId, pr, projec
   const lines = [];
   const say = (s) => lines.push(s);
   const errors = [];
+  let found = 0; // resources that really existed when this run looked (a 404 or an empty listing is not one)
   const step = async (label, fn) => { try { await fn(); } catch (e) { errors.push(`${label}: ${e.message}`); say(`FAIL ${label}: ${e.message}`); } };
 
   await step(`delete Worker ${n.worker}`, async () => {
     const r = await cf(fetchImpl, token, "DELETE", `/accounts/${accountId}/workers/scripts/${n.worker}?force=true`, { okStatus: [404] });
+    if (r.status !== 404) found++;
     say(r.status === 404 ? `Worker ${n.worker}: already gone (404)` : `Worker ${n.worker}: deleted`);
   });
   await step(`delete D1 database ${n.d1}`, async () => {
@@ -87,6 +94,7 @@ export async function teardown({ fetchImpl = fetch, token, accountId, pr, projec
     if (dbs.length === 0) { say(`D1 ${n.d1}: already gone (not listed)`); return; }
     for (const d of dbs) {
       const r = await cf(fetchImpl, token, "DELETE", `/accounts/${accountId}/d1/database/${d.uuid}`, { okStatus: [404] });
+      if (r.status !== 404) found++;
       say(r.status === 404 ? `D1 ${n.d1}: already gone (404)` : `D1 ${n.d1}: deleted`);
     }
   });
@@ -95,6 +103,7 @@ export async function teardown({ fetchImpl = fetch, token, accountId, pr, projec
     say(`Pages: ${mine.length} preview deployment(s) for ${n.branch}`);
     for (const d of mine) {
       const r = await cf(fetchImpl, token, "DELETE", `/accounts/${accountId}/pages/projects/${project}/deployments/${d.id}?force=true`, { okStatus: [404] });
+      if (r.status !== 404) found++;
       say(`Pages deployment ${d.id}: ${r.status === 404 ? "already gone (404)" : "deleted"}`);
     }
   });
@@ -118,7 +127,15 @@ export async function teardown({ fetchImpl = fetch, token, accountId, pr, projec
   // The verification (a fresh listing of all three) is the authority: a delete call that answered an error but left nothing behind (it did its work before the error) is a warning, not a failed job.
   const ok = remaining.length === 0;
   if (ok && errors.length) lines.push(`warning: ${errors.length} delete call(s) answered an error, but the verification found nothing left: ${errors.join("; ")}`);
-  return { ok, lines, remaining, errors };
+  return { ok, lines, remaining, errors, found };
+}
+
+// The verdict of one teardown run: text for the job summary and the exit code. A manual run (a person typed a number) that found nothing at all is NOT VERIFIED: it looks the same for a
+// preview torn down earlier and for a number that was never the right one, and it must never read as a success. The closed event keeps its old meaning (nothing to do is fine).
+export function resultFor(r, { manual = false } = {}) {
+  if (!r.ok) return { exit: 1, text: `**Result: FAILED. Still there or failed: ${[...r.remaining, ...r.errors].join("; ")}.** Every step is idempotent: re-run this job, or tell the owner (a manual delete is the owner's, never a session's).` };
+  if (manual && r.found === 0) return { exit: 1, text: "**Result: NOT VERIFIED. No Worker, D1 database or Pages preview deployment named for this pull request was found, so nothing was deleted. Either an earlier teardown already finished, or this is not the number that was meant: check the leak report and the number.**" };
+  return { exit: 0, text: "**Result: torn down and verified.**" };
 }
 
 // -> { leaks: [{ kind, name, pr, state }], checked: number, lines } READ-ONLY. prState(pr) -> "open" | "closed" | "unknown".
@@ -134,6 +151,22 @@ export async function leakReport({ fetchImpl = fetch, token, accountId, project 
   return { leaks, checked: found.length };
 }
 
+// A manual teardown (workflow_dispatch) is allowed only for a pull request that is CLOSED. Refuses a value that is not a plain pull request number, a number that is no pull request (404), an open pull
+// request and any answer it cannot read. -> the number as a string, or throws.
+export async function assertPrClosed({ fetchImpl = fetch, ghToken, repo, pr }) {
+  if (!CANONICAL_PR.test(String(pr))) throw new Error(`refused: "${String(pr).slice(0, 40)}" is not a pull request number`);
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(String(repo))) throw new Error("refused: the repository name is missing or malformed");
+  let res;
+  try { res = await fetchImpl(`https://api.github.com/repos/${repo}/pulls/${pr}`, { headers: { Authorization: `Bearer ${ghToken}`, Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(30000) }); }
+  catch (e) { throw new Error(`refused: could not read pull request ${pr} (${e.message})`); }
+  if (res.status === 404) throw new Error(`refused: ${pr} is not a pull request of ${repo}`);
+  if (!res.ok) throw new Error(`refused: reading pull request ${pr} answered ${res.status}`);
+  let j;
+  try { j = await res.json(); } catch { throw new Error(`refused: the answer for pull request ${pr} is not JSON`); }
+  if (j.state !== "closed") throw new Error(`refused: pull request ${pr} is ${j.state === "open" ? "open (its own events tear its preview down when it closes)" : "not closed"}`);
+  return String(pr);
+}
+
 const summary = (text) => { process.stdout.write(text + "\n"); if (process.env.GITHUB_STEP_SUMMARY) { try { appendFileSync(process.env.GITHUB_STEP_SUMMARY, text + "\n"); } catch { /* best effort */ } } };
 
 async function main() {
@@ -141,14 +174,22 @@ async function main() {
   const clean = (v) => String(v || "").replace(/[\r\n "']/g, ""); // the deploy strips quotes from the secrets too
   const token = clean(process.env.CLOUDFLARE_API_TOKEN), accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
   const project = process.env.PAGES_PROJECT_NAME || "leeroy-board";
+  let closedByHand = false;
+  if (mode === "teardown-closed") {
+    // The manual route: checks first (a refusal is an error, never a quiet pass), then the same teardown as the closed event.
+    await assertPrClosed({ ghToken: process.env.GH_TOKEN, repo: process.env.GITHUB_REPOSITORY, pr: arg });
+    if (!token || !accountId) { console.error("::error::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing: nothing could be torn down"); process.exit(1); }
+    closedByHand = true;
+  }
   if (!token || !accountId) {
     console.log("::notice title=Cloudflare cleanup skipped::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so this workflow could not have created a preview. See docs/runbooks/ci-secrets.md.");
     process.exit(0);
   }
-  if (mode === "teardown") {
+  if (mode === "teardown" || closedByHand) {
     const r = await teardown({ token, accountId, pr: arg, project });
-    summary([`### Preview teardown, PR ${arg}`, "", ...r.lines.map((l) => `- ${l}`), "", r.ok ? "**Result: torn down and verified.**" : `**Result: FAILED. Still there or failed: ${[...r.remaining, ...r.errors].join("; ")}.** Every step is idempotent: re-run this job, or tell the owner (a manual delete is the owner's, never a session's).`].join("\n"));
-    process.exit(r.ok ? 0 : 1);
+    const v = resultFor(r, { manual: closedByHand });
+    summary([`### Preview teardown, PR ${arg}`, "", ...r.lines.map((l) => `- ${l}`), "", v.text].join("\n"));
+    process.exit(v.exit);
   }
   if (mode === "leaks") {
     const repo = process.env.GITHUB_REPOSITORY, gh = process.env.GH_TOKEN;
@@ -167,7 +208,7 @@ async function main() {
     if (r.leaks.length) console.log(`::warning title=Preview resources without an open pull request::${r.leaks.length} leaked preview resource(s); see the job summary.`);
     process.exit(0);
   }
-  console.error("usage: node tools/preview-cleanup.mjs teardown <pr-number> | leaks");
+  console.error("usage: node tools/preview-cleanup.mjs teardown <pr-number> | teardown-closed <pr-number> | leaks");
   process.exit(2);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

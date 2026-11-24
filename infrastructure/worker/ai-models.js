@@ -1436,6 +1436,7 @@ export async function answerWithAi({
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
     // Research mode: names become per-request tokens before any model sees the prompt (research/claude.js). Workers AI gets the same tokenised prompt; with the flag off these are the
     // untouched prompts. If tokenising fails Claude is skipped and Workers AI (inside Cloudflare) takes the prompt as it is.
+    const rosterClosed = Boolean(research && inputs.researchParty && inputs.researchParty.closed === true);
     const priv = research ? prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, priorTurns, by, party: inputs.researchParty }) : null;
     const sendSystem = priv && priv.ok ? priv.system : systemPrompt;
     const sendUser = priv && priv.ok ? priv.user : userPrompt;
@@ -1518,7 +1519,9 @@ export async function answerWithAi({
       if (research && memberNoWall) { // Claude is for members only: a guest never spends the Claude token cap
         // The Claude hop ends no later than the hard end (research/claude.js hands its own 9 s deadline to the call; this clamps it), and is skipped with under 2.5 s left.
         const hardEnd = t0 + hardEndMs(askDeadlineMs(env));
-        const viaClaude = hardEnd - Date.now() < 2500
+        const viaClaude = rosterClosed
+          ? { reason: "roster:closed" } // ROSTER_FROM_D1 on and the roster cannot be resolved (roster-source.js): not even the RESEARCH_NAMES real path sends anything
+          : hardEnd - Date.now() < 2500
           ? { reason: "claude:no-time" }
           : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, real: namesReal ? { system: systemPrompt, user: userPrompt, friend: [question, previousQuestion, by, ...(Array.isArray(priorTurns) ? priorTurns.flatMap((t) => [t.q, t.a]) : [])] } : null, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }), ...(shadow && sink.subSpend ? { subSpend: sink.subSpend } : {}) });
         if (viaClaude.answer) { ({ answer: rawAnswer, model, provider } = viaClaude); claudeUsage = viaClaude.usage || null; }

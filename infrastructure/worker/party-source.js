@@ -4,7 +4,7 @@
 import { slugify } from "./member-model.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { loadConfigKey } from "./config.js";
-import { rosterSnapshot } from "./roster-source.js";
+import { rosterSnapshot, isClosed } from "./roster-source.js";
 import { sheetMembersWithBuiltIns, rosterDataWithBuiltIns } from "./roster-shape.js";
 
 export const PARTY_MEMBERS = [
@@ -46,9 +46,11 @@ export async function loadPartyMembers(env, op) {
   try {
     const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
     const rost = await rosterSnapshot(env, op); // null while ROSTER_FROM_D1 is off (or refused): the built-ins below, as before
+    if (isClosed(rost)) return []; // ROSTER_FROM_D1 on and the roster cannot be resolved (roster-source.js): nobody, never the built-ins
     return mergePartyMembers(row && row.json ? JSON.parse(row.json) : null, rost ? sheetMembersWithBuiltIns(rost.sheetMembers, PARTY_MEMBERS) : PARTY_MEMBERS);
   } catch {
-    return PARTY_MEMBERS.slice();
+    // A failed D1 read falls back to the built-ins as before, unless the roster is closed (the snapshot never throws and is memoised per operation).
+    return isClosed(await rosterSnapshot(env, op)) ? [] : PARTY_MEMBERS.slice();
   }
 }
 
@@ -67,9 +69,10 @@ export function mergeRoster(members, builtIn = ROSTER_DATA) {
 export async function loadRoster(env, op) {
   try {
     const rost = await rosterSnapshot(env, op); // null while ROSTER_FROM_D1 is off (or refused)
+    if (isClosed(rost)) return []; // closed (roster-source.js): nobody matches, never the built-ins
     return mergeRoster(await loadConfigKey(env, "discord_members"), rost ? rosterDataWithBuiltIns(rost.rosterData, ROSTER_DATA) : ROSTER_DATA);
   } catch {
-    return ROSTER_DATA.slice();
+    return isClosed(await rosterSnapshot(env, op)) ? [] : ROSTER_DATA.slice();
   }
 }
 

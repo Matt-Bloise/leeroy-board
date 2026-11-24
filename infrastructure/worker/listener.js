@@ -26,6 +26,7 @@ import { postChannelMessage } from "./announce.js";
 import { clampContent } from "./discord-safety.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { listenerMode, verifyListen, parseListenEvent, LISTEN_MAX_BODY, isSnow, listenerKeyFor } from "./listener-config.js";
+import { rosterSnapshot, isClosed } from "./roster-source.js";
 import { untaggedOn, untaggedRules, classifyUntagged, untaggedCapReached, UNTAGGED_MIN_CONFIDENCE } from "./listener-untagged.js";
 
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -175,7 +176,9 @@ async function untaggedText(env, origin, ev, member, mode, { fetchImpl } = {}) {
   };
   const rules = untaggedRules(ev.content);
   let decision = rules.verdict === "candidate" ? "answer?" : rules.verdict, reason = rules.reason;
-  if (rules.verdict === "candidate") {
+  if (rules.verdict === "candidate" && isClosed(await rosterSnapshot(env, ev))) {
+    decision = "ignore"; reason = "roster-closed"; // ROSTER_FROM_D1 on and the roster cannot be resolved (roster-source.js): nothing is sent to the classifier
+  } else if (rules.verdict === "candidate") {
     const v = await classifyUntagged(env, { text: ev.content, isMember: Boolean(member), call: callAnthropicClaude });
     decision = v.decision; reason = v.reason;
     if (decision === "answer") {

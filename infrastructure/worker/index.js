@@ -68,9 +68,11 @@ import { collectInterest } from "./interest.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { rosterSnapshot } from "./roster-source.js";
+import { rosterSnapshot, isClosed, rosterSourceReport } from "./roster-source.js";
 import { projectDataDoc, projectBroadcast, loadPublicInputs, writeSheetValueToDoc, SHEET_FIELD_NAMES, MEMBER_DOCS as MEMBER_DOC_KEYS } from "./public-party.js";
-import { sheetMembersWithBuiltIns } from "./roster-shape.js";
+import { sheetMembersWithBuiltIns, builtInPeople, builtInCollision } from "./roster-shape.js";
+import { ROSTER_DATA } from "./bot-data.js";
+import { getFirstNameSource } from "./privacy/roster-config.js";
 import { PARTY_MEMBERS, loadPartyMembers, normName, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
 export { BoardRoom };
@@ -80,7 +82,8 @@ export const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "profes
 async function resolveMemberAuth(req, url, env) {
   // 1. Try cryptographic salted hash lookup in `members` table
   const authWho = await authenticate(req, env);
-  const rost = await rosterSnapshot(env, req); // ROSTER_FROM_D1: this request's one roster snapshot; null while the flag is off or refused (or the row is missing or invalid), so everything below is today's code
+  const rost = await rosterSnapshot(env, req); // ROSTER_FROM_D1: this request's one roster snapshot; null while the flag is off or refused, so everything below is today's code
+  if (isClosed(rost)) return { ok: false, member: null }; // ROSTER_FROM_D1 on and the roster cannot be resolved (F2): nobody is a member and nobody is the default admin; adminGate routes still work
   if (authWho && authWho.slug) {
     const found = (rost ? sheetMembersWithBuiltIns(rost.sheetMembers, PARTY_MEMBERS) : PARTY_MEMBERS).find((m) => m.slug === authWho.slug);
     if (found) return { ok: true, member: found };
@@ -814,7 +817,7 @@ const worker = {
         } catch {
           return jsonResp({ error: "Body must be valid JSON" }, 400, cors);
         }
-        const problem = validateConfigValue(key, value);
+        const problem = validateConfigValue(key, value) || (key === "party_roster" ? builtInCollision(value, builtInPeople(PARTY_MEMBERS, ROSTER_DATA, getFirstNameSource())) : null); // F4: a row cannot reuse a built-in person's name or alias under another slug
         if (problem) return jsonResp({ error: problem }, 400, cors);
         const now = new Date().toISOString();
         await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
@@ -2091,6 +2094,7 @@ const worker = {
           body.aiGateway = env.AI_GATEWAY_ID || null;
           body.providers = providers;
           body.saltsMissing = saltProblems(env); // names only; a non-empty list means member keys or guest asks are refused
+          body.rosterSource = await rosterSourceReport(env); // { source: "built-in" | "d1" | "closed", detail }: which roster is live (roster-source.js); no name in it. Interlock closed: no flag read, no D1 read
           const budget = await loadBudget(env);
           body.aiBudget = { day: utcDayKey(), neurons: budget.neurons, cap: dailyCap(env), asks: budget.asks, cron: budget.cron };
         }
@@ -2121,7 +2125,7 @@ const worker = {
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
     ctx.waitUntil(cleanupAnswerUx(env));
     // GROUP_MEMORY (with ASK_RESEARCH): the wiki refresher, one Claude call at most, when 10 new rows or 24 hours have gathered (research/group-wiki.js). No D1 read and no call while either flag is off.
-    if (groupWikiCronOn(env)) ctx.waitUntil(maybeRefreshGroupWiki(env, { call: callAnthropicClaude }).catch(() => {}));
+    if (groupWikiCronOn(env)) ctx.waitUntil((async () => { if (isClosed(await rosterSnapshot(env, {}))) return; await maybeRefreshGroupWiki(env, { call: callAnthropicClaude }); })().catch(() => {})); // closed roster (roster-source.js): no outside call
     // INTEREST_NUDGES: read-only counts of Interested clicks and reactions on Leeroy's own events and posts (no D1 read, no Discord call while off).
     ctx.waitUntil(collectInterest({ env }).catch((err) => console.error("interest counts failed:", String((err && err.message) || err))));
     // CARDS_ENABLED: this tick also flushes a due board line and retries an unfinished card edit (both no-ops when there is nothing to do).
