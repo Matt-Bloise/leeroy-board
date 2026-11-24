@@ -21,15 +21,17 @@ test("no deploy job has job-level continue-on-error", () => {
 
 test("the smoke step reports a failure as an annotation and a step summary", () => {
   const step = jobs["post-deploy-smoke"].steps.find((s) => /Deploy smoke/.test(s.name));
-  assert.match(step.run, /::error title=Post-deploy smoke failed \(non-blocking\)::/);
-  assert.match(step.run, /GITHUB_STEP_SUMMARY/);
-  assert.match(step.run, /exit "\$RC"/);
+  assert.match(step.run, /bash tools\/production-smoke\.sh https:\/\/leeroy\.party\//);
+  const sh = readFileSync(fileURLToPath(new URL("../../tools/production-smoke.sh", import.meta.url)), "utf8"); // the reporting lives in the script both smoke jobs share
+  assert.match(sh, /::error title=Post-deploy smoke failed \(non-blocking\)::/);
+  assert.match(sh, /GITHUB_STEP_SUMMARY/);
+  assert.match(sh, /exit "\$RC"/);
 });
 
 test("the deploy no longer runs the full production probe: it stays on its daily schedule", () => {
   assert.equal(jobs["production-probe"], undefined);
   assert.equal(/prod-probe\.mjs/.test(text.replace(/#.*$/gm, "")), false, "deploy-cloudflare.yml runs no prod-probe.mjs");
-  assert.match(text, /node browser\/deploy-smoke\.mjs --url https:\/\/leeroy\.party\//);
+  assert.match(text, /bash tools\/production-smoke\.sh https:\/\/leeroy\.party\//);
   const daily = readFileSync(fileURLToPath(new URL("../../.github/workflows/prod-probe-daily.yml", import.meta.url)), "utf8");
   assert.match(daily, /schedule:/);
   assert.match(daily, /prod-probe\.mjs/);
