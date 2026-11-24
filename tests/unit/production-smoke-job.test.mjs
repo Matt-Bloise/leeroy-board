@@ -29,6 +29,11 @@ for (const [name, job] of Object.entries(jobs)) {
     assert.ok(job["timeout-minutes"] <= 15);
     for (const s of job.steps.filter((x) => x.run && !/sleep 45/.test(x.run))) assert.ok(s["timeout-minutes"] > 0 && s["timeout-minutes"] <= 8, `step "${s.name}" needs its own timeout-minutes`);
   });
+  test(`${name}: checks which commit production serves before the smoke, with pipefail`, () => {
+    const i = job.steps.findIndex((s) => /served-stamps.mjs/.test(s.run || "")), j = job.steps.findIndex((s) => /production-smoke.sh/.test(s.run || ""));
+    assert.ok(i >= 0 && j > i, "stamp check first");
+    assert.equal(job.steps[i].shell, "bash", "pipefail, so tee cannot hide a failing check");
+  });
   test(`${name}: runs the proving script and holds no secret`, () => {
     assert.ok(job.steps.some((s) => /bash tools\/production-smoke\.sh https:\/\/leeroy\.party\/$/.test(s.run || "")));
     assert.ok(!/secrets\./.test(JSON.stringify(job)) && !job.environment);

@@ -650,6 +650,13 @@ jobs:
       - name: Let the new Pages build reach the edge
         run: sleep 45
 
+      # Says which commit was tested: the ?v= stamps of the page leeroy.party serves must equal this checkout's (tools/served-stamps.mjs, 1 to 6 page GETs). It fails the job when they differ or cannot be read, for example when a
+      # newer deploy has already replaced this one (the job is non-blocking; the log then says so).
+      - name: Check which commit production serves
+        timeout-minutes: 4
+        shell: bash
+        run: node tools/served-stamps.mjs --url https://leeroy.party/ | tee "$RUNNER_TEMP/served-stamps.log"
+
       # tools/production-smoke.sh fails the step when the log lacks the Chromium and the WebKit "first screen renders" lines, so a smoke that did not launch both browsers cannot pass.
       - name: Deploy smoke (about 15 Worker requests)
         timeout-minutes: 8
@@ -660,6 +667,8 @@ jobs:
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: deploy-smoke-log
-          path: ${{ runner.temp }}/deploy-smoke.log
+          path: |
+            ${{ runner.temp }}/deploy-smoke.log
+            ${{ runner.temp }}/served-stamps.log
           if-no-files-found: ignore
           retention-days: 14
